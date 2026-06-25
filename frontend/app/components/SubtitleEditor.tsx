@@ -111,7 +111,7 @@ export function SubtitleEditor({
             <div className="flex items-center gap-0.5 ml-3 bg-neutral-950 border border-neutral-800 rounded-md overflow-hidden">
               <button 
                 onClick={() => handleOffsetSegments(-0.1)} 
-                className="hover:bg-neutral-800 p-1 transition-colors text-neutral-400 hover:text-white"
+                className="hover:bg-neutral-800 p-1 transition-colors text-neutral-400 hover:text-white outline-none focus:outline-none"
                 title="Shift all subtitles 100ms earlier"
               >
                 <ChevronLeft className="w-3 h-3" />
@@ -121,7 +121,7 @@ export function SubtitleEditor({
               </div>
               <button 
                 onClick={() => handleOffsetSegments(0.1)} 
-                className="hover:bg-neutral-800 p-1 transition-colors text-neutral-400 hover:text-white"
+                className="hover:bg-neutral-800 p-1 transition-colors text-neutral-400 hover:text-white outline-none focus:outline-none"
                 title="Shift all subtitles 100ms later"
               >
                 <ChevronRight className="w-3 h-3" />
