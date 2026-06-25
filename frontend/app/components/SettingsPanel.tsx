@@ -38,6 +38,45 @@ interface SettingsPanelProps {
   setSubtitleStyle: React.Dispatch<React.SetStateAction<SubtitleStyle>>;
 }
 
+interface ColorPickerFieldProps {
+  label: string;
+  colorKey: keyof SubtitleStyle;
+  enabledKey?: keyof SubtitleStyle;
+  subtitleStyle: SubtitleStyle;
+  updateStyle: (key: keyof SubtitleStyle, value: any) => void;
+}
+
+const ColorPickerField = ({ label, colorKey, enabledKey, subtitleStyle, updateStyle }: ColorPickerFieldProps) => (
+  <div className="flex items-center justify-between">
+    <div className="flex items-center gap-2">
+      {enabledKey && (
+        <Switch 
+          checked={subtitleStyle[enabledKey] as boolean} 
+          onCheckedChange={(val) => updateStyle(enabledKey, val)} 
+        />
+      )}
+      <Label className="text-neutral-300">{label}</Label>
+    </div>
+    <Popover>
+      <PopoverTrigger asChild>
+        <div className="w-8 h-8 rounded border border-neutral-700 cursor-pointer shadow-sm" style={{ backgroundColor: subtitleStyle[colorKey] as string }} />
+      </PopoverTrigger>
+      <PopoverContent className="w-auto p-3 bg-neutral-900 border-neutral-800 shadow-xl" side="left">
+        <HexColorPicker color={subtitleStyle[colorKey] as string} onChange={(val) => updateStyle(colorKey, val)} />
+        <div className="mt-3 flex items-center gap-2">
+          <span className="text-neutral-400 text-xs font-mono">#</span>
+          <input 
+            type="text" 
+            value={(subtitleStyle[colorKey] as string).replace('#', '')}
+            onChange={(e) => updateStyle(colorKey, `#${e.target.value}`)}
+            className="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-sm font-mono text-neutral-200 w-full"
+          />
+        </div>
+      </PopoverContent>
+    </Popover>
+  </div>
+);
+
 export function SettingsPanel({
   file,
   setFile,
@@ -67,37 +106,6 @@ export function SettingsPanel({
   const updateStyle = (key: keyof SubtitleStyle, value: any) => {
     setSubtitleStyle(prev => ({ ...prev, [key]: value }));
   };
-
-  const ColorPickerField = ({ label, colorKey, enabledKey }: { label: string, colorKey: keyof SubtitleStyle, enabledKey?: keyof SubtitleStyle }) => (
-    <div className="flex items-center justify-between">
-      <div className="flex items-center gap-2">
-        {enabledKey && (
-          <Switch 
-            checked={subtitleStyle[enabledKey] as boolean} 
-            onCheckedChange={(val) => updateStyle(enabledKey, val)} 
-          />
-        )}
-        <Label className="text-neutral-300">{label}</Label>
-      </div>
-      <Popover>
-        <PopoverTrigger asChild>
-          <div className="w-8 h-8 rounded border border-neutral-700 cursor-pointer shadow-sm" style={{ backgroundColor: subtitleStyle[colorKey] as string }} />
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-3 bg-neutral-900 border-neutral-800 shadow-xl" side="left">
-          <HexColorPicker color={subtitleStyle[colorKey] as string} onChange={(val) => updateStyle(colorKey, val)} />
-          <div className="mt-3 flex items-center gap-2">
-            <span className="text-neutral-400 text-xs font-mono">#</span>
-            <input 
-              type="text" 
-              value={(subtitleStyle[colorKey] as string).replace('#', '')}
-              onChange={(e) => updateStyle(colorKey, `#${e.target.value}`)}
-              className="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-sm font-mono text-neutral-200 w-full"
-            />
-          </div>
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
 
   const renderModelOption = (val: string, label: string) => {
     const isDownloaded = downloadedModels[val];
@@ -360,12 +368,12 @@ export function SettingsPanel({
                 />
               </div>
 
-              <ColorPickerField label="Text Color" colorKey="textColor" />
+              <ColorPickerField label="Text Color" colorKey="textColor" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
             </div>
 
             <div className="space-y-4 pt-4 border-t border-neutral-800">
               <h3 className="font-semibold text-neutral-200">Stroke / Outline</h3>
-              <ColorPickerField label="Enable Stroke" colorKey="strokeColor" enabledKey="strokeEnabled" />
+              <ColorPickerField label="Enable Stroke" colorKey="strokeColor" enabledKey="strokeEnabled" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
               <div className={`space-y-3 transition-opacity ${subtitleStyle.strokeEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
                 <div className="flex justify-between">
                   <Label className="text-neutral-400 text-xs">Stroke Width</Label>
@@ -381,7 +389,7 @@ export function SettingsPanel({
 
             <div className="space-y-4 pt-4 border-t border-neutral-800">
               <h3 className="font-semibold text-neutral-200">Shadow</h3>
-              <ColorPickerField label="Enable Shadow" colorKey="shadowColor" enabledKey="shadowEnabled" />
+              <ColorPickerField label="Enable Shadow" colorKey="shadowColor" enabledKey="shadowEnabled" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
               <div className={`space-y-4 transition-opacity ${subtitleStyle.shadowEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
                 <div className="space-y-3">
                   <div className="flex justify-between">
@@ -392,6 +400,17 @@ export function SettingsPanel({
                     value={[subtitleStyle.shadowBlur]} 
                     min={0} max={50} step={1}
                     onValueChange={([v]) => updateStyle("shadowBlur", v)} 
+                  />
+                </div>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <Label className="text-neutral-400 text-xs">X Offset</Label>
+                    <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.shadowOffsetX}px</span>
+                  </div>
+                  <Slider 
+                    value={[subtitleStyle.shadowOffsetX]} 
+                    min={-20} max={20} step={1}
+                    onValueChange={([v]) => updateStyle("shadowOffsetX", v)} 
                   />
                 </div>
                 <div className="space-y-3">
@@ -410,7 +429,7 @@ export function SettingsPanel({
 
             <div className="space-y-4 pt-4 border-t border-neutral-800">
               <h3 className="font-semibold text-neutral-200">Background Highlight</h3>
-              <ColorPickerField label="Enable Background" colorKey="backgroundColor" enabledKey="backgroundEnabled" />
+              <ColorPickerField label="Enable Background" colorKey="backgroundColor" enabledKey="backgroundEnabled" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
               <div className={`space-y-3 transition-opacity ${subtitleStyle.backgroundEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
                 <div className="flex justify-between">
                   <Label className="text-neutral-400 text-xs">Opacity</Label>

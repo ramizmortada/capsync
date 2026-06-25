@@ -67,28 +67,55 @@ export function LivePreview({
                 return `rgba(${r}, ${g}, ${b}, ${opacity / 100})`;
               };
 
-              const dynamicStyle: React.CSSProperties = {
-                fontFamily: subtitleStyle.fontFamily,
-                fontWeight: subtitleStyle.fontWeight,
-                fontSize: `${subtitleStyle.fontSize}px`,
-                color: subtitleStyle.textColor,
-                textAlign: 'center',
-                lineHeight: '1.2',
-                WebkitTextStroke: subtitleStyle.strokeEnabled ? `${subtitleStyle.strokeWidth}px ${subtitleStyle.strokeColor}` : undefined,
-                textShadow: subtitleStyle.shadowEnabled 
-                  ? `${subtitleStyle.shadowOffsetX}px ${subtitleStyle.shadowOffsetY}px ${subtitleStyle.shadowBlur}px ${subtitleStyle.shadowColor}`
-                  : undefined,
+              const wrapperStyle: React.CSSProperties = {
                 backgroundColor: subtitleStyle.backgroundEnabled ? hexToRgba(subtitleStyle.backgroundColor, subtitleStyle.backgroundOpacity) : 'transparent',
                 padding: subtitleStyle.backgroundEnabled ? '8px 16px' : '0',
                 borderRadius: subtitleStyle.backgroundEnabled ? '8px' : '0',
+                display: 'inline-block',
+                maxWidth: '100%',
+              };
+
+              const textContainerStyle: React.CSSProperties = {
+                fontFamily: subtitleStyle.fontFamily,
+                fontWeight: subtitleStyle.fontWeight,
+                fontSize: `${subtitleStyle.fontSize}px`,
+                textAlign: 'center',
+                lineHeight: '1.2',
+                position: 'relative',
+                display: 'inline-block',
+              };
+
+              // The stroke layer (drawn double thick, under the text)
+              const strokeLayerStyle: React.CSSProperties = {
+                position: 'absolute',
+                left: 0, top: 0, right: 0, bottom: 0,
+                color: subtitleStyle.textColor,
+                WebkitTextStroke: subtitleStyle.strokeEnabled ? `${subtitleStyle.strokeWidth * 2}px ${subtitleStyle.strokeColor}` : undefined,
+                WebkitTextFillColor: subtitleStyle.textColor,
+                textShadow: subtitleStyle.shadowEnabled 
+                  ? `${subtitleStyle.shadowOffsetX}px ${subtitleStyle.shadowOffsetY}px ${subtitleStyle.shadowBlur}px ${subtitleStyle.shadowColor}`
+                  : undefined,
+                zIndex: 0,
+                pointerEvents: 'none',
+              };
+
+              // The front fill layer (no stroke, sits exactly on top)
+              const fillLayerStyle: React.CSSProperties = {
+                position: 'relative',
+                color: subtitleStyle.textColor,
+                zIndex: 1,
               };
 
               return (
-                <div 
-                  className="inline-block transition-all duration-75 text-center whitespace-pre-wrap max-w-full"
-                  style={dynamicStyle}
-                >
-                  {activeSegment.text.trim()}
+                <div style={wrapperStyle} className="transition-all duration-75">
+                  <div style={textContainerStyle} className="whitespace-pre-wrap">
+                    <div style={strokeLayerStyle} aria-hidden="true">
+                      {activeSegment.text.trim()}
+                    </div>
+                    <div style={fillLayerStyle}>
+                      {activeSegment.text.trim()}
+                    </div>
+                  </div>
                 </div>
               );
             })()}

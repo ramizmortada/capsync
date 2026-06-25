@@ -67,10 +67,10 @@ export default function WhisperXApp() {
     fontWeight: "800",
     fontSize: 48,
     textColor: "#ffffff",
-    strokeEnabled: true,
+    strokeEnabled: false,
     strokeColor: "#000000",
     strokeWidth: 4,
-    shadowEnabled: true,
+    shadowEnabled: false,
     shadowColor: "#000000",
     shadowBlur: 10,
     shadowOffsetX: 0,
@@ -116,6 +116,7 @@ export default function WhisperXApp() {
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const [isProjectLoaded, setIsProjectLoaded] = useState(false);
+  const [isStyleLoaded, setIsStyleLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Load project from IndexedDB
@@ -138,6 +139,19 @@ export default function WhisperXApp() {
     loadProject();
   }, []);
 
+  // Load subtitle style from localStorage
+  useEffect(() => {
+    const savedStyle = localStorage.getItem("capsync_subtitle_style");
+    if (savedStyle) {
+      try {
+        setSubtitleStyle(JSON.parse(savedStyle));
+      } catch (err) {
+        console.error("Failed to load subtitle style from localStorage", err);
+      }
+    }
+    setIsStyleLoaded(true);
+  }, []);
+
   // Save project to IndexedDB
   useEffect(() => {
     if (isProjectLoaded) {
@@ -148,6 +162,13 @@ export default function WhisperXApp() {
       }
     }
   }, [isProjectLoaded, file, status, result, editableSegments]);
+
+  // Save subtitle style to localStorage
+  useEffect(() => {
+    if (isStyleLoaded) {
+      localStorage.setItem("capsync_subtitle_style", JSON.stringify(subtitleStyle));
+    }
+  }, [isStyleLoaded, subtitleStyle]);
 
   // Load settings from local storage
   useEffect(() => {
