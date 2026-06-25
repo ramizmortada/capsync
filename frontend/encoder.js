@@ -1,0 +1,7 @@
+const right = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'><g stroke='black' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'><path d='M3 5v14'/><path d='M21 12H7'/><path d='m15 18 6-6-6-6'/></g><g stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M3 5v14'/><path d='M21 12H7'/><path d='m15 18 6-6-6-6'/></g></svg>`;
+const left = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'><g stroke='black' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'><path d='m9 6-6 6 6 6'/><path d='M3 12h14'/><path d='M21 19V5'/></g><g stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m9 6-6 6 6 6'/><path d='M3 12h14'/><path d='M21 19V5'/></g></svg>`;
+const both = `<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none'><g stroke='black' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'><path d='m18 8 4 4-4 4'/><path d='M2 12h20'/><path d='m6 8-4 4 4 4'/></g><g stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m18 8 4 4-4 4'/><path d='M2 12h20'/><path d='m6 8-4 4 4 4'/></g></svg>`;
+
+console.log("RIGHT:", "data:image/svg+xml;base64," + Buffer.from(right).toString('base64'));
+console.log("LEFT:", "data:image/svg+xml;base64," + Buffer.from(left).toString('base64'));
+console.log("BOTH:", "data:image/svg+xml;base64," + Buffer.from(both).toString('base64'));
