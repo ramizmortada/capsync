@@ -148,6 +148,7 @@ export function SubtitleEditor({
             const isActive = currentTime >= segment.start && currentTime < segment.end;
             const isSelected = selectedIndexes.includes(index);
             const isFirstSelected = isMergeVisible && Math.min(...selectedIndexes) === index;
+            const canSplit = segment.text.trim().split(/\s+/).filter(Boolean).length >= 2;
             
             return (
               <div key={index} className="relative group">
@@ -186,13 +187,15 @@ export function SubtitleEditor({
                       </div>
                       <div className="flex items-center gap-1">
                         {/* Individual Split Button */}
-                        <button 
-                          onClick={() => handleDuplicateSegment(index)}
-                          className="text-neutral-600 hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-blue-500/10"
-                          title="Split Segment in Half"
-                        >
-                          <SquareSplitHorizontal className="w-3 h-3" />
-                        </button>
+                        {canSplit && (
+                          <button 
+                            onClick={() => handleDuplicateSegment(index)}
+                            className="text-neutral-600 hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-blue-500/10"
+                            title="Split Segment in Half"
+                          >
+                            <SquareSplitHorizontal className="w-3 h-3" />
+                          </button>
+                        )}
                         
                         {/* Individual Delete Button */}
                         <button 
