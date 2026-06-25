@@ -57,9 +57,6 @@ export default function WhisperXApp() {
 
   useEffect(() => {
     checkModelsStatus();
-    // Re-check periodically
-    const interval = setInterval(checkModelsStatus, 10000);
-    return () => clearInterval(interval);
   }, []);
 
   // Poll for download progress if downloading model
