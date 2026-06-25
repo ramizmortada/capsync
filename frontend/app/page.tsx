@@ -31,6 +31,12 @@ export interface SubtitleStyle {
   backgroundEnabled: boolean;
   backgroundColor: string;
   backgroundOpacity: number;
+  highlightColor: string;
+  alignment: 'left' | 'center' | 'right';
+  positionY: number;
+  animationStyle: 'none' | 'color' | 'box' | 'scale' | 'karaoke';
+  highlightBackgroundColor: string;
+  scaleFactor: number;
 }
 
 export type DragTarget = { type: 'start' | 'end' | 'both', index: number } | 'start' | 'end';
@@ -65,22 +71,28 @@ export default function WhisperXApp() {
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>({
     fontFamily: "Inter",
     fontWeight: "800",
-    fontSize: 48,
+    fontSize: 5.0, // 5% of video height
     textColor: "#ffffff",
     strokeEnabled: false,
     strokeColor: "#000000",
-    strokeWidth: 4,
+    strokeWidth: 0.4, // 0.4% of video height
     shadowEnabled: false,
     shadowColor: "#000000",
-    shadowBlur: 10,
+    shadowBlur: 1.0, // 1% of video height
     shadowOffsetX: 0,
-    shadowOffsetY: 4,
+    shadowOffsetY: 0.4, // 0.4% of video height
     backgroundEnabled: false,
     backgroundColor: "#000000",
     backgroundOpacity: 50,
+    highlightColor: "#ffff00",
+    alignment: 'center',
+    positionY: 10,
+    animationStyle: 'color',
+    highlightBackgroundColor: "#ff0000",
+    scaleFactor: 1.2,
   });
 
-  const [status, setStatus] = useState<"idle" | "uploading" | "downloading_model" | "transcribing" | "done" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "uploading" | "downloading_model" | "transcribing" | "burning" | "done" | "error">("idle");
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -92,6 +104,7 @@ export default function WhisperXApp() {
   const [mediaUrl, setMediaUrl] = useState<string>("");
   const [currentTime, setCurrentTime] = useState(0);
   const [mediaDuration, setMediaDuration] = useState<number>(0);
+  const [videoDimensions, setVideoDimensions] = useState<{width: number, height: number}>({width: 1920, height: 1080});
   const [draggingBoundary, setDraggingBoundary] = useState<DragTarget | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   
@@ -144,7 +157,15 @@ export default function WhisperXApp() {
     const savedStyle = localStorage.getItem("capsync_subtitle_style");
     if (savedStyle) {
       try {
-        setSubtitleStyle(JSON.parse(savedStyle));
+        const parsed = JSON.parse(savedStyle);
+        // Migration logic: convert old pixel values (> 15) to percentages (assuming 1080p base for old values)
+        if (parsed.fontSize > 15) parsed.fontSize = parseFloat((parsed.fontSize / 1080 * 100).toFixed(1));
+        if (parsed.strokeWidth > 2) parsed.strokeWidth = parseFloat((parsed.strokeWidth / 1080 * 100).toFixed(2));
+        if (parsed.shadowBlur > 2) parsed.shadowBlur = parseFloat((parsed.shadowBlur / 1080 * 100).toFixed(1));
+        if (Math.abs(parsed.shadowOffsetX) > 2) parsed.shadowOffsetX = parseFloat((parsed.shadowOffsetX / 1080 * 100).toFixed(2));
+        if (Math.abs(parsed.shadowOffsetY) > 2) parsed.shadowOffsetY = parseFloat((parsed.shadowOffsetY / 1080 * 100).toFixed(2));
+        
+        setSubtitleStyle(prev => ({ ...prev, ...parsed }));
       } catch (err) {
         console.error("Failed to load subtitle style from localStorage", err);
       }
@@ -336,6 +357,50 @@ export default function WhisperXApp() {
     }
     setStatus("idle");
     setProgress(0);
+  };
+
+  const handleExportVideo = async () => {
+    if (!file || editableSegments.length === 0) return;
+
+    setStatus("burning");
+    setProgress(10);
+    setErrorMessage("");
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("segments", JSON.stringify(editableSegments));
+    formData.append("style", JSON.stringify(subtitleStyle));
+    formData.append("videoWidth", videoDimensions.width.toString());
+    formData.append("videoHeight", videoDimensions.height.toString());
+
+    try {
+      const response = await fetch("http://localhost:8000/api/burn", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to burn subtitles.");
+      }
+
+      // Handle the blob response
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `captioned_${file.name}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      
+      setStatus("done");
+      setProgress(100);
+    } catch (err: any) {
+      console.error(err);
+      setErrorMessage(err.message || "An unknown error occurred during burning.");
+      setStatus("done"); // revert to done to allow retry
+    }
   };
 
   const handleResegment = () => {
@@ -766,6 +831,7 @@ export default function WhisperXApp() {
               clearProject={clearProject}
               subtitleStyle={subtitleStyle}
               setSubtitleStyle={setSubtitleStyle}
+              handleExportVideo={handleExportVideo}
             />
           </div>
 
@@ -797,6 +863,7 @@ export default function WhisperXApp() {
               mediaRef={mediaRef}
               setCurrentTime={setCurrentTime}
               setMediaDuration={setMediaDuration}
+              setVideoDimensions={setVideoDimensions}
               editableSegments={editableSegments}
               currentTime={currentTime}
               subtitleStyle={subtitleStyle}

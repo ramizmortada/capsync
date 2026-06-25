@@ -15,7 +15,7 @@ import type { SubtitleStyle } from "../page";
 interface SettingsPanelProps {
   file: File | null;
   setFile: (file: File | null) => void;
-  status: "idle" | "uploading" | "downloading_model" | "transcribing" | "done" | "error";
+  status: "idle" | "uploading" | "downloading_model" | "transcribing" | "burning" | "done" | "error";
   progress: number;
   modelSize: string;
   setModelSize: (s: string) => void;
@@ -36,6 +36,7 @@ interface SettingsPanelProps {
   clearProject: () => void;
   subtitleStyle: SubtitleStyle;
   setSubtitleStyle: React.Dispatch<React.SetStateAction<SubtitleStyle>>;
+  handleExportVideo: () => void;
 }
 
 interface ColorPickerFieldProps {
@@ -59,15 +60,15 @@ const ColorPickerField = ({ label, colorKey, enabledKey, subtitleStyle, updateSt
     </div>
     <Popover>
       <PopoverTrigger asChild>
-        <div className="w-8 h-8 rounded border border-neutral-700 cursor-pointer shadow-sm" style={{ backgroundColor: subtitleStyle[colorKey] as string }} />
+        <div className="w-8 h-8 rounded border border-neutral-700 cursor-pointer shadow-sm" style={{ backgroundColor: (subtitleStyle[colorKey] as string) || '#ffffff' }} />
       </PopoverTrigger>
       <PopoverContent className="w-auto p-3 bg-neutral-900 border-neutral-800 shadow-xl" side="left">
-        <HexColorPicker color={subtitleStyle[colorKey] as string} onChange={(val) => updateStyle(colorKey, val)} />
+        <HexColorPicker color={(subtitleStyle[colorKey] as string) || '#ffffff'} onChange={(val) => updateStyle(colorKey, val)} />
         <div className="mt-3 flex items-center gap-2">
           <span className="text-neutral-400 text-xs font-mono">#</span>
           <input 
             type="text" 
-            value={(subtitleStyle[colorKey] as string).replace('#', '')}
+            value={((subtitleStyle[colorKey] as string) || '#ffffff').replace('#', '')}
             onChange={(e) => updateStyle(colorKey, `#${e.target.value}`)}
             className="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-sm font-mono text-neutral-200 w-full"
           />
@@ -101,6 +102,7 @@ export function SettingsPanel({
   clearProject,
   subtitleStyle,
   setSubtitleStyle,
+  handleExportVideo,
 }: SettingsPanelProps) {
   
   const updateStyle = (key: keyof SubtitleStyle, value: any) => {
@@ -127,9 +129,10 @@ export function SettingsPanel({
     <Card className="w-full h-full flex flex-col bg-neutral-900 border-neutral-800 shadow-2xl p-0 gap-0">
       <Tabs defaultValue="settings" className="flex-1 flex flex-col h-full overflow-hidden">
         <div className="p-4 border-b border-neutral-800 shrink-0">
-          <TabsList className="grid w-full grid-cols-2 bg-neutral-950">
+          <TabsList className="grid w-full grid-cols-3 bg-neutral-950">
             <TabsTrigger value="settings">Settings</TabsTrigger>
             <TabsTrigger value="style">Style</TabsTrigger>
+            <TabsTrigger value="animation">Animation</TabsTrigger>
           </TabsList>
         </div>
         
@@ -240,20 +243,21 @@ export function SettingsPanel({
         )}
 
         {/* Progress Area */}
-        {(status === "uploading" || status === "transcribing" || status === "downloading_model") && (
+        {(status === "uploading" || status === "transcribing" || status === "downloading_model" || status === "burning") && (
           <div className="space-y-3 pt-4 border-t border-neutral-800">
             <div className="flex justify-between text-sm font-medium">
               <span className="text-neutral-300 flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
                 {status === "uploading" ? "Uploading Media..." : 
                  status === "downloading_model" ? `Downloading Model (${progress}%)` : 
+                 status === "burning" ? "Burning Subtitles into Video..." :
                  transcriptionMessage}
               </span>
-              {status !== "transcribing" && (
+              {status !== "transcribing" && status !== "burning" && (
                 <span className="text-neutral-400 font-mono">{progress}%</span>
               )}
             </div>
-            {status === "transcribing" ? (
+            {status === "transcribing" || status === "burning" ? (
               <div className="w-full h-2 bg-neutral-800 rounded-full overflow-hidden relative">
                 <div className="absolute inset-0 bg-primary/20" />
                 <div className="h-full bg-primary w-1/2 rounded-full animate-[progress_1.5s_ease-in-out_infinite] absolute left-0" />
@@ -264,28 +268,28 @@ export function SettingsPanel({
           </div>
         )}
 
-            {/* Actions for Settings Tab */}
-            <div className="pt-4 flex gap-3">
-              {(status === "uploading" || status === "transcribing" || status === "downloading_model") && (
+            <div className="pt-4 flex flex-col gap-3">
+              {(status === "uploading" || status === "transcribing" || status === "downloading_model" || status === "burning") && (
                 <div className="flex items-center gap-3 w-full bg-neutral-800/50 border border-neutral-700 p-3 rounded-lg">
                   <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-                  <p className="text-sm font-medium text-blue-400 flex-1">{transcriptionMessage}</p>
-                  <Button variant="ghost" size="sm" onClick={cancelTranscription} className="text-neutral-400 hover:text-white">Cancel</Button>
+                  <p className="text-sm font-medium text-blue-400 flex-1">
+                    {status === "burning" ? "Burning Subtitles..." : transcriptionMessage}
+                  </p>
+                  {status !== "burning" && (
+                    <Button variant="ghost" size="sm" onClick={cancelTranscription} className="text-neutral-400 hover:text-white">Cancel</Button>
+                  )}
                 </div>
               )}
               
+              <div className="flex gap-3">
               {(status === "idle" || status === "error") && (
                 <>
                   <Button 
                     onClick={handleTranscribe} 
-                    disabled={!file || status === "uploading" || status === "transcribing" || status === "downloading_model"} 
+                    disabled={!file} 
                     className="flex-1 font-semibold shadow-md transition-all duration-300"
                   >
-                    {status === "uploading" || status === "transcribing" || status === "downloading_model" ? (
-                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing Media</>
-                    ) : (
-                      "Start Transcription"
-                    )}
+                    Start Transcription
                   </Button>
                   {file && status === "idle" && (
                     <Button onClick={clearProject} variant="outline" className="font-semibold shadow-md transition-all duration-300 border-red-900/30 text-red-400 hover:text-red-300 hover:bg-red-950/30">
@@ -317,11 +321,51 @@ export function SettingsPanel({
                   </Button>
                 </>
               )}
+              </div>
+              
+              {status === "done" && file?.type.startsWith('video') && (
+                <Button 
+                  onClick={handleExportVideo} 
+                  className="w-full font-bold shadow-md transition-all duration-300 bg-blue-600 hover:bg-blue-500 text-white mt-2"
+                >
+                  Export Burnt Video
+                </Button>
+              )}
             </div>
           </TabsContent>
 
           <TabsContent value="style" className="p-6 m-0 space-y-8">
             <div className="space-y-4">
+              <h3 className="font-semibold text-neutral-200">Layout & Position</h3>
+              
+              <div className="space-y-2">
+                <Label className="text-neutral-300">Text Alignment</Label>
+                <Select value={subtitleStyle.alignment || 'center'} onValueChange={(v) => updateStyle("alignment", v)}>
+                  <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
+                    <SelectItem value="left">Left</SelectItem>
+                    <SelectItem value="center">Center</SelectItem>
+                    <SelectItem value="right">Right</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex justify-between">
+                  <Label className="text-neutral-300">Vertical Position</Label>
+                  <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.positionY ?? 10}% from bottom</span>
+                </div>
+                <Slider 
+                  value={[subtitleStyle.positionY ?? 10]} 
+                  min={0} max={100} step={1}
+                  onValueChange={([v]) => updateStyle("positionY", v)} 
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-4 border-t border-neutral-800">
               <h3 className="font-semibold text-neutral-200">Typography</h3>
               
               <div className="space-y-2">
@@ -359,11 +403,11 @@ export function SettingsPanel({
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <Label className="text-neutral-300">Font Size</Label>
-                  <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.fontSize}px</span>
+                  <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.fontSize).toFixed(1)}%</span>
                 </div>
                 <Slider 
                   value={[subtitleStyle.fontSize]} 
-                  min={12} max={120} step={1}
+                  min={1} max={15} step={0.1}
                   onValueChange={([v]) => updateStyle("fontSize", v)} 
                 />
               </div>
@@ -377,11 +421,11 @@ export function SettingsPanel({
               <div className={`space-y-3 transition-opacity ${subtitleStyle.strokeEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
                 <div className="flex justify-between">
                   <Label className="text-neutral-400 text-xs">Stroke Width</Label>
-                  <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.strokeWidth}px</span>
+                  <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.strokeWidth).toFixed(2)}%</span>
                 </div>
                 <Slider 
                   value={[subtitleStyle.strokeWidth]} 
-                  min={0} max={20} step={0.5}
+                  min={0} max={2} step={0.05}
                   onValueChange={([v]) => updateStyle("strokeWidth", v)} 
                 />
               </div>
@@ -394,33 +438,33 @@ export function SettingsPanel({
                 <div className="space-y-3">
                   <div className="flex justify-between">
                     <Label className="text-neutral-400 text-xs">Blur Radius</Label>
-                    <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.shadowBlur}px</span>
+                    <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.shadowBlur).toFixed(1)}%</span>
                   </div>
                   <Slider 
                     value={[subtitleStyle.shadowBlur]} 
-                    min={0} max={50} step={1}
+                    min={0} max={5} step={0.1}
                     onValueChange={([v]) => updateStyle("shadowBlur", v)} 
                   />
                 </div>
                 <div className="space-y-3">
                   <div className="flex justify-between">
                     <Label className="text-neutral-400 text-xs">X Offset</Label>
-                    <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.shadowOffsetX}px</span>
+                    <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.shadowOffsetX).toFixed(2)}%</span>
                   </div>
                   <Slider 
                     value={[subtitleStyle.shadowOffsetX]} 
-                    min={-20} max={20} step={1}
+                    min={-2} max={2} step={0.05}
                     onValueChange={([v]) => updateStyle("shadowOffsetX", v)} 
                   />
                 </div>
                 <div className="space-y-3">
                   <div className="flex justify-between">
                     <Label className="text-neutral-400 text-xs">Y Offset</Label>
-                    <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.shadowOffsetY}px</span>
+                    <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.shadowOffsetY).toFixed(2)}%</span>
                   </div>
                   <Slider 
                     value={[subtitleStyle.shadowOffsetY]} 
-                    min={-20} max={20} step={1}
+                    min={-2} max={2} step={0.05}
                     onValueChange={([v]) => updateStyle("shadowOffsetY", v)} 
                   />
                 </div>
@@ -443,6 +487,54 @@ export function SettingsPanel({
               </div>
             </div>
 
+          </TabsContent>
+
+          <TabsContent value="animation" className="p-6 m-0 space-y-8">
+            <div className="space-y-4">
+              <h3 className="font-semibold text-neutral-200">Word Animation Preset</h3>
+              <p className="text-sm text-neutral-500">Choose how active words are highlighted during playback.</p>
+              
+              <Select value={subtitleStyle.animationStyle || 'color'} onValueChange={(v) => updateStyle("animationStyle", v)}>
+                <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
+                  <SelectItem value="none">None (Static Text)</SelectItem>
+                  <SelectItem value="color">Color Pop</SelectItem>
+                  <SelectItem value="box">Box Highlight</SelectItem>
+                  <SelectItem value="scale">Scale Pop</SelectItem>
+                  <SelectItem value="karaoke">Karaoke Reveal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {subtitleStyle.animationStyle !== 'none' && (
+              <div className="space-y-4 pt-4 border-t border-neutral-800">
+                <h3 className="font-semibold text-neutral-200">Preset Settings</h3>
+                
+                {(subtitleStyle.animationStyle === 'color' || subtitleStyle.animationStyle === 'karaoke' || subtitleStyle.animationStyle === 'scale') && (
+                  <ColorPickerField label="Highlight Text Color" colorKey="highlightColor" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
+                )}
+
+                {subtitleStyle.animationStyle === 'box' && (
+                  <ColorPickerField label="Highlight Box Color" colorKey="highlightBackgroundColor" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
+                )}
+
+                {subtitleStyle.animationStyle === 'scale' && (
+                  <div className="space-y-3 pt-2">
+                    <div className="flex justify-between">
+                      <Label className="text-neutral-300">Scale Factor</Label>
+                      <span className="text-xs text-neutral-500 font-mono">x{subtitleStyle.scaleFactor ?? 1.2}</span>
+                    </div>
+                    <Slider 
+                      value={[subtitleStyle.scaleFactor ?? 1.2]} 
+                      min={1.0} max={2.0} step={0.05}
+                      onValueChange={([v]) => updateStyle("scaleFactor", v)} 
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </TabsContent>
         </div>
       </Tabs>

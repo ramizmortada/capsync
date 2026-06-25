@@ -6,9 +6,16 @@ import tempfile
 # Use HuggingFace mirror to bypass regional blocks
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
-from fastapi import FastAPI, File, UploadFile, Form
+from fastapi import FastAPI, File, UploadFile, Form, BackgroundTasks
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import whisperx
+import gc
+import torch
+import subprocess
+import uuid
+from ass_generator import generate_ass
+from font_manager import get_fonts_dir
 import gc
 import torch
 
@@ -218,6 +225,119 @@ def transcribe(
         }
     except Exception as e:
         print(f"ERROR OCCURRED: {e}", flush=True)
+        return {"error": str(e)}
+
+def cleanup_files(*file_paths):
+    for f in file_paths:
+        try:
+            if os.path.exists(f):
+                os.remove(f)
+        except Exception as e:
+            print(f"Error cleaning up file {f}: {e}")
+
+@app.post("/api/burn")
+async def burn_subtitles(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    segments: str = Form(...),
+    style: str = Form(...),
+    videoWidth: int = Form(...),
+    videoHeight: int = Form(...)
+):
+    try:
+        print(f"Received burn request for {file.filename} ({videoWidth}x{videoHeight})", flush=True)
+        
+        parsed_segments = json.loads(segments)
+        parsed_style = json.loads(style)
+        
+        # 1. Save uploaded video to temp
+        unique_id = str(uuid.uuid4())
+        ext = os.path.splitext(file.filename)[1]
+        if not ext:
+            ext = ".mp4"
+            
+        temp_video_path = os.path.join(tempfile.gettempdir(), f"input_{unique_id}{ext}")
+        temp_ass_path = os.path.join(tempfile.gettempdir(), f"subs_{unique_id}.ass")
+        output_video_path = os.path.join(tempfile.gettempdir(), f"output_{unique_id}.mp4")
+        
+        with open(temp_video_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+            
+        # 2. Generate ASS content
+        ass_content = generate_ass(parsed_segments, parsed_style, videoWidth, videoHeight)
+        
+        # 3. Save ASS file
+        # We need to escape backslashes for FFmpeg on Windows if we pass absolute paths directly in the filter
+        # It's easier to just pass the ASS path with forward slashes
+        temp_ass_path_fwd = temp_ass_path.replace("\\", "/")
+        # Also FFmpeg expects colon after drive letter to be escaped or just use relative paths.
+        # A trick on Windows for FFmpeg ASS filter is to write ASS in same directory and use relative path,
+        # but since we use tempdir, we can just format it properly:
+        # e.g., C:/Users/name/AppData/Local/Temp/subs.ass -> C\\:/Users/name/...
+        ffmpeg_ass_path = temp_ass_path_fwd.replace(":", "\\:")
+
+        with open(temp_ass_path, "w", encoding="utf-8") as f:
+            f.write(ass_content)
+            
+        print(f"Generated ASS file at {temp_ass_path}", flush=True)
+        
+        # 4. Run FFmpeg with fontsdir so libass can find Google Fonts
+        fonts_dir = get_fonts_dir()
+        # Flatten all font files into the fontsdir search path
+        # libass needs a flat directory, so we copy/symlink fonts to a temp flat dir
+        temp_fonts_dir = os.path.join(tempfile.gettempdir(), f"fonts_{unique_id}")
+        os.makedirs(temp_fonts_dir, exist_ok=True)
+        for family_name in os.listdir(fonts_dir):
+            family_path = os.path.join(fonts_dir, family_name)
+            if os.path.isdir(family_path):
+                for font_file in os.listdir(family_path):
+                    if font_file.endswith(('.ttf', '.otf')):
+                        src = os.path.join(family_path, font_file)
+                        dst = os.path.join(temp_fonts_dir, font_file)
+                        if not os.path.exists(dst):
+                            shutil.copy2(src, dst)
+        
+        ffmpeg_fonts_path = temp_fonts_dir.replace("\\", "/").replace(":", "\\:")
+        
+        # We encode to h264 for maximum compatibility
+        command = [
+            "ffmpeg",
+            "-y",
+            "-i", temp_video_path,
+            "-vf", f"ass='{ffmpeg_ass_path}':fontsdir='{ffmpeg_fonts_path}'",
+            "-c:v", "libx264",
+            "-preset", "fast",
+            "-crf", "18",
+            "-c:a", "copy",
+            output_video_path
+        ]
+        
+        print(f"Running FFmpeg: {' '.join(command)}", flush=True)
+        process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        
+        if process.returncode != 0:
+            print(f"FFmpeg failed: {process.stderr}", flush=True)
+            raise Exception(f"FFmpeg processing failed: {process.stderr}")
+            
+        print("FFmpeg processing complete.", flush=True)
+        
+        # Schedule cleanup after response is sent
+        def cleanup_fonts_dir(d):
+            import shutil as _shutil
+            try:
+                _shutil.rmtree(d, ignore_errors=True)
+            except: pass
+        background_tasks.add_task(cleanup_files, temp_video_path, temp_ass_path, output_video_path)
+        background_tasks.add_task(cleanup_fonts_dir, temp_fonts_dir)
+        
+        return FileResponse(
+            output_video_path, 
+            media_type="video/mp4",
+            filename=f"captioned_{file.filename}"
+        )
+        
+    except Exception as e:
+        print(f"BURN ERROR: {e}", flush=True)
         return {"error": str(e)}
 
 if __name__ == "__main__":
