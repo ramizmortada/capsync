@@ -239,6 +239,28 @@ export default function WhisperXApp() {
     setEditableSegments(newSegments);
   };
 
+  const handleMergeSegments = (index1: number, index2: number) => {
+    const minIndex = Math.min(index1, index2);
+    const maxIndex = Math.max(index1, index2);
+    
+    const newSegments = [...editableSegments];
+    const first = newSegments[minIndex];
+    const second = newSegments[maxIndex];
+    
+    newSegments[minIndex] = {
+      ...first,
+      end: second.end,
+      text: `${first.text.trim()} ${second.text.trim()}`.trim()
+    };
+    
+    newSegments.splice(maxIndex, 1);
+    setEditableSegments(newSegments);
+  };
+
+  const handleDeleteSegments = (indices: number[]) => {
+    setEditableSegments((prev) => prev.filter((_, i) => !indices.includes(i)));
+  };
+
   const togglePlay = () => {
     if (!mediaRef.current) return;
     if (mediaRef.current.paused) {
@@ -502,6 +524,8 @@ export default function WhisperXApp() {
                 editableSegments={editableSegments}
                 currentTime={currentTime}
                 handleSegmentChange={handleSegmentChange}
+                handleMergeSegments={handleMergeSegments}
+                handleDeleteSegments={handleDeleteSegments}
                 clearProject={clearProject}
                 downloadSRT={downloadSRT}
               />

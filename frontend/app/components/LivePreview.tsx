@@ -3,7 +3,7 @@ import { Video, FileAudio } from "lucide-react";
 interface LivePreviewProps {
   file: File | null;
   mediaUrl: string;
-  mediaRef: React.RefObject<HTMLMediaElement>;
+  mediaRef: React.RefObject<HTMLMediaElement | null>;
   setCurrentTime: (time: number) => void;
   setMediaDuration: (duration: number) => void;
   editableSegments: any[];

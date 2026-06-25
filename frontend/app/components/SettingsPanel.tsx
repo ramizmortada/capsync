@@ -19,7 +19,7 @@ interface SettingsPanelProps {
   handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   handleDragOver: (e: React.DragEvent<HTMLDivElement>) => void;
   handleDrop: (e: React.DragEvent<HTMLDivElement>) => void;
-  fileInputRef: React.RefObject<HTMLInputElement>;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
   handleTranscribe: () => void;
   downloadedModels: Record<string, boolean>;
 }

@@ -1,4 +1,5 @@
-import { Edit3, Trash2, Download } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Edit3, Trash2, Download, Combine, Check, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -8,6 +9,8 @@ interface SubtitleEditorProps {
   editableSegments: any[];
   currentTime: number;
   handleSegmentChange: (index: number, newText: string) => void;
+  handleMergeSegments: (index1: number, index2: number) => void;
+  handleDeleteSegments: (indices: number[]) => void;
   clearProject: () => void;
   downloadSRT: () => void;
 }
@@ -16,53 +19,145 @@ export function SubtitleEditor({
   editableSegments,
   currentTime,
   handleSegmentChange,
+  handleMergeSegments,
+  handleDeleteSegments,
   clearProject,
   downloadSRT
 }: SubtitleEditorProps) {
+  const [selectedIndexes, setSelectedIndexes] = useState<number[]>([]);
+
+  // Toggle selection manually when clicking the checkbox
+  const toggleSelection = (index: number) => {
+    setSelectedIndexes(prev => 
+      prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
+    );
+  };
+
+  const onMergeClick = () => {
+    if (selectedIndexes.length === 2) {
+      handleMergeSegments(selectedIndexes[0], selectedIndexes[1]);
+      setSelectedIndexes([]);
+    }
+  };
+
+  const onBulkDeleteClick = () => {
+    handleDeleteSegments(selectedIndexes);
+    setSelectedIndexes([]);
+  };
+
+  // Only show merge button if exactly 2 are selected and they are adjacent
+  const isMergeVisible = selectedIndexes.length === 2 && Math.abs(selectedIndexes[0] - selectedIndexes[1]) === 1;
+
   return (
     <Card className="h-full flex flex-col bg-neutral-900 border-neutral-800 shadow-2xl overflow-hidden p-0 gap-0">
       <div className="p-4 border-b border-neutral-800 bg-neutral-900 flex justify-between items-center shrink-0">
         <div className="flex items-center gap-2 text-sm font-medium text-neutral-300">
           <Edit3 className="w-4 h-4 text-blue-400" /> Subtitle Editor
+          {selectedIndexes.length > 0 && (
+            <span className="ml-2 text-xs font-semibold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
+              {selectedIndexes.length} selected
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={clearProject} variant="destructive" size="sm" className="gap-2 h-8 text-xs px-3 shadow-lg">
-            <Trash2 className="w-3 h-3" /> Clear
-          </Button>
-          <Button onClick={downloadSRT} size="sm" variant="secondary" className="gap-2 h-8 text-xs px-3 shadow-lg">
-            <Download className="w-3 h-3" /> Download .SRT
-          </Button>
+          {selectedIndexes.length > 0 ? (
+            <Button onClick={onBulkDeleteClick} variant="destructive" size="sm" className="gap-2 h-8 text-xs px-3 shadow-lg bg-red-600 hover:bg-red-500">
+              <Trash2 className="w-3 h-3" /> Delete Selected
+            </Button>
+          ) : (
+            <>
+              <Button onClick={clearProject} variant="destructive" size="sm" className="gap-2 h-8 text-xs px-3 shadow-lg">
+                <Trash2 className="w-3 h-3" /> Clear
+              </Button>
+              <Button onClick={downloadSRT} size="sm" variant="secondary" className="gap-2 h-8 text-xs px-3 shadow-lg">
+                <Download className="w-3 h-3" /> Download .SRT
+              </Button>
+            </>
+          )}
         </div>
       </div>
       
       <ScrollArea className="flex-1 h-0 bg-neutral-950/50">
-        <div className="p-0">
+        <div className="p-0 relative">
           {editableSegments.map((segment, index) => {
             const isActive = currentTime >= segment.start && currentTime <= segment.end;
+            const isSelected = selectedIndexes.includes(index);
+            const isFirstSelected = isMergeVisible && Math.min(...selectedIndexes) === index;
+            
             return (
-              <div 
-                key={index} 
-                id={`subtitle-segment-${index}`}
-                className={`px-4 py-3 border-b transition-all duration-200 ${
-                  isActive 
-                    ? 'bg-blue-500/10 border-l-2 border-l-blue-500 border-b-blue-500/20' 
-                    : 'bg-neutral-900 border-neutral-800 hover:bg-neutral-800/50 border-l-2 border-l-transparent'
-                }`}
-              >
-                <div className="text-xs text-neutral-500 mb-2 flex justify-between font-mono tracking-wider">
-                  <span>{formatUiTime(segment.start)}</span>
-                  <span>{formatUiTime(segment.end)}</span>
+              <div key={index} className="relative group">
+                <div 
+                  id={`subtitle-segment-${index}`}
+                  className={`flex gap-3 px-4 py-3 border-b transition-all duration-200 ${
+                    isSelected
+                      ? 'bg-emerald-500/10 border-l-2 border-l-emerald-500 border-b-emerald-500/30'
+                      : isActive 
+                        ? 'bg-blue-500/10 border-l-2 border-l-blue-500 border-b-blue-500/20' 
+                        : 'bg-neutral-900 border-neutral-800 hover:bg-neutral-800/50 border-l-2 border-l-transparent'
+                  }`}
+                >
+                  {/* Left Column: Checkbox */}
+                  <div className="pt-1">
+                    <button 
+                      onClick={() => toggleSelection(index)}
+                      className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                        isSelected 
+                          ? 'bg-emerald-500 border-emerald-500 text-neutral-950' 
+                          : 'border-neutral-600 hover:border-neutral-400 text-transparent'
+                      }`}
+                    >
+                      <Check className="w-3 h-3" strokeWidth={3} />
+                    </button>
+                  </div>
+
+                  {/* Right Column: Content */}
+                  <div className="flex-1 flex flex-col">
+                    {/* Top Row: Timestamps and Delete Action */}
+                    <div className="text-xs text-neutral-500 mb-2 flex justify-between items-center font-mono tracking-wider">
+                      <div className="flex items-center gap-2">
+                        <span className="text-neutral-400">{formatUiTime(segment.start)}</span>
+                        <ArrowRight className="w-3 h-3 text-neutral-600" />
+                        <span className="text-neutral-400">{formatUiTime(segment.end)}</span>
+                      </div>
+                      
+                      {/* Individual Delete Button */}
+                      <button 
+                        onClick={() => {
+                          handleDeleteSegments([index]);
+                          setSelectedIndexes([]);
+                        }}
+                        className="text-neutral-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-red-500/10"
+                        title="Delete Segment"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    <textarea
+                      value={segment.text}
+                      onChange={(e) => handleSegmentChange(index, e.target.value)}
+                      className="w-full bg-transparent text-sm text-neutral-200 outline-none resize-none font-medium placeholder-neutral-700"
+                      rows={1}
+                      onInput={(e) => {
+                        e.currentTarget.style.height = 'auto';
+                        e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
+                      }}
+                    />
+                  </div>
                 </div>
-                <textarea
-                  value={segment.text}
-                  onChange={(e) => handleSegmentChange(index, e.target.value)}
-                  className="w-full bg-transparent text-sm text-neutral-200 outline-none resize-none font-medium placeholder-neutral-700"
-                  rows={1}
-                  onInput={(e) => {
-                    e.currentTarget.style.height = 'auto';
-                    e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
-                  }}
-                />
+
+                {/* Inline Merge Button appearing between the two selected adjacent segments */}
+                {isFirstSelected && (
+                  <div className="absolute left-0 right-0 bottom-0 flex justify-center z-10 pointer-events-none translate-y-[50%]">
+                    <Button 
+                      size="sm" 
+                      onClick={onMergeClick}
+                      className="h-8 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-900/50 rounded-full px-4 pointer-events-auto border-2 border-neutral-950"
+                    >
+                      <Combine className="w-4 h-4" /> Merge Segments
+                    </Button>
+                  </div>
+                )}
               </div>
             );
           })}

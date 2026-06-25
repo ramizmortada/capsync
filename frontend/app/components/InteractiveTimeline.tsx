@@ -10,9 +10,9 @@ interface InteractiveTimelineProps {
   mediaDuration: number;
   zoomLevel: number;
   setZoomLevel: (zoom: number) => void;
-  timelineRef: React.RefObject<HTMLDivElement>;
+  timelineRef: React.RefObject<HTMLDivElement | null>;
   isHoveringTimeline: React.MutableRefObject<boolean>;
-  trackRef: React.RefObject<HTMLDivElement>;
+  trackRef: React.RefObject<HTMLDivElement | null>;
   handleTrackClick: (e: React.PointerEvent<HTMLDivElement>) => void;
   editableSegments: any[];
   setDraggingBoundary: (val: number | 'start' | 'end' | null) => void;
