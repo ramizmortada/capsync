@@ -36,6 +36,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   setDraggingBoundary,
   draggingBoundary,
 }: InteractiveTimelineProps) {
+  const duration = Math.max(mediaDuration, 0.1);
   return (
     <Card className="bg-neutral-900 border-neutral-800 shadow-2xl p-2">
       {/* Timeline Header (Controls) */}
@@ -140,7 +141,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
             <div
               onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('start'); }}
               className="absolute top-0 bottom-0 w-4 -ml-2 cursor-w-resize z-10 flex justify-center items-center group"
-              style={{ left: `${(editableSegments[0].start / mediaDuration) * 100}%` }}
+              style={{ left: `${(editableSegments[0].start / duration) * 100}%` }}
             >
               <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'start' ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
             </div>
@@ -156,7 +157,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
               if (isTouching) {
                 // Render 3-zone cluster at segment.end
-                const leftPercent = (segment.end / mediaDuration) * 100;
+                const leftPercent = (segment.end / duration) * 100;
                 const isDraggingThisBoth = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'both' && draggingBoundary.index === index;
                 
                 elements.push(
@@ -192,7 +193,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                     key={`end-${index}`}
                     onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'end', index }); }}
                     className="absolute top-0 bottom-0 w-4 -ml-2 cursor-e-resize z-10 flex justify-center items-center group"
-                    style={{ left: `${(segment.end / mediaDuration) * 100}%` }}
+                    style={{ left: `${(segment.end / duration) * 100}%` }}
                   >
                     <div className={`w-0.5 h-full transition-colors ${isDraggingEnd ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
                   </div>
@@ -204,7 +205,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                     key={`start-${index + 1}`}
                     onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'start', index: index + 1 }); }}
                     className="absolute top-0 bottom-0 w-4 -ml-2 cursor-w-resize z-10 flex justify-center items-center group"
-                    style={{ left: `${(nextSegment.start / mediaDuration) * 100}%` }}
+                    style={{ left: `${(nextSegment.start / duration) * 100}%` }}
                   >
                     <div className={`w-0.5 h-full transition-colors ${isDraggingStart ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
                   </div>
@@ -217,7 +218,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                   key="last-end"
                   onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('end'); }}
                   className="absolute top-0 bottom-0 w-4 -ml-2 cursor-e-resize z-10 flex justify-center items-center group"
-                  style={{ left: `${(segment.end / mediaDuration) * 100}%` }}
+                  style={{ left: `${(segment.end / duration) * 100}%` }}
                 >
                   <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'end' ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
                 </div>
@@ -230,7 +231,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           {/* Playhead */}
           <div 
             className="absolute top-0 bottom-0 w-0.5 bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-20 pointer-events-none"
-            style={{ left: `${(currentTime / mediaDuration) * 100}%` }}
+            style={{ left: `${(currentTime / duration) * 100}%` }}
           >
             <div className="absolute -top-1 -left-1.5 w-3.5 h-3.5 bg-red-500 rounded-full" />
           </div>

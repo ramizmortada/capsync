@@ -26,6 +26,7 @@ interface SettingsPanelProps {
   handleResegment: () => void;
   result: any;
   transcriptionMessage: string;
+  clearProject: () => void;
 }
 
 export function SettingsPanel({
@@ -49,6 +50,7 @@ export function SettingsPanel({
   handleResegment,
   result,
   transcriptionMessage,
+  clearProject,
 }: SettingsPanelProps) {
   
   const renderModelOption = (val: string, label: string) => {
@@ -138,7 +140,7 @@ export function SettingsPanel({
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
-            className="mt-6 border-2 border-dashed border-neutral-700 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-neutral-800/50 transition-all duration-300 group"
+            className="mt-6 border border-neutral-700 bg-neutral-800/30 border-dashed rounded-xl p-4 flex items-center justify-between cursor-pointer hover:border-blue-500 hover:bg-neutral-800/50 transition-all duration-300 group"
           >
             <input 
               type="file" 
@@ -147,22 +149,29 @@ export function SettingsPanel({
               className="hidden" 
               accept="video/*,audio/*"
             />
-            <Upload className="w-10 h-10 mx-auto text-neutral-500 group-hover:text-blue-400 transition-colors mb-4" />
-            <h3 className="text-sm font-medium text-neutral-200">Drag & Drop Media</h3>
+            <div className="flex items-center gap-3 truncate w-full">
+              <div className="p-2 bg-neutral-800/50 rounded-lg border border-neutral-700 shrink-0 group-hover:scale-105 transition-transform">
+                <Upload className="w-5 h-5 text-neutral-400 group-hover:text-blue-400 transition-colors" />
+              </div>
+              <div className="min-w-0 flex-1 text-left">
+                <p className="text-sm font-medium text-neutral-300 group-hover:text-blue-400 transition-colors truncate">Drag & Drop media here</p>
+                <p className="text-xs text-neutral-500 mt-0.5 truncate">or click to browse files</p>
+              </div>
+            </div>
           </div>
         ) : (
-          <div className="border border-neutral-700 bg-neutral-800/50 rounded-xl p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3 truncate">
-              <div className="p-2 bg-blue-500/10 rounded-lg">
+          <div className="mt-6 border border-neutral-700 bg-neutral-800/50 rounded-xl p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3 truncate w-full">
+              <div className="p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg shrink-0">
                 {file.type.startsWith('video') ? (
                   <FileVideo className="w-5 h-5 text-blue-400" />
                 ) : (
                   <FileAudio className="w-5 h-5 text-blue-400" />
                 )}
               </div>
-              <div className="truncate">
+              <div className="truncate flex-1">
                 <p className="font-medium text-sm text-neutral-200 truncate">{file.name}</p>
-                <p className="text-xs text-neutral-500">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+                <p className="text-xs text-neutral-500 mt-0.5 truncate">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
               </div>
             </div>
             
@@ -230,19 +239,29 @@ export function SettingsPanel({
             >
               Re-transcribe
             </Button>
+            <Button onClick={clearProject} variant="outline" className="font-semibold shadow-md transition-all duration-300 border-red-900/30 text-red-400 hover:text-red-300 hover:bg-red-950/30">
+              Start Over
+            </Button>
           </>
         ) : (
-          <Button 
-            onClick={handleTranscribe} 
-            disabled={!file || status === "uploading" || status === "transcribing" || status === "downloading_model"} 
-            className="flex-1 font-semibold shadow-md transition-all duration-300"
-          >
-            {status === "uploading" || status === "transcribing" || status === "downloading_model" ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing Media</>
-            ) : (
-              "Start Transcription"
+          <>
+            <Button 
+              onClick={handleTranscribe} 
+              disabled={!file || status === "uploading" || status === "transcribing" || status === "downloading_model"} 
+              className="flex-1 font-semibold shadow-md transition-all duration-300"
+            >
+              {status === "uploading" || status === "transcribing" || status === "downloading_model" ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing Media</>
+              ) : (
+                "Start Transcription"
+              )}
+            </Button>
+            {file && status === "idle" && (
+              <Button onClick={clearProject} variant="outline" className="font-semibold shadow-md transition-all duration-300 border-red-900/30 text-red-400 hover:text-red-300 hover:bg-red-950/30">
+                Start Over
+              </Button>
             )}
-          </Button>
+          </>
         )}
       </CardFooter>
     </Card>

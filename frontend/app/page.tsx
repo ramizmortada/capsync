@@ -537,7 +537,12 @@ export default function WhisperXApp() {
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
       if (timelineRef.current) {
-        if (e.deltaY !== 0) {
+        if (e.altKey) {
+          e.preventDefault();
+          // Zoom in or out based on scroll direction
+          const zoomDelta = e.deltaY < 0 ? 0.5 : -0.5;
+          setZoomLevel((prev) => Math.max(1, Math.min(10, prev + zoomDelta)));
+        } else if (e.deltaY !== 0) {
           e.preventDefault();
           timelineRef.current.scrollLeft += e.deltaY;
         }
@@ -610,14 +615,14 @@ export default function WhisperXApp() {
   };
 
   return (
-    <div className={`bg-neutral-950 text-neutral-50 font-sans selection:bg-blue-500/30 ${status === "done" && result ? "h-screen flex flex-col overflow-hidden p-4" : "min-h-screen p-4 md:p-8"}`}>
-      <div className={`mx-auto w-full transition-all duration-500 ease-in-out flex flex-col ${status === "done" && result ? "flex-1 overflow-hidden max-w-[100rem]" : "max-w-2xl"}`}>
+    <div className="bg-neutral-950 text-neutral-50 font-sans selection:bg-blue-500/30 h-screen flex flex-col overflow-hidden p-4">
+      <div className="mx-auto w-full transition-all duration-500 ease-in-out flex flex-col flex-1 overflow-hidden max-w-[100rem]">
         
         {/* Main 3 columns grid */}
-        <div className={status === "done" && result ? "flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 overflow-hidden mb-4" : "w-full"}>
+        <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 overflow-hidden mb-4">
         
           {/* Left Column (Controls & Settings) */}
-          <div className={status === "done" && result ? "lg:col-span-3 space-y-6" : "w-full"}>
+          <div className="lg:col-span-3 space-y-6">
             <SettingsPanel 
               file={file}
               setFile={setFile}
@@ -639,29 +644,27 @@ export default function WhisperXApp() {
               handleResegment={handleResegment}
               result={result}
               transcriptionMessage={transcriptionMessage}
+              clearProject={clearProject}
             />
           </div>
 
           {/* Middle Column (Editable Subtitles List) */}
-          {status === "done" && result && (
-            <div className="lg:col-span-4 animate-in fade-in slide-in-from-bottom-4 duration-700 h-full overflow-hidden">
-              <SubtitleEditor 
-                editableSegments={editableSegments}
-                currentTime={currentTime}
-                handleSegmentChange={handleSegmentChange}
-                handleMergeSegments={handleMergeSegments}
-                handleDeleteSegments={handleDeleteSegments}
-                clearProject={clearProject}
-                downloadSRT={downloadSRT}
-              />
-            </div>
-          )}
+          <div className="lg:col-span-4 animate-in fade-in slide-in-from-bottom-4 duration-700 h-full overflow-hidden">
+            <SubtitleEditor 
+              editableSegments={editableSegments}
+              currentTime={currentTime}
+              handleSegmentChange={handleSegmentChange}
+              handleMergeSegments={handleMergeSegments}
+              handleDeleteSegments={handleDeleteSegments}
+              clearProject={clearProject}
+              downloadSRT={downloadSRT}
+            />
+          </div>
 
           {/* Right Column (Live Preview Studio) */}
-          {status === "done" && result && (
-            <div className="lg:col-span-5 animate-in fade-in slide-in-from-right-8 duration-700 h-full overflow-hidden">
-              <LivePreview 
-                file={file}
+          <div className="lg:col-span-5 animate-in fade-in slide-in-from-right-8 duration-700 h-full overflow-hidden">
+            <LivePreview 
+              file={file}
                 mediaUrl={mediaUrl}
                 mediaRef={mediaRef}
                 setCurrentTime={setCurrentTime}
@@ -670,30 +673,27 @@ export default function WhisperXApp() {
                 currentTime={currentTime}
               />
             </div>
-          )}
 
         </div>
 
         {/* Bottom Column (Interactive Timeline Editor) */}
-        {status === "done" && result && mediaDuration > 0 && (
-          <div className="shrink-0 animate-in fade-in slide-in-from-bottom-8 duration-700">
-            <InteractiveTimeline 
-              isPlaying={isPlaying}
-              togglePlay={togglePlay}
-              currentTime={currentTime}
-              mediaDuration={mediaDuration}
-              zoomLevel={zoomLevel}
-              setZoomLevel={setZoomLevel}
-              timelineRef={timelineRef}
-              isHoveringTimeline={isHoveringTimeline}
-              trackRef={trackRef}
-              handleTrackClick={handleTrackClick}
+        <div className="shrink-0 animate-in fade-in slide-in-from-bottom-8 duration-700">
+          <InteractiveTimeline 
+            isPlaying={isPlaying}
+            togglePlay={togglePlay}
+            currentTime={currentTime}
+            mediaDuration={mediaDuration}
+            zoomLevel={zoomLevel}
+            setZoomLevel={setZoomLevel}
+            timelineRef={timelineRef}
+            isHoveringTimeline={isHoveringTimeline}
+            trackRef={trackRef}
+            handleTrackClick={handleTrackClick}
               editableSegments={editableSegments}
               setDraggingBoundary={setDraggingBoundary}
               draggingBoundary={draggingBoundary}
             />
           </div>
-        )}
 
       </div>
     </div>
