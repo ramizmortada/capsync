@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Edit3, Trash2, Download, Combine, Check, ArrowRight, SquareSplitHorizontal } from "lucide-react";
+import { Edit3, Trash2, Download, Combine, Check, ArrowRight, SquareSplitHorizontal, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -33,6 +33,7 @@ interface SubtitleEditorProps {
   handleMergeSegments: (index1: number, index2: number) => void;
   handleDeleteSegments: (indices: number[]) => void;
   handleDuplicateSegment: (index: number) => void;
+  handleOffsetSegments: (seconds: number) => void;
   onSeek: (time: number) => void;
   clearProject: () => void;
   downloadSRT: () => void;
@@ -45,6 +46,7 @@ export function SubtitleEditor({
   handleMergeSegments,
   handleDeleteSegments,
   handleDuplicateSegment,
+  handleOffsetSegments,
   onSeek,
   clearProject,
   downloadSRT
@@ -104,6 +106,27 @@ export function SubtitleEditor({
             <span className="ml-2 text-xs font-semibold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
               {selectedIndexes.length} selected
             </span>
+          )}
+          {selectedIndexes.length === 0 && (
+            <div className="flex items-center gap-0.5 ml-3 bg-neutral-950 border border-neutral-800 rounded-md overflow-hidden">
+              <button 
+                onClick={() => handleOffsetSegments(-0.1)} 
+                className="hover:bg-neutral-800 p-1 transition-colors text-neutral-400 hover:text-white"
+                title="Shift all subtitles 100ms earlier"
+              >
+                <ChevronLeft className="w-3 h-3" />
+              </button>
+              <div className="flex items-center gap-1 px-1.5 text-[10px] uppercase font-bold text-neutral-500 select-none">
+                <Clock className="w-3 h-3" /> Offset
+              </div>
+              <button 
+                onClick={() => handleOffsetSegments(0.1)} 
+                className="hover:bg-neutral-800 p-1 transition-colors text-neutral-400 hover:text-white"
+                title="Shift all subtitles 100ms later"
+              >
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            </div>
           )}
         </div>
         <div className="flex items-center gap-2">

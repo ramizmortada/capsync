@@ -426,6 +426,26 @@ export default function WhisperXApp() {
     });
   };
 
+  const handleOffsetSegments = (offsetSeconds: number) => {
+    updateSegments((prev) => {
+      return prev.map(segment => {
+        // Also offset the underlying words array if it exists
+        const offsetWords = segment.words ? segment.words.map((w: any) => ({
+          ...w,
+          start: Math.max(0, (w.start || 0) + offsetSeconds),
+          end: Math.max(0, (w.end || 0) + offsetSeconds)
+        })) : segment.words;
+
+        return {
+          ...segment,
+          start: Math.max(0, segment.start + offsetSeconds),
+          end: Math.max(0, segment.end + offsetSeconds),
+          words: offsetWords
+        };
+      });
+    });
+  };
+
   const togglePlay = () => {
     if (!mediaRef.current) return;
     if (mediaRef.current.paused) {
@@ -752,6 +772,7 @@ export default function WhisperXApp() {
               handleDeleteSegments={handleDeleteSegments}
               handleDuplicateSegment={handleDuplicateSegment}
               handleMergeSegments={handleMergeSegments}
+              handleOffsetSegments={handleOffsetSegments}
               onSeek={(time) => {
                 if (mediaRef.current) {
                   mediaRef.current.currentTime = time;
