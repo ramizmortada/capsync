@@ -137,7 +137,7 @@ def transcribe(
         os.remove(temp_path)
         
         final_segments = result["segments"]
-        if max_words > 0 or max_words == -1:
+        if max_words != 0:
             print(f"Chunking segments (mode: {max_words})...", flush=True)
             chunked_segments = []
             for segment in final_segments:
@@ -146,8 +146,10 @@ def transcribe(
                     chunked_segments.append(segment)
                     continue
                 
-                if max_words == -1:
+                if max_words < 0:
                     # Smart Mode: Dynamic Pauses
+                    soft_limit = 6 if max_words == -1 else 3
+                    
                     chunk = []
                     for i, w in enumerate(words):
                         chunk.append(w)
@@ -159,7 +161,7 @@ def transcribe(
                         if i < len(words) - 1 and "end" in w and "start" in words[i+1]:
                             pause_after = words[i+1]["start"] - w["end"]
                             
-                        is_too_long = len(chunk) >= 6 # Soft limit of 6 words
+                        is_too_long = len(chunk) >= soft_limit
                         
                         if has_punctuation or pause_after > 0.3 or is_too_long or i == len(words) - 1:
                             valid_words = [cw for cw in chunk if "start" in cw and "end" in cw]
