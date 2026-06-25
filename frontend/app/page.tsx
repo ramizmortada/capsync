@@ -1,12 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Upload, FileAudio, FileVideo, Settings, Download, CheckCircle2, Loader2, CloudDownload, Video, Edit3 } from "lucide-react";
+import { Upload, FileAudio, FileVideo, Settings, Download, CheckCircle2, Loader2, CloudDownload, Video, Edit3, ZoomIn, ZoomOut, Trash2 } from "lucide-react";
+import { get, set, del } from "idb-keyval";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 // Helper function for SRT time formatting
 const formatSrtTime = (seconds: number) => {
@@ -45,10 +47,49 @@ export default function WhisperXApp() {
 
   const [mediaUrl, setMediaUrl] = useState<string>("");
   const [currentTime, setCurrentTime] = useState(0);
+  const [mediaDuration, setMediaDuration] = useState<number>(0);
+  const [draggingBoundary, setDraggingBoundary] = useState<number | 'start' | 'end' | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const mediaRef = useRef<HTMLMediaElement>(null);
 
-  // Load from local storage
+  const [isProjectLoaded, setIsProjectLoaded] = useState(false);
+
+  // Load project from IndexedDB
+  useEffect(() => {
+    async function loadProject() {
+      try {
+        const savedProject = await get('capsync_project');
+        if (savedProject) {
+          if (savedProject.file) setFile(savedProject.file);
+          if (savedProject.status) setStatus(savedProject.status);
+          if (savedProject.result) setResult(savedProject.result);
+          if (savedProject.editableSegments) setEditableSegments(savedProject.editableSegments);
+        }
+      } catch (err) {
+        console.error("Failed to load project from IDB", err);
+      } finally {
+        setIsProjectLoaded(true);
+      }
+    }
+    loadProject();
+  }, []);
+
+  // Save project to IndexedDB
+  useEffect(() => {
+    if (isProjectLoaded) {
+      if (file === null && status === 'idle') {
+        del('capsync_project').catch(console.error);
+      } else {
+        set('capsync_project', { file, status, result, editableSegments }).catch(console.error);
+      }
+    }
+  }, [isProjectLoaded, file, status, result, editableSegments]);
+
+  // Load settings from local storage
   useEffect(() => {
     const savedModel = localStorage.getItem("whisperx_model");
     const savedLang = localStorage.getItem("whisperx_lang");
@@ -193,6 +234,150 @@ export default function WhisperXApp() {
     setEditableSegments(newSegments);
   };
 
+  // Smooth Auto-scroll timeline when playing
+  const isHoveringTimeline = useRef(false);
+
+  useEffect(() => {
+    let animationFrameId: number;
+
+    const smoothSync = () => {
+      if (!mediaRef.current || mediaDuration <= 0) return;
+
+      // 1. Smoothly center the horizontal Timeline Track
+      if (timelineRef.current && trackRef.current && !isHoveringTimeline.current && draggingBoundary === null) {
+        const trackWidth = trackRef.current.scrollWidth;
+        const playheadX = (mediaRef.current.currentTime / mediaDuration) * trackWidth;
+        const container = timelineRef.current;
+        const clientWidth = container.clientWidth;
+        
+        container.scrollLeft = playheadX - clientWidth / 2;
+      }
+
+      if (!mediaRef.current.paused) {
+        animationFrameId = requestAnimationFrame(smoothSync);
+      }
+    };
+
+    const videoEl = mediaRef.current;
+    if (!videoEl) return;
+
+    const onPlay = () => {
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      animationFrameId = requestAnimationFrame(smoothSync);
+    };
+
+    videoEl.addEventListener('play', onPlay);
+    videoEl.addEventListener('playing', onPlay);
+    videoEl.addEventListener('seeked', () => {
+      if (!videoEl.paused) onPlay();
+    });
+
+    if (!videoEl.paused) {
+      onPlay();
+    }
+
+    return () => {
+      videoEl.removeEventListener('play', onPlay);
+      videoEl.removeEventListener('playing', onPlay);
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    };
+  }, [mediaDuration, draggingBoundary]);
+
+  // Auto-scroll the vertical Subtitle Editor list (runs on onTimeUpdate via currentTime dependency)
+  useEffect(() => {
+    if (!mediaRef.current || mediaRef.current.paused || mediaDuration <= 0) return;
+
+    const activeIndex = editableSegments.findIndex((s: any) => currentTime >= s.start && currentTime <= s.end);
+    if (activeIndex !== -1) {
+      const activeElement = document.getElementById(`subtitle-segment-${activeIndex}`);
+      if (activeElement) {
+        activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [currentTime, mediaDuration, editableSegments]);
+
+  const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Prevent triggering if clicking a draggable boundary
+    if ((e.target as HTMLElement).closest('.cursor-col-resize')) return;
+    
+    if (!trackRef.current || !mediaRef.current || mediaDuration <= 0) return;
+    const rect = trackRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const newTime = Math.max(0, Math.min((clickX / rect.width) * mediaDuration, mediaDuration));
+    
+    setCurrentTime(newTime);
+    mediaRef.current.currentTime = newTime;
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (draggingBoundary === null || !trackRef.current || mediaDuration <= 0) return;
+      
+      const rect = trackRef.current.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      let newTime = (clickX / rect.width) * mediaDuration;
+      
+      const newSegments = [...editableSegments];
+      
+      if (draggingBoundary === 'start') {
+        const nextEnd = newSegments[0].end;
+        newTime = Math.max(0, Math.min(newTime, nextEnd - 0.1));
+        newSegments[0] = { ...newSegments[0], start: newTime };
+      } else if (draggingBoundary === 'end') {
+        const prevStart = newSegments[newSegments.length - 1].start;
+        newTime = Math.max(prevStart + 0.1, Math.min(newTime, mediaDuration));
+        newSegments[newSegments.length - 1] = { ...newSegments[newSegments.length - 1], end: newTime };
+      } else {
+        const prevStart = newSegments[draggingBoundary].start;
+        const nextEnd = newSegments[draggingBoundary + 1].end;
+        newTime = Math.max(prevStart + 0.1, Math.min(newTime, nextEnd - 0.1));
+        newSegments[draggingBoundary] = { ...newSegments[draggingBoundary], end: newTime };
+        newSegments[draggingBoundary + 1] = { ...newSegments[draggingBoundary + 1], start: newTime };
+      }
+      
+      setEditableSegments(newSegments);
+    };
+
+    const handleMouseUp = () => {
+      if (draggingBoundary !== null) {
+        setDraggingBoundary(null);
+      }
+    };
+
+    if (draggingBoundary !== null) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [draggingBoundary, editableSegments, mediaDuration]);
+
+  // Horizontal mouse wheel scrolling for the timeline
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      if (timelineRef.current) {
+        if (e.deltaY !== 0) {
+          e.preventDefault();
+          timelineRef.current.scrollLeft += e.deltaY;
+        }
+      }
+    };
+
+    const el = timelineRef.current;
+    if (el) {
+      el.addEventListener('wheel', handleWheel, { passive: false });
+    }
+    
+    return () => {
+      if (el) {
+        el.removeEventListener('wheel', handleWheel);
+      }
+    };
+  }, [status, result, mediaDuration]);
+
   // Convert WhisperX segments to SRT format using editableSegments
   const generateSRT = () => {
     if (!editableSegments || editableSegments.length === 0) return "";
@@ -205,6 +390,15 @@ export default function WhisperXApp() {
     });
     
     return srtContent;
+  };
+
+  const clearProject = async () => {
+    await del('capsync_project');
+    setFile(null);
+    setStatus("idle");
+    setResult(null);
+    setEditableSegments([]);
+    setMediaUrl("");
   };
 
   const downloadSRT = () => {
@@ -237,8 +431,11 @@ export default function WhisperXApp() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-50 p-4 md:p-8 font-sans selection:bg-blue-500/30">
-      <div className={`mx-auto transition-all duration-500 ease-in-out ${status === "done" && result ? "max-w-[100rem] grid grid-cols-1 lg:grid-cols-12 gap-6" : "max-w-2xl"}`}>
+    <div className={`bg-neutral-950 text-neutral-50 font-sans selection:bg-blue-500/30 ${status === "done" && result ? "h-screen flex flex-col overflow-hidden p-4" : "min-h-screen p-4 md:p-8"}`}>
+      <div className={`mx-auto w-full transition-all duration-500 ease-in-out flex flex-col ${status === "done" && result ? "flex-1 overflow-hidden max-w-[100rem]" : "max-w-2xl"}`}>
+        
+        {/* Main 3 columns grid */}
+        <div className={status === "done" && result ? "flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 overflow-hidden mb-4" : "w-full"}>
         
         {/* Left Column (Controls & Settings) */}
         <div className={status === "done" && result ? "lg:col-span-3 space-y-6" : "w-full"}>
@@ -393,50 +590,62 @@ export default function WhisperXApp() {
 
         {/* Middle Column (Editable Subtitles List) */}
         {status === "done" && result && (
-          <div className="lg:col-span-4 animate-in fade-in slide-in-from-bottom-4 duration-700 lg:h-[calc(100vh-4rem)]">
-            <Card className="h-full flex flex-col bg-neutral-900 border-neutral-800 shadow-2xl overflow-hidden">
+          <div className="lg:col-span-4 animate-in fade-in slide-in-from-bottom-4 duration-700 h-full overflow-hidden">
+            <Card className="h-full flex flex-col bg-neutral-900 border-neutral-800 shadow-2xl overflow-hidden p-0 gap-0">
               <div className="p-4 border-b border-neutral-800 bg-neutral-900 flex justify-between items-center shrink-0">
                 <div className="flex items-center gap-2 text-sm font-medium text-neutral-300">
                   <Edit3 className="w-4 h-4 text-blue-400" /> Subtitle Editor
                 </div>
-                <Button onClick={downloadSRT} size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white gap-2 h-8 text-xs px-3 shadow-lg shadow-emerald-900/20">
-                  <Download className="w-3 h-3" /> Download .SRT
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button onClick={clearProject} variant="destructive" size="sm" className="gap-2 h-8 text-xs px-3 shadow-lg">
+                    <Trash2 className="w-3 h-3" /> Clear
+                  </Button>
+                  <Button onClick={downloadSRT} size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white gap-2 h-8 text-xs px-3 shadow-lg shadow-emerald-900/20">
+                    <Download className="w-3 h-3" /> Download .SRT
+                  </Button>
+                </div>
               </div>
               
-              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-neutral-950/50">
-                {editableSegments.map((segment, index) => {
-                  const isActive = currentTime >= segment.start && currentTime <= segment.end;
-                  return (
-                    <div 
-                      key={index} 
-                      className={`p-3 rounded-xl border transition-all duration-200 ${
-                        isActive 
-                          ? 'border-blue-500/50 bg-blue-500/10 shadow-[0_0_15px_rgba(59,130,246,0.1)]' 
-                          : 'border-neutral-800 bg-neutral-900 hover:border-neutral-700'
-                      }`}
-                    >
-                      <div className="text-xs text-neutral-500 mb-2 flex justify-between font-mono tracking-wider">
-                        <span>{formatUiTime(segment.start)}</span>
-                        <span>{formatUiTime(segment.end)}</span>
+              <ScrollArea className="flex-1 h-0 bg-neutral-950/50">
+                <div className="p-0">
+                  {editableSegments.map((segment, index) => {
+                    const isActive = currentTime >= segment.start && currentTime <= segment.end;
+                    return (
+                      <div 
+                        key={index} 
+                        id={`subtitle-segment-${index}`}
+                        className={`px-4 py-3 border-b transition-all duration-200 ${
+                          isActive 
+                            ? 'bg-blue-500/10 border-l-2 border-l-blue-500 border-b-blue-500/20' 
+                            : 'bg-neutral-900 border-neutral-800 hover:bg-neutral-800/50 border-l-2 border-l-transparent'
+                        }`}
+                      >
+                        <div className="text-xs text-neutral-500 mb-2 flex justify-between font-mono tracking-wider">
+                          <span>{formatUiTime(segment.start)}</span>
+                          <span>{formatUiTime(segment.end)}</span>
+                        </div>
+                        <textarea
+                          value={segment.text}
+                          onChange={(e) => handleSegmentChange(index, e.target.value)}
+                          className="w-full bg-transparent text-sm text-neutral-200 outline-none resize-none font-medium placeholder-neutral-700"
+                          rows={1}
+                          onInput={(e) => {
+                            e.currentTarget.style.height = 'auto';
+                            e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
+                          }}
+                        />
                       </div>
-                      <textarea
-                        value={segment.text}
-                        onChange={(e) => handleSegmentChange(index, e.target.value)}
-                        className="w-full bg-transparent text-sm text-neutral-200 outline-none resize-none font-medium placeholder-neutral-700"
-                        rows={2}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              </ScrollArea>
             </Card>
           </div>
         )}
 
         {/* Right Column (Live Preview Studio) */}
         {status === "done" && result && (
-          <div className="lg:col-span-5 animate-in fade-in slide-in-from-right-8 duration-700 lg:h-[calc(100vh-4rem)]">
+          <div className="lg:col-span-5 animate-in fade-in slide-in-from-right-8 duration-700 h-full overflow-hidden">
             <div className="h-full rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl flex flex-col">
               <div className="p-4 bg-neutral-900 border-b border-neutral-800 text-sm font-medium text-neutral-400 flex items-center gap-2 shrink-0">
                 <Video className="w-4 h-4 text-emerald-400" /> Live Preview Studio
@@ -445,18 +654,22 @@ export default function WhisperXApp() {
               <div className="bg-black flex-1 flex items-center justify-center relative min-h-[300px]">
                 {file?.type.startsWith('video') ? (
                   <video 
-                    src={mediaUrl} 
+                    ref={mediaRef as React.RefObject<HTMLVideoElement>}
+                    src={mediaUrl || undefined} 
                     controls 
                     className="absolute inset-0 w-full h-full object-contain"
                     onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                    onLoadedMetadata={(e) => setMediaDuration(e.currentTarget.duration)}
                   />
                 ) : (
                   <div className="w-full flex items-center justify-center p-8">
                     <audio 
-                      src={mediaUrl} 
+                      ref={mediaRef as React.RefObject<HTMLAudioElement>}
+                      src={mediaUrl || undefined} 
                       controls 
                       className="w-full max-w-md"
                       onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                      onLoadedMetadata={(e) => setMediaDuration(e.currentTarget.duration)}
                     />
                   </div>
                 )}
@@ -478,6 +691,173 @@ export default function WhisperXApp() {
                 })()}
               </div>
             </div>
+          </div>
+        )}
+
+        </div>
+
+        {/* Bottom Column (Interactive Timeline Editor) */}
+        {status === "done" && result && mediaDuration > 0 && (
+          <div className="shrink-0 animate-in fade-in slide-in-from-bottom-8 duration-700">
+            <Card className="bg-neutral-900 border-neutral-800 shadow-2xl p-2">
+              
+              {/* Zoom Controls */}
+              <div className="flex items-center justify-between px-2 mb-2 gap-4">
+                <div className="flex items-center gap-3 w-64 bg-neutral-950 px-3 py-1.5 rounded-lg border border-neutral-800">
+                  <ZoomOut className="w-4 h-4 text-neutral-500" />
+                  <input 
+                    type="range" 
+                    min="1" 
+                    max="10" 
+                    step="0.5" 
+                    value={zoomLevel} 
+                    onChange={(e) => setZoomLevel(parseFloat(e.target.value))}
+                    className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:rounded-full"
+                  />
+                  <ZoomIn className="w-4 h-4 text-neutral-500" />
+                </div>
+              </div>
+
+              {/* Scrollable Timeline Container */}
+              <div 
+                ref={timelineRef}
+                onMouseEnter={() => isHoveringTimeline.current = true}
+                onMouseLeave={() => isHoveringTimeline.current = false}
+                className="relative h-24 bg-neutral-950 rounded-xl overflow-x-auto overflow-y-hidden select-none [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-neutral-950 [&::-webkit-scrollbar-thumb]:bg-neutral-800 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-neutral-700 transition-colors"
+              >
+                {/* Scaled Inner Track */}
+                <div 
+                  ref={trackRef}
+                  className="relative h-full cursor-crosshair min-w-full"
+                  style={{ width: `${zoomLevel * 100}%` }}
+                  onPointerDown={handleTrackClick}
+                >
+                  {/* Time Ticks */}
+                  <div className="absolute inset-0 pointer-events-none opacity-20 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGgwLjV2NDBIMHoiIGZpbGw9IiNmZmYiLz48L3N2Zz4=')] bg-repeat-x" />
+
+                  {/* Dynamic Time Ruler */}
+                  {(() => {
+                    if (mediaDuration <= 0) return null;
+                    const targetTicks = 10 * zoomLevel;
+                    const idealInterval = mediaDuration / targetTicks;
+                    const intervals = [0.1, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
+                    let interval = intervals[intervals.length - 1];
+                    for (const inv of intervals) {
+                      if (inv >= idealInterval) {
+                        interval = inv;
+                        break;
+                      }
+                    }
+                    
+                    const ticks = [];
+                    for (let t = 0; t <= mediaDuration; t += interval) {
+                      ticks.push(t);
+                    }
+                    
+                    return (
+                      <div className="absolute top-0 left-0 right-0 h-4 border-b border-neutral-800 pointer-events-none">
+                        {ticks.map((t) => (
+                          <div 
+                            key={`tick-${t}`} 
+                            className="absolute top-0 h-full flex flex-col items-center border-l border-neutral-700"
+                            style={{ left: `${(t / mediaDuration) * 100}%` }}
+                          >
+                            <span className="text-[9px] text-neutral-500 absolute top-0 -translate-x-1/2 pt-0.5 px-1 bg-neutral-950">
+                              {formatUiTime(t)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Subtitle Blocks */}
+                  {editableSegments.map((segment, index) => {
+                    const left = (segment.start / mediaDuration) * 100;
+                    const width = ((segment.end - segment.start) / mediaDuration) * 100;
+                    const isActive = currentTime >= segment.start && currentTime <= segment.end;
+
+                    return (
+                      <div 
+                        key={`block-${index}`}
+                        className={`absolute top-4 bottom-4 rounded-md border-x flex items-center justify-start overflow-hidden transition-colors ${
+                          isActive 
+                            ? 'bg-blue-600/50 border-blue-400' 
+                            : 'bg-neutral-800/80 border-neutral-700 hover:bg-neutral-700/80'
+                        }`}
+                        style={{
+                          left: `${left}%`,
+                          width: `${width}%`
+                        }}
+                      >
+                        <span className="text-[10px] text-neutral-300 px-2 truncate">
+                          {segment.text}
+                        </span>
+                      </div>
+                    );
+                  })}
+
+                  {/* Draggable Boundaries */}
+                  
+                  {/* Start Boundary */}
+                  {editableSegments.length > 0 && (
+                    <div
+                      onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('start'); }}
+                      className="absolute top-0 bottom-0 w-4 -ml-2 cursor-col-resize z-10 flex justify-center items-center group"
+                      style={{ left: `${(editableSegments[0].start / mediaDuration) * 100}%` }}
+                    >
+                      <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'start' ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                    </div>
+                  )}
+
+                  {/* End Boundary */}
+                  {editableSegments.length > 0 && (
+                    <div
+                      onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('end'); }}
+                      className="absolute top-0 bottom-0 w-4 -ml-2 cursor-col-resize z-10 flex justify-center items-center group"
+                      style={{ left: `${(editableSegments[editableSegments.length - 1].end / mediaDuration) * 100}%` }}
+                    >
+                      <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'end' ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                    </div>
+                  )}
+
+                  {/* Shared Boundaries */}
+                  {editableSegments.map((segment, index) => {
+                    // The boundary is the END of the current segment
+                    if (index === editableSegments.length - 1) return null; // Last segment has no right boundary to drag
+                    
+                    const left = (segment.end / mediaDuration) * 100;
+                    
+                    return (
+                      <div
+                        key={`boundary-${index}`}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setDraggingBoundary(index);
+                        }}
+                        className="absolute top-0 bottom-0 w-4 -ml-2 cursor-col-resize z-10 flex justify-center items-center group"
+                        style={{ left: `${left}%` }}
+                      >
+                        {/* Visual indicator on hover/drag */}
+                        <div className={`w-0.5 h-full transition-colors ${
+                          draggingBoundary === index 
+                            ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' 
+                            : 'bg-neutral-600 group-hover:bg-emerald-400 group-hover:w-1'
+                        }`} />
+                      </div>
+                    );
+                  })}
+
+                  {/* Playhead */}
+                  <div 
+                    className="absolute top-0 bottom-0 w-0.5 bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-20 pointer-events-none"
+                    style={{ left: `${(currentTime / mediaDuration) * 100}%` }}
+                  >
+                    <div className="absolute -top-1 -left-1.5 w-3.5 h-3.5 bg-red-500 rounded-full" />
+                  </div>
+                </div>
+              </div>
+            </Card>
           </div>
         )}
 
