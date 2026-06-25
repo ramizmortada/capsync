@@ -57,7 +57,7 @@ export function LivePreview({
           {/* Subtitle Overlay (Inside Video) */}
           <div className="absolute bottom-12 left-0 right-0 px-8 flex justify-center pointer-events-none">
             {(() => {
-              const activeSegment = editableSegments.find((s: any) => currentTime >= s.start && currentTime <= s.end);
+              const activeSegment = editableSegments.find((s: any) => currentTime >= s.start && currentTime < s.end);
               if (!activeSegment) return null;
               
               const hexToRgba = (hex: string, opacity: number) => {

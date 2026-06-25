@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Edit3, Trash2, Download, Combine, Check, ArrowRight } from "lucide-react";
+import { Edit3, Trash2, Download, Combine, Check, ArrowRight, SquareSplitHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -32,6 +32,8 @@ interface SubtitleEditorProps {
   handleSegmentChange: (index: number, newText: string) => void;
   handleMergeSegments: (index1: number, index2: number) => void;
   handleDeleteSegments: (indices: number[]) => void;
+  handleDuplicateSegment: (index: number) => void;
+  onSeek: (time: number) => void;
   clearProject: () => void;
   downloadSRT: () => void;
 }
@@ -42,6 +44,8 @@ export function SubtitleEditor({
   handleSegmentChange,
   handleMergeSegments,
   handleDeleteSegments,
+  handleDuplicateSegment,
+  onSeek,
   clearProject,
   downloadSRT
 }: SubtitleEditorProps) {
@@ -108,14 +112,9 @@ export function SubtitleEditor({
               <Trash2 className="w-3 h-3" /> Delete Selected
             </Button>
           ) : (
-            <>
-              <Button onClick={clearProject} variant="destructive" size="sm" className="gap-2 h-8 text-xs px-3 shadow-lg">
-                <Trash2 className="w-3 h-3" /> Clear
-              </Button>
-              <Button onClick={downloadSRT} size="sm" variant="secondary" className="gap-2 h-8 text-xs px-3 shadow-lg">
-                <Download className="w-3 h-3" /> Download .SRT
-              </Button>
-            </>
+            <Button onClick={downloadSRT} size="sm" variant="secondary" className="gap-2 h-8 text-xs px-3 shadow-lg">
+              <Download className="w-3 h-3" /> Download .SRT
+            </Button>
           )}
         </div>
       </div>
@@ -123,7 +122,7 @@ export function SubtitleEditor({
       <ScrollArea className="flex-1 h-0 bg-neutral-950/50">
         <div className="p-0 relative">
           {editableSegments.map((segment, index) => {
-            const isActive = currentTime >= segment.start && currentTime <= segment.end;
+            const isActive = currentTime >= segment.start && currentTime < segment.end;
             const isSelected = selectedIndexes.includes(index);
             const isFirstSelected = isMergeVisible && Math.min(...selectedIndexes) === index;
             
@@ -162,23 +161,34 @@ export function SubtitleEditor({
                         <ArrowRight className="w-3 h-3 text-neutral-600" />
                         <span className="text-neutral-400">{formatUiTime(segment.end)}</span>
                       </div>
-                      
-                      {/* Individual Delete Button */}
-                      <button 
-                        onClick={() => {
-                          handleDeleteSegments([index]);
-                          setSelectedIndexes([]);
-                        }}
-                        className="text-neutral-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-red-500/10"
-                        title="Delete Segment"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        {/* Individual Split Button */}
+                        <button 
+                          onClick={() => handleDuplicateSegment(index)}
+                          className="text-neutral-600 hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-blue-500/10"
+                          title="Split Segment in Half"
+                        >
+                          <SquareSplitHorizontal className="w-3 h-3" />
+                        </button>
+                        
+                        {/* Individual Delete Button */}
+                        <button 
+                          onClick={() => {
+                            handleDeleteSegments([index]);
+                            setSelectedIndexes([]);
+                          }}
+                          className="text-neutral-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-red-500/10"
+                          title="Delete Segment"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
 
                     <AutoResizeTextarea
                       value={segment.text}
                       onChange={(e: any) => handleSegmentChange(index, e.target.value)}
+                      onFocus={() => onSeek(segment.start)}
                       className="w-full bg-transparent text-sm text-neutral-200 outline-none resize-none font-medium placeholder-neutral-700 overflow-hidden"
                       rows={1}
                     />

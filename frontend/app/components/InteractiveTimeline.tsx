@@ -144,7 +144,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           {editableSegments.map((segment, index) => {
             const left = (segment.start / mediaDuration) * 100;
             const width = ((segment.end - segment.start) / mediaDuration) * 100;
-            const isActive = currentTime >= segment.start && currentTime <= segment.end;
+            const isActive = currentTime >= segment.start && currentTime < segment.end;
             
             return (
               <div 

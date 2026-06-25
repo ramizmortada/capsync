@@ -376,7 +376,8 @@ export default function WhisperXApp() {
       newSegments[minIndex] = {
         ...first,
         end: second.end,
-        text: `${first.text.trim()} ${second.text.trim()}`.trim()
+        text: `${first.text.trim()} ${second.text.trim()}`.trim(),
+        words: (first.words && second.words) ? [...first.words, ...second.words] : (first.words || second.words)
       };
       
       newSegments.splice(maxIndex, 1);
@@ -386,6 +387,43 @@ export default function WhisperXApp() {
 
   const handleDeleteSegments = (indices: number[]) => {
     updateSegments((prev) => prev.filter((_, i) => !indices.includes(i)));
+  };
+
+  const handleDuplicateSegment = (index: number) => {
+    updateSegments((prev) => {
+      const newSegments = [...prev];
+      const target = newSegments[index];
+      
+      // Split the current text exactly in half by words
+      const textWords = target.text.trim().split(/\s+/);
+      const textMid = Math.max(1, Math.ceil(textWords.length / 2));
+      const firstText = textWords.slice(0, textMid).join(" ");
+      const secondText = textWords.slice(textMid).join(" ");
+
+      // Default to a perfect mathematical half for time
+      let splitTime = target.start + (target.end - target.start) / 2;
+      let firstWords = target.words;
+      let secondWords = target.words;
+
+      // If we have original Whisper word-level timestamps, use them for perfect audio accuracy
+      if (target.words && target.words.length > 1) {
+        const wordMid = Math.max(1, Math.ceil(target.words.length / 2));
+        const midpointWord = target.words[wordMid - 1]; // Last word of first half
+        if (midpointWord && midpointWord.end) {
+          splitTime = midpointWord.end;
+        } else if (midpointWord && midpointWord.start) {
+          splitTime = midpointWord.start;
+        }
+        firstWords = target.words.slice(0, wordMid);
+        secondWords = target.words.slice(wordMid);
+      }
+      
+      const firstHalf = { ...target, end: splitTime, text: firstText, words: firstWords };
+      const secondHalf = { ...target, start: splitTime, text: secondText, words: secondWords };
+      
+      newSegments.splice(index, 1, firstHalf, secondHalf);
+      return newSegments;
+    });
   };
 
   const togglePlay = () => {
@@ -436,8 +474,11 @@ export default function WhisperXApp() {
         }
       }
     };
+
     window.addEventListener('keydown', handleKeyDown, { capture: true });
-    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, { capture: true });
+    };
   }, [editableSegments, togglePlay]);
 
   // Center the timeline on the playhead whenever the zoom level changes
@@ -511,7 +552,7 @@ export default function WhisperXApp() {
   useEffect(() => {
     if (!mediaRef.current || mediaRef.current.paused || mediaDuration <= 0) return;
 
-    const activeIndex = editableSegments.findIndex((s: any) => currentTime >= s.start && currentTime <= s.end);
+    const activeIndex = editableSegments.findIndex((s: any) => currentTime >= s.start && currentTime < s.end);
     if (activeIndex !== -1) {
       const activeElement = document.getElementById(`subtitle-segment-${activeIndex}`);
       if (activeElement) {
@@ -605,7 +646,7 @@ export default function WhisperXApp() {
   useEffect(() => {
     const handleWheel = (e: WheelEvent) => {
       if (timelineRef.current) {
-        if (e.altKey) {
+        if (e.ctrlKey || e.metaKey) {
           e.preventDefault();
           // Zoom in or out based on scroll direction
           const zoomDelta = e.deltaY < 0 ? 0.5 : -0.5;
@@ -708,8 +749,14 @@ export default function WhisperXApp() {
               editableSegments={editableSegments}
               currentTime={currentTime}
               handleSegmentChange={handleSegmentChange}
-              handleMergeSegments={handleMergeSegments}
               handleDeleteSegments={handleDeleteSegments}
+              handleDuplicateSegment={handleDuplicateSegment}
+              handleMergeSegments={handleMergeSegments}
+              onSeek={(time) => {
+                if (mediaRef.current) {
+                  mediaRef.current.currentTime = time;
+                }
+              }}
               clearProject={clearProject}
               downloadSRT={downloadSRT}
             />
