@@ -137,8 +137,8 @@ def transcribe(
         os.remove(temp_path)
         
         final_segments = result["segments"]
-        if max_words > 0:
-            print(f"Chunking segments to max {max_words} words...", flush=True)
+        if max_words > 0 or max_words == -1:
+            print(f"Chunking segments (mode: {max_words})...", flush=True)
             chunked_segments = []
             for segment in final_segments:
                 words = segment.get("words", [])
@@ -146,20 +146,47 @@ def transcribe(
                     chunked_segments.append(segment)
                     continue
                 
-                # Split words array into chunks of max_words
-                for i in range(0, len(words), max_words):
-                    chunk = words[i:i + max_words]
-                    valid_words = [w for w in chunk if "start" in w and "end" in w]
-                    if not valid_words:
-                        continue
-                    
-                    text = " ".join([w["word"] for w in chunk])
-                    chunked_segments.append({
-                        "start": valid_words[0]["start"],
-                        "end": valid_words[-1]["end"],
-                        "text": text,
-                        "words": chunk
-                    })
+                if max_words == -1:
+                    # Smart Mode: Dynamic Pauses
+                    chunk = []
+                    for i, w in enumerate(words):
+                        chunk.append(w)
+                        
+                        word_text = w.get("word", "")
+                        has_punctuation = any(p in word_text for p in [".", ",", "!", "?", ";", ":"])
+                        
+                        pause_after = 0
+                        if i < len(words) - 1 and "end" in w and "start" in words[i+1]:
+                            pause_after = words[i+1]["start"] - w["end"]
+                            
+                        is_too_long = len(chunk) >= 6 # Soft limit of 6 words
+                        
+                        if has_punctuation or pause_after > 0.3 or is_too_long or i == len(words) - 1:
+                            valid_words = [cw for cw in chunk if "start" in cw and "end" in cw]
+                            if valid_words:
+                                text = " ".join([cw["word"] for cw in chunk])
+                                chunked_segments.append({
+                                    "start": valid_words[0]["start"],
+                                    "end": valid_words[-1]["end"],
+                                    "text": text,
+                                    "words": chunk
+                                })
+                            chunk = []
+                else:
+                    # Strict chunking
+                    for i in range(0, len(words), max_words):
+                        chunk = words[i:i + max_words]
+                        valid_words = [w for w in chunk if "start" in w and "end" in w]
+                        if not valid_words:
+                            continue
+                        
+                        text = " ".join([w["word"] for w in chunk])
+                        chunked_segments.append({
+                            "start": valid_words[0]["start"],
+                            "end": valid_words[-1]["end"],
+                            "text": text,
+                            "words": chunk
+                        })
             final_segments = chunked_segments
 
         print("Returning result to frontend.", flush=True)

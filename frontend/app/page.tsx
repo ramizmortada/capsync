@@ -259,7 +259,8 @@ export default function WhisperXApp() {
               </SelectTrigger>
               <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
                 <SelectItem value="0">Default (Auto length)</SelectItem>
-                <SelectItem value="1">1 Word</SelectItem>
+                <SelectItem value="-1">Smart Mode (Dynamic pauses)</SelectItem>
+                <SelectItem value="1">1 Word (Trendy TikTok style)</SelectItem>
                 <SelectItem value="2">2 Words</SelectItem>
                 <SelectItem value="3">3 Words</SelectItem>
                 <SelectItem value="5">5 Words</SelectItem>
