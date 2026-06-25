@@ -1,17 +1,12 @@
 import os
 import requests
-import zipfile
-import io
 
 FONTS_DIR = os.path.join(os.path.dirname(__file__), "fonts")
 
-# Google Fonts families to download - must match the frontend SelectItem values
-GOOGLE_FONTS = {
-    "Inter": "Inter",
-    "Roboto": "Roboto",
-    "Outfit": "Outfit",
-    "Montserrat": "Montserrat",
-}
+# We download static TTF files for each standard weight from Fontsource CDN
+# so that libass can easily resolve FontName and Weight natively.
+FAMILIES = ["inter", "poppins", "instrument-serif", "oswald"]
+WEIGHTS = ["300", "400", "500", "600", "700", "800", "900"]
 
 def ensure_fonts():
     """
@@ -20,30 +15,38 @@ def ensure_fonts():
     """
     os.makedirs(FONTS_DIR, exist_ok=True)
     
-    for family_key, family_name in GOOGLE_FONTS.items():
-        # Check if at least one .ttf file exists for this family
-        family_dir = os.path.join(FONTS_DIR, family_key)
-        if os.path.isdir(family_dir) and any(f.endswith(('.ttf', '.otf')) for f in os.listdir(family_dir)):
-            continue
-        
-        print(f"Downloading font: {family_name}...", flush=True)
+    for family in FAMILIES:
+        family_name = family.capitalize()
+        family_dir = os.path.join(FONTS_DIR, family_name)
         os.makedirs(family_dir, exist_ok=True)
         
-        try:
-            url = f"https://fonts.google.com/download?family={family_name}"
-            resp = requests.get(url, timeout=30)
-            resp.raise_for_status()
+        # Check if we already have all expected weights downloaded
+        existing_files = os.listdir(family_dir)
+        if sum(1 for f in existing_files if f.endswith('.ttf')) >= len(WEIGHTS):
+            continue
             
-            with zipfile.ZipFile(io.BytesIO(resp.content)) as zf:
-                for member in zf.namelist():
-                    if member.endswith(('.ttf', '.otf')) and not member.startswith('__'):
-                        filename = os.path.basename(member)
-                        target_path = os.path.join(family_dir, filename)
-                        with open(target_path, 'wb') as f:
-                            f.write(zf.read(member))
-                        print(f"  Extracted: {filename}", flush=True)
-        except Exception as e:
-            print(f"  Warning: Could not download {family_name}: {e}", flush=True)
+        print(f"Downloading static fonts for: {family_name}...", flush=True)
+        
+        for weight in WEIGHTS:
+            # Roboto doesn't have an 800 weight in the standard fontsource package, 
+            # but we'll try to download it, and fall back if 404.
+            url = f"https://cdn.jsdelivr.net/fontsource/fonts/{family}@latest/latin-{weight}-normal.ttf"
+            filename = f"{family_name}-{weight}.ttf"
+            target_path = os.path.join(family_dir, filename)
+            
+            if os.path.exists(target_path):
+                continue
+                
+            try:
+                resp = requests.get(url, timeout=30, allow_redirects=True)
+                if resp.status_code == 200:
+                    with open(target_path, 'wb') as f:
+                        f.write(resp.content)
+                    print(f"  Downloaded: {filename}", flush=True)
+                else:
+                    print(f"  Warning: No weight {weight} found for {family_name}", flush=True)
+            except Exception as e:
+                print(f"  Warning: Could not download {family_name} {weight}: {e}", flush=True)
     
     return FONTS_DIR
 
@@ -57,4 +60,4 @@ if __name__ == "__main__":
         family_path = os.path.join(FONTS_DIR, family)
         if os.path.isdir(family_path):
             files = os.listdir(family_path)
-            print(f"  {family}: {len(files)} files")
+            print(f"  {family}: {len(files)} files -> {files}")

@@ -39,8 +39,14 @@ def generate_ass(segments, style, video_width, video_height):
     Generates ASS subtitle content from segments and styling.
     """
     font_name = style.get("fontFamily", "Arial")
+    
+    # CSS-to-ASS rendering scale factor.
+    # CSS sets the EM square (100%), but libass renders the visual glyphs at ~67% of the EM square.
+    # Therefore, we multiply by 1.48 to make the libass visual size match the CSS visual size.
+    ass_scale = 1.48
+    
     # Compute exact pixels from percentages of video_height
-    font_size = int((float(style.get("fontSize", 5.0)) / 100.0) * video_height)
+    font_size = int((float(style.get("fontSize", 5.0)) / 100.0) * video_height * ass_scale)
     
     primary_color = hex_to_ass_color(style.get("textColor", "#ffffff"))
     
@@ -50,15 +56,18 @@ def generate_ass(segments, style, video_width, video_height):
     
     stroke_enabled = style.get("strokeEnabled", False)
     stroke_color = hex_to_ass_color(style.get("strokeColor", "#000000"))
-    stroke_width = int((float(style.get("strokeWidth", 0.4)) / 100.0) * video_height) if stroke_enabled else 0
+    stroke_width = int((float(style.get("strokeWidth", 0.4)) / 100.0) * video_height * ass_scale) if stroke_enabled else 0
     
     shadow_enabled = style.get("shadowEnabled", False)
     shadow_color = hex_to_ass_color(style.get("shadowColor", "#000000"))
     shadow_offset_max = max(abs(float(style.get("shadowOffsetX", 0))), abs(float(style.get("shadowOffsetY", 0.4))))
-    shadow_depth = int((shadow_offset_max / 100.0) * video_height) if shadow_enabled else 0
+    shadow_depth = int((shadow_offset_max / 100.0) * video_height * ass_scale) if shadow_enabled else 0
     
-    font_weight = style.get("fontWeight", "400")
-    is_bold = -1 if str(font_weight) in ["bold", "bolder", "600", "700", "800", "900"] else 0
+    font_weight_str = str(style.get("fontWeight", "400"))
+    try:
+        is_bold = int(font_weight_str)
+    except ValueError:
+        is_bold = -1 if font_weight_str in ["bold", "bolder"] else 400
 
     alignment_str = style.get("alignment", "center")
     ass_alignment = 1 if alignment_str == "left" else 3 if alignment_str == "right" else 2

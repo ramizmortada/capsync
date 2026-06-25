@@ -10,6 +10,38 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { HexColorPicker } from "react-colorful";
+
+const FONT_WEIGHTS: Record<string, { value: string; label: string }[]> = {
+  "Inter": [
+    { value: "300", label: "Light (300)" },
+    { value: "400", label: "Regular (400)" },
+    { value: "500", label: "Medium (500)" },
+    { value: "600", label: "Semi-Bold (600)" },
+    { value: "700", label: "Bold (700)" },
+    { value: "800", label: "Extra Bold (800)" },
+    { value: "900", label: "Black (900)" },
+  ],
+  "Poppins": [
+    { value: "300", label: "Light (300)" },
+    { value: "400", label: "Regular (400)" },
+    { value: "500", label: "Medium (500)" },
+    { value: "600", label: "Semi-Bold (600)" },
+    { value: "700", label: "Bold (700)" },
+    { value: "800", label: "Extra Bold (800)" },
+    { value: "900", label: "Black (900)" },
+  ],
+  "Oswald": [
+    { value: "300", label: "Light (300)" },
+    { value: "400", label: "Regular (400)" },
+    { value: "500", label: "Medium (500)" },
+    { value: "600", label: "Semi-Bold (600)" },
+    { value: "700", label: "Bold (700)" },
+  ],
+  "Instrument Serif": [
+    { value: "400", label: "Regular (400)" },
+  ],
+};
+
 import type { SubtitleStyle } from "../page";
 
 interface SettingsPanelProps {
@@ -370,17 +402,21 @@ export function SettingsPanel({
               
               <div className="space-y-2">
                 <Label className="text-neutral-300">Font Family</Label>
-                <Select value={subtitleStyle.fontFamily} onValueChange={(v) => updateStyle("fontFamily", v)}>
+                <Select value={subtitleStyle.fontFamily} onValueChange={(v) => {
+                  updateStyle("fontFamily", v);
+                  const available = FONT_WEIGHTS[v] || FONT_WEIGHTS["Inter"];
+                  if (!available.some(w => w.value === subtitleStyle.fontWeight)) {
+                    updateStyle("fontWeight", "400");
+                  }
+                }}>
                   <SelectTrigger className="bg-neutral-800 border-neutral-700">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
                     <SelectItem value="Inter">Inter</SelectItem>
-                    <SelectItem value="Roboto">Roboto</SelectItem>
-                    <SelectItem value="Outfit">Outfit</SelectItem>
-                    <SelectItem value="Montserrat">Montserrat</SelectItem>
-                    <SelectItem value="Impact">Impact</SelectItem>
-                    <SelectItem value="Arial">Arial</SelectItem>
+                    <SelectItem value="Instrument Serif">Instrument Serif</SelectItem>
+                    <SelectItem value="Poppins">Poppins</SelectItem>
+                    <SelectItem value="Oswald">Oswald</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -392,10 +428,9 @@ export function SettingsPanel({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                    <SelectItem value="400">Regular (400)</SelectItem>
-                    <SelectItem value="600">Semi-Bold (600)</SelectItem>
-                    <SelectItem value="800">Extra Bold (800)</SelectItem>
-                    <SelectItem value="900">Black (900)</SelectItem>
+                    {(FONT_WEIGHTS[subtitleStyle.fontFamily] || FONT_WEIGHTS["Inter"]).map(weight => (
+                      <SelectItem key={weight.value} value={weight.value}>{weight.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
