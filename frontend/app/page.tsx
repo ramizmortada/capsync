@@ -13,6 +13,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { SubtitleEditor } from "./components/SubtitleEditor";
 import { LivePreview } from "./components/LivePreview";
 import { InteractiveTimeline } from "./components/InteractiveTimeline";
+import { resegmentTranscripts } from "@/lib/chunking";
 
 export type DragTarget = { type: 'start' | 'end' | 'both', index: number } | 'start' | 'end';
 
@@ -41,6 +42,7 @@ export default function WhisperXApp() {
   const [modelSize, setModelSize] = useState("large-v2");
   const [language, setLanguage] = useState("");
   const [maxWords, setMaxWords] = useState("0");
+  const [transcriptionMessage, setTranscriptionMessage] = useState<string>("Processing media...");
   
   const [status, setStatus] = useState<"idle" | "uploading" | "downloading_model" | "transcribing" | "done" | "error">("idle");
   const [progress, setProgress] = useState(0);
@@ -157,27 +159,37 @@ export default function WhisperXApp() {
     checkModelsStatus();
   }, []);
 
-  // Poll for download progress if downloading model
+  // Poll for download progress if downloading model, and poll for transcription status if transcribing
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    if (status === "downloading_model") {
-      interval = setInterval(async () => {
-        try {
-          const res = await fetch(`http://localhost:8000/api/models/progress/${modelSize}`);
+
+    const pollStatus = async () => {
+      try {
+        if (status === "downloading_model") {
+          const res = await fetch(`http://127.0.0.1:8000/api/models/progress/${modelSize}`);
           if (res.ok) {
             const data = await res.json();
-            if (data.progress !== null) {
-              setProgress(data.progress);
-            }
-            if (data.status === "done" || data.progress === 100) {
+            setProgress(data.progress);
+            if (data.status === "done") {
               setStatus("transcribing");
-              setProgress(0);
-              checkModelsStatus();
             }
           }
-        } catch (err) {}
-      }, 500);
+        } else if (status === "transcribing") {
+          const res = await fetch(`http://127.0.0.1:8000/api/transcribe/status`);
+          if (res.ok) {
+            const data = await res.json();
+            setTranscriptionMessage(data.status);
+          }
+        }
+      } catch (err) {
+        console.error("Polling error:", err);
+      }
+    };
+
+    if (status === "downloading_model" || status === "transcribing") {
+      interval = setInterval(pollStatus, 500);
     }
+    
     return () => clearInterval(interval);
   }, [status, modelSize]);
 
@@ -267,6 +279,24 @@ export default function WhisperXApp() {
     }
     setStatus("idle");
     setProgress(0);
+  };
+
+  const handleResegment = () => {
+    if (!result || !result.raw_segments) return;
+    const newSegments = resegmentTranscripts(result.raw_segments, maxWords);
+    
+    // We update the segments directly to push to history, and update the IDB result
+    updateSegments(newSegments);
+    
+    // Keep the main result object in sync so if they reload, they get the newly chunked segments
+    const newResult = { ...result, segments: newSegments };
+    setResult(newResult);
+    set('capsync_project', {
+      file: file,
+      status: status,
+      result: newResult,
+      editableSegments: newSegments
+    }).catch(console.error);
   };
 
   const handleSegmentChange = (index: number, newText: string) => {
@@ -606,6 +636,9 @@ export default function WhisperXApp() {
               handleTranscribe={handleTranscribe}
               downloadedModels={downloadedModels}
               cancelTranscription={cancelTranscription}
+              handleResegment={handleResegment}
+              result={result}
+              transcriptionMessage={transcriptionMessage}
             />
           </div>
 

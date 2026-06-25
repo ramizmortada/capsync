@@ -31,6 +31,7 @@ import json
 import asyncio
 
 download_progress = {}
+current_transcription_status = "Idle"
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "models"))
@@ -53,6 +54,10 @@ async def get_models_status():
 @app.get("/api/models/progress/{model_name}")
 async def get_download_progress(model_name: str):
     return download_progress.get(model_name, {"progress": 0, "status": "idle"})
+
+@app.get("/api/transcribe/status")
+async def get_transcription_status():
+    return {"status": current_transcription_status}
 
 def download_hf_model(model_size: str):
     repo = f"Systran/faster-whisper-{model_size}"
@@ -98,22 +103,27 @@ def transcribe(
     language: str = Form(None),
     max_words: int = Form(0)
 ):
+    global current_transcription_status
     try:
+        current_transcription_status = "Receiving media file..."
         print(f"Received file: {file.filename}, Model: {model_name}, Lang: {language}, Max Words: {max_words}", flush=True)
         fd, temp_path = tempfile.mkstemp(suffix=os.path.splitext(file.filename)[1])
         with os.fdopen(fd, "wb") as f:
             shutil.copyfileobj(file.file, f)
         print(f"File saved to temp: {temp_path}", flush=True)
 
+        current_transcription_status = "Loading AI model..."
         print("Downloading WhisperX model manually from mirror...", flush=True)
         local_model_path = download_hf_model(model_name)
         print(f"Loading model from local path: {local_model_path}", flush=True)
         model = whisperx.load_model(local_model_path, device, compute_type=compute_type)
         print("Model loaded successfully!", flush=True)
 
+        current_transcription_status = "Extracting audio..."
         print("Loading audio file using FFmpeg...", flush=True)
         audio = whisperx.load_audio(temp_path)
 
+        current_transcription_status = "Transcribing audio (this may take a while)..."
         print("Audio loaded! Starting transcription...", flush=True)
         
         if language and language.strip() != "":
@@ -124,11 +134,13 @@ def transcribe(
             result = model.transcribe(audio, batch_size=16)
             align_language = result["language"]
         
+        current_transcription_status = "Aligning word timestamps..."
         print("Transcription finished! Loading alignment model...", flush=True)
         model_a, metadata = whisperx.load_align_model(language_code=align_language, device=device)
         print("Aligning timestamps...", flush=True)
         result = whisperx.align(result["segments"], model_a, metadata, audio, device, return_char_alignments=False)
         
+        current_transcription_status = "Cleaning up..."
         print("Process complete! Cleaning up...", flush=True)
         gc.collect()
         if torch.cuda.is_available():
@@ -138,6 +150,7 @@ def transcribe(
         
         final_segments = result["segments"]
         if max_words != 0:
+            current_transcription_status = "Segmenting captions..."
             print(f"Chunking segments (mode: {max_words})...", flush=True)
             chunked_segments = []
             for segment in final_segments:
@@ -198,7 +211,11 @@ def transcribe(
                     final_segments[i]["end"] = final_segments[i+1]["start"]
 
         print("Returning result to frontend.", flush=True)
-        return {"language": align_language, "segments": final_segments}
+        return {
+            "language": align_language, 
+            "segments": final_segments,
+            "raw_segments": result["segments"] # Original unchunked word-level data
+        }
     except Exception as e:
         print(f"ERROR OCCURRED: {e}", flush=True)
         return {"error": str(e)}

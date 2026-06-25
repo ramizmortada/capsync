@@ -23,6 +23,9 @@ interface SettingsPanelProps {
   handleTranscribe: () => void;
   downloadedModels: Record<string, boolean>;
   cancelTranscription: () => void;
+  handleResegment: () => void;
+  result: any;
+  transcriptionMessage: string;
 }
 
 export function SettingsPanel({
@@ -43,6 +46,9 @@ export function SettingsPanel({
   handleTranscribe,
   downloadedModels,
   cancelTranscription,
+  handleResegment,
+  result,
+  transcriptionMessage,
 }: SettingsPanelProps) {
   
   const renderModelOption = (val: string, label: string) => {
@@ -172,16 +178,26 @@ export function SettingsPanel({
 
         {/* Progress Area */}
         {(status === "uploading" || status === "transcribing" || status === "downloading_model") && (
-          <div className="space-y-3 pt-4">
-            <div className="flex justify-between text-xs">
-              <span className="text-blue-400 font-medium animate-pulse">
-                {status === "uploading" ? "Uploading..." : 
+          <div className="space-y-3 pt-4 border-t border-neutral-800">
+            <div className="flex justify-between text-sm font-medium">
+              <span className="text-neutral-300 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                {status === "uploading" ? "Uploading Media..." : 
                  status === "downloading_model" ? `Downloading Model (${progress}%)` : 
-                 "Transcribing..."}
+                 transcriptionMessage}
               </span>
-              <span className="text-neutral-400 font-mono">{progress}%</span>
+              {status !== "transcribing" && (
+                <span className="text-neutral-400 font-mono">{progress}%</span>
+              )}
             </div>
-            <Progress value={progress} className="h-2 bg-neutral-800" />
+            {status === "transcribing" ? (
+              <div className="w-full h-2 bg-neutral-800 rounded-full overflow-hidden relative">
+                <div className="absolute inset-0 bg-primary/20" />
+                <div className="h-full bg-primary w-1/2 rounded-full animate-[progress_1.5s_ease-in-out_infinite] absolute left-0" />
+              </div>
+            ) : (
+              <Progress value={progress} className="h-2 bg-neutral-800" />
+            )}
           </div>
         )}
       </CardContent>
@@ -191,24 +207,43 @@ export function SettingsPanel({
           <Button 
             onClick={cancelTranscription} 
             variant="destructive"
-            className="w-1/3 font-semibold shadow-md transition-all duration-300 bg-red-600 hover:bg-red-500"
+            className="w-1/3 font-semibold shadow-md transition-all duration-300"
           >
             Cancel
           </Button>
         )}
-        <Button 
-          onClick={handleTranscribe} 
-          disabled={!file || status === "uploading" || status === "transcribing" || status === "downloading_model"} 
-          className="flex-1 font-semibold shadow-md transition-all duration-300"
-        >
-          {status === "uploading" || status === "transcribing" || status === "downloading_model" ? (
-            <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing Media</>
-          ) : status === "done" ? (
-            "Transcribe Another"
-          ) : (
-            "Start Transcription"
-          )}
-        </Button>
+        
+        {status === "done" ? (
+          <>
+            {result && result.raw_segments && (
+              <Button 
+                onClick={handleResegment} 
+                className="flex-1 font-semibold shadow-md transition-all duration-300"
+              >
+                Re-segment
+              </Button>
+            )}
+            <Button 
+              onClick={handleTranscribe} 
+              variant={result && result.raw_segments ? "secondary" : "default"}
+              className="flex-1 font-semibold shadow-md transition-all duration-300"
+            >
+              Re-transcribe
+            </Button>
+          </>
+        ) : (
+          <Button 
+            onClick={handleTranscribe} 
+            disabled={!file || status === "uploading" || status === "transcribing" || status === "downloading_model"} 
+            className="flex-1 font-semibold shadow-md transition-all duration-300"
+          >
+            {status === "uploading" || status === "transcribing" || status === "downloading_model" ? (
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing Media</>
+            ) : (
+              "Start Transcription"
+            )}
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );
