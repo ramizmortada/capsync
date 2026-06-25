@@ -435,6 +435,21 @@ export function SettingsPanel({
                 </Select>
               </div>
 
+              <div className="space-y-2">
+                <Label className="text-neutral-300">Text Transform</Label>
+                <Select value={subtitleStyle.textTransform || 'none'} onValueChange={(v: any) => updateStyle("textTransform", v)}>
+                  <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
+                    <SelectItem value="none">Normal (None)</SelectItem>
+                    <SelectItem value="uppercase">UPPERCASE</SelectItem>
+                    <SelectItem value="lowercase">lowercase</SelectItem>
+                    <SelectItem value="capitalize">Capitalize (Title Case)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <Label className="text-neutral-300">Font Size</Label>
@@ -442,7 +457,7 @@ export function SettingsPanel({
                 </div>
                 <Slider 
                   value={[subtitleStyle.fontSize]} 
-                  min={10} max={300} step={1}
+                  min={28} max={164} step={1}
                   onValueChange={([v]) => updateStyle("fontSize", v)} 
                 />
               </div>
@@ -460,7 +475,7 @@ export function SettingsPanel({
                 </div>
                 <Slider 
                   value={[subtitleStyle.strokeWidth]} 
-                  min={0} max={50} step={1}
+                  min={1} max={28} step={1}
                   onValueChange={([v]) => updateStyle("strokeWidth", v)} 
                 />
               </div>

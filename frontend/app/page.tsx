@@ -37,6 +37,7 @@ export interface SubtitleStyle {
   animationStyle: 'none' | 'color' | 'box' | 'scale' | 'karaoke';
   highlightBackgroundColor: string;
   scaleFactor: number;
+  textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
 }
 
 export type DragTarget = { type: 'start' | 'end' | 'both', index: number } | 'start' | 'end';
@@ -59,6 +60,7 @@ const formatUiTime = (seconds: number) => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms}`;
 };
 
+// Helper hook for robust local storage persistence (SSR safe)
 export default function WhisperXApp() {
   const [file, setFile] = useState<File | null>(null);
   
@@ -71,16 +73,16 @@ export default function WhisperXApp() {
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>({
     fontFamily: "Inter",
     fontWeight: "800",
-    fontSize: 96, // raw pixels relative to 1920 height
+    fontSize: 96,
     textColor: "#ffffff",
     strokeEnabled: false,
     strokeColor: "#000000",
-    strokeWidth: 6, // raw pixels
+    strokeWidth: 6,
     shadowEnabled: false,
     shadowColor: "#000000",
-    shadowBlur: 10, // raw pixels
+    shadowBlur: 10,
     shadowOffsetX: 0,
-    shadowOffsetY: 8, // raw pixels
+    shadowOffsetY: 8,
     backgroundEnabled: false,
     backgroundColor: "#000000",
     backgroundOpacity: 50,
@@ -90,6 +92,7 @@ export default function WhisperXApp() {
     animationStyle: 'color',
     highlightBackgroundColor: "#ff0000",
     scaleFactor: 1.2,
+    textTransform: 'none',
   });
 
   const [status, setStatus] = useState<"idle" | "uploading" | "downloading_model" | "transcribing" | "burning" | "done" | "error">("idle");
@@ -97,7 +100,7 @@ export default function WhisperXApp() {
   const [result, setResult] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [downloadedModels, setDownloadedModels] = useState<Record<string, boolean>>({});
-
+  
   // Editable subtitle segments
   const [editableSegments, setEditableSegments] = useState<any[]>([]);
 
@@ -158,13 +161,6 @@ export default function WhisperXApp() {
     if (savedStyle) {
       try {
         const parsed = JSON.parse(savedStyle);
-        // Migration logic: convert old pixel values (> 15) to percentages (assuming 1080p base for old values)
-        if (parsed.fontSize > 15) parsed.fontSize = parseFloat((parsed.fontSize / 1080 * 100).toFixed(1));
-        if (parsed.strokeWidth > 2) parsed.strokeWidth = parseFloat((parsed.strokeWidth / 1080 * 100).toFixed(2));
-        if (parsed.shadowBlur > 2) parsed.shadowBlur = parseFloat((parsed.shadowBlur / 1080 * 100).toFixed(1));
-        if (Math.abs(parsed.shadowOffsetX) > 2) parsed.shadowOffsetX = parseFloat((parsed.shadowOffsetX / 1080 * 100).toFixed(2));
-        if (Math.abs(parsed.shadowOffsetY) > 2) parsed.shadowOffsetY = parseFloat((parsed.shadowOffsetY / 1080 * 100).toFixed(2));
-        
         setSubtitleStyle(prev => ({ ...prev, ...parsed }));
       } catch (err) {
         console.error("Failed to load subtitle style from localStorage", err);

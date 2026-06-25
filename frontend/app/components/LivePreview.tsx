@@ -162,6 +162,7 @@ export function LivePreview({
                   lineHeight: '1.2',
                   position: 'relative',
                   display: 'inline-block',
+                  textTransform: subtitleStyle.textTransform || 'none',
                 };
 
                 // The stroke layer (drawn double thick, under the text)

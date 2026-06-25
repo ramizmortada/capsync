@@ -38,7 +38,7 @@ def generate_ass(segments, style, video_width, video_height):
     """
     Generates ASS subtitle content from segments and styling.
     """
-    font_name = style.get("fontFamily", "Inter")
+    font_family = style.get("fontFamily", "Inter")
     
     # CSS-to-ASS rendering scale factor based on TTF OS/2 vertical metrics
     # Formula: (usWinAscent + usWinDescent) / unitsPerEm
@@ -48,7 +48,7 @@ def generate_ass(segments, style, video_width, video_height):
         "Oswald": 1.7020,
         "Poppins": 1.7620
     }
-    ass_scale = ass_scales.get(font_name, 1.48)
+    ass_scale = ass_scales.get(font_family, 1.48)
     
     # Directly use the raw pixel values defined by the user for a 1920 reference height
     font_size = int(float(style.get("fontSize", 96)) * ass_scale)
@@ -61,18 +61,26 @@ def generate_ass(segments, style, video_width, video_height):
     
     stroke_enabled = style.get("strokeEnabled", False)
     stroke_color = hex_to_ass_color(style.get("strokeColor", "#000000"))
-    stroke_width = int(float(style.get("strokeWidth", 6)) * ass_scale) if stroke_enabled else 0
+    stroke_width = int(float(style.get("strokeWidth", 6))) if stroke_enabled else 0
     
     shadow_enabled = style.get("shadowEnabled", False)
     shadow_color = hex_to_ass_color(style.get("shadowColor", "#000000"))
     shadow_offset_max = max(abs(float(style.get("shadowOffsetX", 0))), abs(float(style.get("shadowOffsetY", 8))))
-    shadow_depth = int(shadow_offset_max * ass_scale) if shadow_enabled else 0
+    shadow_depth = int(shadow_offset_max) if shadow_enabled else 0
     
     font_weight_str = str(style.get("fontWeight", "400"))
-    try:
-        is_bold = int(font_weight_str)
-    except ValueError:
-        is_bold = -1 if font_weight_str in ["bold", "bolder"] else 400
+    weight_suffixes = {
+        "300": " Light",
+        "400": "",
+        "500": " Medium",
+        "600": " SemiBold",
+        "700": " Bold",
+        "800": " ExtraBold",
+        "900": " Black"
+    }
+    suffix = weight_suffixes.get(font_weight_str, "")
+    font_name = f"{font_family}{suffix}"
+    is_bold = 0
 
     alignment_str = style.get("alignment", "center")
     ass_alignment = 1 if alignment_str == "left" else 3 if alignment_str == "right" else 2
@@ -85,8 +93,14 @@ def generate_ass(segments, style, video_width, video_height):
 
     animation_style = style.get("animationStyle", "color")
     scale_factor = int(float(style.get("scaleFactor", 1.2)) * 100)
-    highlight_bg_hex = style.get("highlightBackgroundColor", "#ff0000")
-    highlight_bg_color = hex_to_ass_color(highlight_bg_hex)
+    
+    text_transform = style.get("textTransform", "none")
+    def apply_transform(t: str) -> str:
+        if text_transform == "uppercase": return t.upper()
+        if text_transform == "lowercase": return t.lower()
+        if text_transform == "capitalize": return " ".join(w.capitalize() for w in t.split(" "))
+        return t
+    highlight_bg_color = hex_to_ass_color(style.get("highlightBackgroundColor", "#ff0000"))
 
     ass_header = f"""[Script Info]
 ScriptType: v4.00+
@@ -124,7 +138,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             
             line_parts = []
             for w in words:
-                clean_word = w.get("word", "").strip()
+                clean_word = apply_transform(w.get("word", "").strip())
                 line_parts.append(clean_word)
                     
             full_text = " ".join(line_parts)
@@ -152,7 +166,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 
                 line_parts = []
                 for j, w in enumerate(words):
-                    clean_word = w.get("word", "").strip()
+                    clean_word = apply_transform(w.get("word", "").strip())
                     if j == i:
                         line_parts.append(f"{{\\1a&HFF&\\3a&H00&\\3c{highlight_bg_color}\\bord12\\4a&HFF&}}{clean_word}{{\\alpha&HFF&}}")
                     else:
@@ -180,7 +194,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             line_parts = []
             for j, w in enumerate(words):
-                clean_word = w.get("word", "").strip()
+                clean_word = apply_transform(w.get("word", "").strip())
                 
                 if animation_style == "karaoke":
                     if j <= i:

@@ -51,10 +51,10 @@ export function resegmentTranscripts(rawSegments: any[], maxWordsStr: string): a
         // Strict chunking
         for (let i = 0; i < words.length; i += maxWords) {
           const chunk = words.slice(i, i + maxWords);
-          const validWords = chunk.filter((w) => "start" in w && "end" in w);
+          const validWords = chunk.filter((w: any) => "start" in w && "end" in w);
           if (validWords.length === 0) continue;
 
-          const text = chunk.map((w) => w.word).join(" ");
+          const text = chunk.map((w: any) => w.word).join(" ");
           chunkedSegments.push({
             start: validWords[0].start,
             end: validWords[validWords.length - 1].end,
