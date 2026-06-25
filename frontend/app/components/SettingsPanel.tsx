@@ -354,15 +354,6 @@ export function SettingsPanel({
                 </>
               )}
               </div>
-              
-              {status === "done" && file?.type.startsWith('video') && (
-                <Button 
-                  onClick={handleExportVideo} 
-                  className="w-full font-bold shadow-md transition-all duration-300 bg-blue-600 hover:bg-blue-500 text-white mt-2"
-                >
-                  Export Burnt Video
-                </Button>
-              )}
             </div>
           </TabsContent>
 

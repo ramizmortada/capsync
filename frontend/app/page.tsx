@@ -863,6 +863,8 @@ export default function WhisperXApp() {
               editableSegments={editableSegments}
               currentTime={currentTime}
               subtitleStyle={subtitleStyle}
+              handleExportVideo={handleExportVideo}
+              status={status}
             />
             </div>
 

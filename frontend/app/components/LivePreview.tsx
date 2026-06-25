@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Video, FileAudio } from "lucide-react";
+import { Video, FileAudio, Maximize2, Minimize2, Download, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface LivePreviewProps {
   file: File | null;
@@ -11,6 +12,8 @@ interface LivePreviewProps {
   currentTime: number;
   subtitleStyle: any; // We'll just pass the object directly
   setVideoDimensions: (dimensions: {width: number, height: number}) => void;
+  handleExportVideo?: () => void;
+  status?: string;
 }
 
 export function LivePreview({
@@ -23,10 +26,13 @@ export function LivePreview({
   currentTime,
   subtitleStyle,
   setVideoDimensions,
+  handleExportVideo,
+  status,
 }: LivePreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [localVideoDim, setLocalVideoDim] = useState({ width: 1920, height: 1080 });
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -39,6 +45,34 @@ export function LivePreview({
     obs.observe(containerRef.current);
     return () => obs.disconnect();
   }, []);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  const toggleFullScreen = () => {
+    if (!containerRef.current) return;
+    if (!document.fullscreenElement) {
+      containerRef.current.requestFullscreen().catch((err) => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+      });
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
+  const handleVideoClick = () => {
+    if (!mediaRef.current) return;
+    if (mediaRef.current.paused) {
+      mediaRef.current.play();
+    } else {
+      mediaRef.current.pause();
+    }
+  };
 
   // Calculate actual video render dimensions inside the object-fit: contain container
   const videoRatio = localVideoDim.width / localVideoDim.height;
@@ -60,13 +94,40 @@ export function LivePreview({
 
   return (
     <div className="h-full rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl flex flex-col">
-      <div className="p-4 bg-neutral-900 border-b border-neutral-800 text-sm font-medium text-neutral-400 flex items-center gap-2 shrink-0">
-        <Video className="w-4 h-4 text-emerald-400" /> Live Preview Studio
+      <div className="p-3 bg-neutral-900 border-b border-neutral-800 text-sm font-medium text-neutral-400 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2">
+          <Video className="w-4 h-4 text-emerald-400" /> Live Preview Studio
+        </div>
+        <div className="flex items-center gap-2">
+          {file && (
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-8 w-8 text-neutral-400 hover:text-white"
+              onClick={toggleFullScreen}
+              title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+            >
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </Button>
+          )}
+          {status === "burning" ? (
+            <Button disabled size="sm" className="bg-blue-600/50 text-white text-xs h-8 flex items-center gap-1.5 font-semibold">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Exporting...
+            </Button>
+          ) : (status === "done" && file?.type.startsWith('video') && handleExportVideo) ? (
+            <Button onClick={handleExportVideo} size="sm" className="bg-blue-600 hover:bg-blue-500 text-white text-xs h-8 flex items-center gap-1.5 font-semibold">
+              <Download className="w-3.5 h-3.5" /> Export Video
+            </Button>
+          ) : null}
+        </div>
       </div>
       
       <div ref={containerRef} className="bg-black flex-1 flex flex-col relative min-h-[300px]">
         {/* Media Element */}
-        <div className="flex-1 relative flex items-center justify-center">
+        <div 
+          onClick={handleVideoClick}
+          className="flex-1 relative flex items-center justify-center cursor-pointer"
+        >
           {file?.type.startsWith('video') ? (
             <video 
               ref={mediaRef as React.RefObject<HTMLVideoElement>}
