@@ -15,6 +15,24 @@ import { LivePreview } from "./components/LivePreview";
 import { InteractiveTimeline } from "./components/InteractiveTimeline";
 import { resegmentTranscripts } from "@/lib/chunking";
 
+export interface SubtitleStyle {
+  fontFamily: string;
+  fontWeight: string;
+  fontSize: number;
+  textColor: string;
+  strokeEnabled: boolean;
+  strokeColor: string;
+  strokeWidth: number;
+  shadowEnabled: boolean;
+  shadowColor: string;
+  shadowBlur: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  backgroundEnabled: boolean;
+  backgroundColor: string;
+  backgroundOpacity: number;
+}
+
 export type DragTarget = { type: 'start' | 'end' | 'both', index: number } | 'start' | 'end';
 
 // Helper function for SRT time formatting
@@ -44,6 +62,24 @@ export default function WhisperXApp() {
   const [maxWords, setMaxWords] = useState("0");
   const [transcriptionMessage, setTranscriptionMessage] = useState<string>("Processing media...");
   
+  const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>({
+    fontFamily: "Inter",
+    fontWeight: "800",
+    fontSize: 48,
+    textColor: "#ffffff",
+    strokeEnabled: true,
+    strokeColor: "#000000",
+    strokeWidth: 4,
+    shadowEnabled: true,
+    shadowColor: "#000000",
+    shadowBlur: 10,
+    shadowOffsetX: 0,
+    shadowOffsetY: 4,
+    backgroundEnabled: false,
+    backgroundColor: "#000000",
+    backgroundOpacity: 50,
+  });
+
   const [status, setStatus] = useState<"idle" | "uploading" | "downloading_model" | "transcribing" | "done" | "error">("idle");
   const [progress, setProgress] = useState(0);
   const [result, setResult] = useState<any>(null);
@@ -598,22 +634,6 @@ export default function WhisperXApp() {
     URL.revokeObjectURL(url);
   };
 
-  const renderModelOption = (val: string, label: string) => {
-    const isDownloaded = downloadedModels[val];
-    return (
-      <SelectItem value={val}>
-        <div className="flex items-center gap-2">
-          {label}
-          {isDownloaded ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          ) : (
-            <CloudDownload className="w-3 h-3 text-neutral-500" />
-          )}
-        </div>
-      </SelectItem>
-    );
-  };
-
   return (
     <div className="bg-neutral-950 text-neutral-50 font-sans selection:bg-blue-500/30 h-screen flex flex-col overflow-hidden p-4">
       <div className="mx-auto w-full transition-all duration-500 ease-in-out flex flex-col flex-1 overflow-hidden max-w-[100rem]">
@@ -622,7 +642,7 @@ export default function WhisperXApp() {
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 overflow-hidden mb-4">
         
           {/* Left Column (Controls & Settings) */}
-          <div className="lg:col-span-3 space-y-6">
+          <div className="lg:col-span-3 flex flex-col h-full overflow-hidden">
             <SettingsPanel 
               file={file}
               setFile={setFile}
@@ -645,6 +665,8 @@ export default function WhisperXApp() {
               result={result}
               transcriptionMessage={transcriptionMessage}
               clearProject={clearProject}
+              subtitleStyle={subtitleStyle}
+              setSubtitleStyle={setSubtitleStyle}
             />
           </div>
 
@@ -665,13 +687,14 @@ export default function WhisperXApp() {
           <div className="lg:col-span-5 animate-in fade-in slide-in-from-right-8 duration-700 h-full overflow-hidden">
             <LivePreview 
               file={file}
-                mediaUrl={mediaUrl}
-                mediaRef={mediaRef}
-                setCurrentTime={setCurrentTime}
-                setMediaDuration={setMediaDuration}
-                editableSegments={editableSegments}
-                currentTime={currentTime}
-              />
+              mediaUrl={mediaUrl}
+              mediaRef={mediaRef}
+              setCurrentTime={setCurrentTime}
+              setMediaDuration={setMediaDuration}
+              editableSegments={editableSegments}
+              currentTime={currentTime}
+              subtitleStyle={subtitleStyle}
+            />
             </div>
 
         </div>

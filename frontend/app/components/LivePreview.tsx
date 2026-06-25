@@ -8,6 +8,7 @@ interface LivePreviewProps {
   setMediaDuration: (duration: number) => void;
   editableSegments: any[];
   currentTime: number;
+  subtitleStyle: any; // We'll just pass the object directly
 }
 
 export function LivePreview({
@@ -18,6 +19,7 @@ export function LivePreview({
   setMediaDuration,
   editableSegments,
   currentTime,
+  subtitleStyle,
 }: LivePreviewProps) {
   return (
     <div className="h-full rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl flex flex-col">
@@ -58,10 +60,36 @@ export function LivePreview({
               const activeSegment = editableSegments.find((s: any) => currentTime >= s.start && currentTime <= s.end);
               if (!activeSegment) return null;
               
+              const hexToRgba = (hex: string, opacity: number) => {
+                const r = parseInt(hex.slice(1, 3), 16);
+                const g = parseInt(hex.slice(3, 5), 16);
+                const b = parseInt(hex.slice(5, 7), 16);
+                return `rgba(${r}, ${g}, ${b}, ${opacity / 100})`;
+              };
+
+              const dynamicStyle: React.CSSProperties = {
+                fontFamily: subtitleStyle.fontFamily,
+                fontWeight: subtitleStyle.fontWeight,
+                fontSize: `${subtitleStyle.fontSize}px`,
+                color: subtitleStyle.textColor,
+                textAlign: 'center',
+                lineHeight: '1.2',
+                WebkitTextStroke: subtitleStyle.strokeEnabled ? `${subtitleStyle.strokeWidth}px ${subtitleStyle.strokeColor}` : undefined,
+                textShadow: subtitleStyle.shadowEnabled 
+                  ? `${subtitleStyle.shadowOffsetX}px ${subtitleStyle.shadowOffsetY}px ${subtitleStyle.shadowBlur}px ${subtitleStyle.shadowColor}`
+                  : undefined,
+                backgroundColor: subtitleStyle.backgroundEnabled ? hexToRgba(subtitleStyle.backgroundColor, subtitleStyle.backgroundOpacity) : 'transparent',
+                padding: subtitleStyle.backgroundEnabled ? '8px 16px' : '0',
+                borderRadius: subtitleStyle.backgroundEnabled ? '8px' : '0',
+              };
+
               return (
-                <span className="font-bold text-2xl md:text-3xl text-white tracking-wide bg-black/60 px-4 py-1.5 rounded text-center backdrop-blur-sm shadow-lg leading-tight max-w-[90%]">
-                  {activeSegment.text}
-                </span>
+                <div 
+                  className="inline-block transition-all duration-75 text-center whitespace-pre-wrap max-w-full"
+                  style={dynamicStyle}
+                >
+                  {activeSegment.text.trim()}
+                </div>
               );
             })()}
           </div>
