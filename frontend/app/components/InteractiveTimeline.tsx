@@ -1,13 +1,14 @@
-import { ZoomIn, ZoomOut, Play, Pause } from "lucide-react";
+import { ZoomIn, ZoomOut, Play, Pause, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { memo } from "react";
+import { memo, useState, useEffect } from "react";
 import { formatUiTime } from "@/lib/utils";
 import type { DragTarget } from "../page";
 
 interface InteractiveTimelineProps {
   isPlaying: boolean;
   togglePlay: () => void;
+  stopPlay: () => void;
   currentTime: number;
   mediaDuration: number;
   zoomLevel: number;
@@ -19,6 +20,7 @@ interface InteractiveTimelineProps {
   editableSegments: any[];
   setDraggingBoundary: (val: DragTarget | null) => void;
   draggingBoundary: DragTarget | null;
+  onSeek: (time: number) => void;
 }
 
 // Easily change this variable to adjust the size of the boundary cursors!
@@ -41,6 +43,7 @@ const getCursorStyle = (type: 'left' | 'right' | 'both') => {
 export const InteractiveTimeline = memo(function InteractiveTimeline({
   isPlaying,
   togglePlay,
+  stopPlay,
   currentTime,
   mediaDuration,
   zoomLevel,
@@ -52,7 +55,33 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   editableSegments,
   setDraggingBoundary,
   draggingBoundary,
+  onSeek,
 }: InteractiveTimelineProps) {
+  const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
+
+  useEffect(() => {
+    if (!isDraggingPlayhead || !trackRef.current) return;
+    
+    const handleMove = (e: PointerEvent) => {
+      const trackRect = trackRef.current!.getBoundingClientRect();
+      let clickX = e.clientX - trackRect.left;
+      clickX = Math.max(0, Math.min(clickX, trackRect.width));
+      const percentage = clickX / trackRect.width;
+      onSeek(percentage * mediaDuration);
+    };
+
+    const handleUp = () => {
+      setIsDraggingPlayhead(false);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [isDraggingPlayhead, mediaDuration, trackRef, onSeek]);
+
   const duration = Math.max(mediaDuration, 0.1);
   return (
     <Card className="bg-neutral-900 border-neutral-800 shadow-2xl p-2">
@@ -60,16 +89,26 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       <div className="flex items-center justify-between px-2 mb-2 gap-4">
         
         {/* Play Controls */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1">
           <Button 
             onClick={togglePlay} 
             variant="ghost"
             size="icon" 
             className="rounded-full shrink-0 text-neutral-300 hover:text-white hover:bg-white/10"
+            title={isPlaying ? "Pause" : "Play"}
           >
             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 ml-1 fill-current" />}
           </Button>
-          <div className="text-xs font-mono text-neutral-400 bg-neutral-950 px-3 py-1.5 rounded-lg border border-neutral-800 tracking-widest hidden sm:block">
+          <Button 
+            onClick={stopPlay} 
+            variant="ghost"
+            size="icon" 
+            className="rounded-full shrink-0 text-neutral-400 hover:text-white hover:bg-white/10"
+            title="Stop and reset to start"
+          >
+            <Square className="w-4 h-4 fill-current" />
+          </Button>
+          <div className="ml-2 text-xs font-mono text-neutral-400 bg-neutral-950 px-3 py-1.5 rounded-lg border border-neutral-800 tracking-widest hidden sm:block">
             {formatUiTime(currentTime)} / {formatUiTime(mediaDuration)}
           </div>
         </div>
@@ -260,10 +299,19 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
           {/* Playhead */}
           <div 
-            className="absolute top-0 bottom-0 w-0.5 bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] z-20 pointer-events-none"
+            className="absolute top-0 bottom-0 w-8 -ml-4 z-20 flex justify-center cursor-grab active:cursor-grabbing group"
             style={{ left: `${(currentTime / duration) * 100}%` }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setIsDraggingPlayhead(true);
+            }}
           >
-            <div className="absolute -top-1 -left-1.5 w-3.5 h-3.5 bg-red-500 rounded-full" />
+            {/* The visual line */}
+            <div className="w-0.5 h-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] pointer-events-none relative">
+              {/* The top handle dot */}
+              <div className={`absolute -top-1 -left-1.5 w-3.5 h-3.5 rounded-full transition-transform ${isDraggingPlayhead ? 'bg-red-400 scale-125' : 'bg-red-500 group-hover:scale-125'}`} />
+            </div>
           </div>
         </div>
       </div>

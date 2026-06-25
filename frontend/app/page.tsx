@@ -455,6 +455,12 @@ export default function WhisperXApp() {
     }
   };
 
+  const stopPlay = () => {
+    if (!mediaRef.current) return;
+    mediaRef.current.pause();
+    mediaRef.current.currentTime = 0;
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
@@ -804,6 +810,7 @@ export default function WhisperXApp() {
           <InteractiveTimeline 
             isPlaying={isPlaying}
             togglePlay={togglePlay}
+            stopPlay={stopPlay}
             currentTime={currentTime}
             mediaDuration={mediaDuration}
             zoomLevel={zoomLevel}
@@ -815,6 +822,11 @@ export default function WhisperXApp() {
               editableSegments={editableSegments}
               setDraggingBoundary={setDraggingBoundary}
               draggingBoundary={draggingBoundary}
+              onSeek={(time) => {
+                if (mediaRef.current) {
+                  mediaRef.current.currentTime = time;
+                }
+              }}
             />
           </div>
 
