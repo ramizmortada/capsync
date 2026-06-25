@@ -191,6 +191,12 @@ def transcribe(
                         })
             final_segments = chunked_segments
 
+        # Extend timestamps to eliminate gaps between segments
+        if final_segments:
+            for i in range(len(final_segments) - 1):
+                if final_segments[i]["end"] < final_segments[i+1]["start"]:
+                    final_segments[i]["end"] = final_segments[i+1]["start"]
+
         print("Returning result to frontend.", flush=True)
         return {"language": align_language, "segments": final_segments}
     except Exception as e:

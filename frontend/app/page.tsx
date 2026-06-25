@@ -1,12 +1,30 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Upload, FileAudio, FileVideo, CheckCircle2, Loader2, Download, Settings, Database, CloudDownload } from "lucide-react";
+import { Upload, FileAudio, FileVideo, Settings, Download, CheckCircle2, Loader2, CloudDownload, Video, Edit3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+
+// Helper function for SRT time formatting
+const formatSrtTime = (seconds: number) => {
+  const date = new Date(seconds * 1000);
+  const hh = String(date.getUTCHours()).padStart(2, '0');
+  const mm = String(date.getUTCMinutes()).padStart(2, '0');
+  const ss = String(date.getUTCSeconds()).padStart(2, '0');
+  const ms = String(date.getUTCMilliseconds()).padStart(3, '0');
+  return `${hh}:${mm}:${ss},${ms}`;
+};
+
+// Helper for UI time formatting (e.g., 00:12.3)
+const formatUiTime = (seconds: number) => {
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  const ms = Math.floor((seconds % 1) * 10);
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms}`;
+};
 
 export default function WhisperXApp() {
   const [file, setFile] = useState<File | null>(null);
@@ -21,6 +39,12 @@ export default function WhisperXApp() {
   const [result, setResult] = useState<any>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [downloadedModels, setDownloadedModels] = useState<Record<string, boolean>>({});
+
+  // Editable subtitle segments
+  const [editableSegments, setEditableSegments] = useState<any[]>([]);
+
+  const [mediaUrl, setMediaUrl] = useState<string>("");
+  const [currentTime, setCurrentTime] = useState(0);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -41,6 +65,17 @@ export default function WhisperXApp() {
     localStorage.setItem("whisperx_lang", language);
     localStorage.setItem("whisperx_words", maxWords);
   }, [modelSize, language, maxWords]);
+
+  // Generate local object URL for instant media playback
+  useEffect(() => {
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setMediaUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setMediaUrl("");
+    }
+  }, [file]);
 
   // Fetch downloaded models status
   const checkModelsStatus = async () => {
@@ -68,11 +103,13 @@ export default function WhisperXApp() {
           const res = await fetch(`http://localhost:8000/api/models/progress/${modelSize}`);
           if (res.ok) {
             const data = await res.json();
-            setProgress(data.progress);
+            if (data.progress !== null) {
+              setProgress(data.progress);
+            }
             if (data.status === "done" || data.progress === 100) {
               setStatus("transcribing");
-              setProgress(0); // reset to show indeterminate transcription progress
-              checkModelsStatus(); // refresh list
+              setProgress(0);
+              checkModelsStatus();
             }
           }
         } catch (err) {}
@@ -114,7 +151,6 @@ export default function WhisperXApp() {
     }
 
     try {
-      // If model is not downloaded, switch to downloading status immediately
       if (!downloadedModels[modelSize]) {
         setTimeout(() => setStatus("downloading_model"), 500);
       } else {
@@ -122,7 +158,6 @@ export default function WhisperXApp() {
         setProgress(40);
       }
 
-      // Send to FastAPI backend
       const response = await fetch("http://localhost:8000/api/transcribe", {
         method: "POST",
         body: formData,
@@ -139,9 +174,12 @@ export default function WhisperXApp() {
       }
 
       setResult(data);
+      // Initialize the editable segments state
+      setEditableSegments(data.segments);
+      
       setProgress(100);
       setStatus("done");
-      checkModelsStatus(); // refresh after success just in case
+      checkModelsStatus();
     } catch (err: any) {
       setErrorMessage(err.message || "An unknown error occurred.");
       setStatus("error");
@@ -149,23 +187,20 @@ export default function WhisperXApp() {
     }
   };
 
-  // Convert WhisperX segments to SRT format
+  const handleSegmentChange = (index: number, newText: string) => {
+    const newSegments = [...editableSegments];
+    newSegments[index] = { ...newSegments[index], text: newText };
+    setEditableSegments(newSegments);
+  };
+
+  // Convert WhisperX segments to SRT format using editableSegments
   const generateSRT = () => {
-    if (!result || !result.segments) return "";
+    if (!editableSegments || editableSegments.length === 0) return "";
     
     let srtContent = "";
-    result.segments.forEach((segment: any, index: number) => {
-      const formatTime = (seconds: number) => {
-        const date = new Date(seconds * 1000);
-        const hh = String(date.getUTCHours()).padStart(2, '0');
-        const mm = String(date.getUTCMinutes()).padStart(2, '0');
-        const ss = String(date.getUTCSeconds()).padStart(2, '0');
-        const ms = String(date.getUTCMilliseconds()).padStart(3, '0');
-        return `${hh}:${mm}:${ss},${ms}`;
-      };
-
+    editableSegments.forEach((segment: any, index: number) => {
       srtContent += `${index + 1}\n`;
-      srtContent += `${formatTime(segment.start)} --> ${formatTime(segment.end)}\n`;
+      srtContent += `${formatSrtTime(segment.start)} --> ${formatSrtTime(segment.end)}\n`;
       srtContent += `${segment.text.trim()}\n\n`;
     });
     
@@ -202,175 +237,251 @@ export default function WhisperXApp() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-50 flex items-center justify-center p-4">
-      <Card className="w-full max-w-2xl bg-neutral-900 border-neutral-800 shadow-2xl">
-        <CardHeader className="text-center pb-8">
-          <CardTitle className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 text-transparent bg-clip-text">
-            WhisperX Studio
-          </CardTitle>
-          <CardDescription className="text-neutral-400 mt-2">
-            Blazing fast AI transcription with perfect word-level timestamps.
-          </CardDescription>
-        </CardHeader>
+    <div className="min-h-screen bg-neutral-950 text-neutral-50 p-4 md:p-8 font-sans selection:bg-blue-500/30">
+      <div className={`mx-auto transition-all duration-500 ease-in-out ${status === "done" && result ? "max-w-[100rem] grid grid-cols-1 lg:grid-cols-12 gap-6" : "max-w-2xl"}`}>
         
-        <CardContent className="space-y-6">
-          {/* Settings Area */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="model-size" className="text-neutral-300 flex items-center gap-2">
-                <Settings className="w-4 h-4" /> Model Size
-              </Label>
-              <Select value={modelSize} onValueChange={setModelSize} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
-                <SelectTrigger className="bg-neutral-800 border-neutral-700">
-                  <SelectValue placeholder="Select model size" />
-                </SelectTrigger>
-                <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                  {renderModelOption("tiny", "Tiny (Fastest)")}
-                  {renderModelOption("base", "Base")}
-                  {renderModelOption("medium", "Medium")}
-                  {renderModelOption("large-v2", "Large-v2 (Best)")}
-                </SelectContent>
-              </Select>
-            </div>
+        {/* Left Column (Controls & Settings) */}
+        <div className={status === "done" && result ? "lg:col-span-3 space-y-6" : "w-full"}>
+          <Card className="w-full bg-neutral-900 border-neutral-800 shadow-2xl">
+            <CardHeader className="text-center pb-8">
+              <CardTitle className="text-4xl font-extrabold tracking-tight bg-gradient-to-r from-blue-400 to-emerald-400 text-transparent bg-clip-text">
+                WhisperX Studio
+              </CardTitle>
+              <CardDescription className="text-neutral-400 mt-2">
+                Blazing fast AI transcription with perfect word-level timestamps.
+              </CardDescription>
+            </CardHeader>
             
-            <div className="space-y-2">
-              <Label htmlFor="language" className="text-neutral-300">Language (Optional)</Label>
-              <Select value={language} onValueChange={setLanguage} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
-                <SelectTrigger className="bg-neutral-800 border-neutral-700">
-                  <SelectValue placeholder="Auto-detect" />
-                </SelectTrigger>
-                <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                  <SelectItem value="">Auto-detect</SelectItem>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="es">Spanish</SelectItem>
-                  <SelectItem value="fr">French</SelectItem>
-                  <SelectItem value="de">German</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {/* New row for Max Words */}
-          <div className="space-y-2">
-            <Label htmlFor="max-words" className="text-neutral-300">Max Words Per Caption (For Short-form Video)</Label>
-            <Select value={maxWords} onValueChange={setMaxWords} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
-              <SelectTrigger className="bg-neutral-800 border-neutral-700">
-                <SelectValue placeholder="Default (Auto length)" />
-              </SelectTrigger>
-              <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                <SelectItem value="0">Default (Strict Auto)</SelectItem>
-                <SelectItem value="-1">Smart Mode (Normal: ~5 words)</SelectItem>
-                <SelectItem value="-2">Smart Mode (Short: ~2-3 words)</SelectItem>
-                <SelectItem value="1">1 Word (Strict)</SelectItem>
-                <SelectItem value="2">2 Words (Strict)</SelectItem>
-                <SelectItem value="3">3 Words (Strict)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Upload Area */}
-          {!file ? (
-            <div 
-              onDragOver={handleDragOver}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className="mt-6 border-2 border-dashed border-neutral-700 rounded-xl p-12 text-center cursor-pointer hover:border-blue-500 hover:bg-neutral-800/50 transition-all duration-300 group"
-            >
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleFileChange} 
-                className="hidden" 
-                accept="video/*,audio/*"
-              />
-              <Upload className="w-12 h-12 mx-auto text-neutral-500 group-hover:text-blue-400 transition-colors mb-4" />
-              <h3 className="text-lg font-medium text-neutral-200">Drag & Drop Media</h3>
-              <p className="text-sm text-neutral-500 mt-2">or click to browse your computer</p>
-            </div>
-          ) : (
-            <div className="border border-neutral-700 bg-neutral-800/50 rounded-xl p-6 flex items-center justify-between">
-              <div className="flex items-center gap-4 truncate">
-                <div className="p-3 bg-blue-500/10 rounded-lg">
-                  {file.type.startsWith('video') ? (
-                    <FileVideo className="w-6 h-6 text-blue-400" />
-                  ) : (
-                    <FileAudio className="w-6 h-6 text-blue-400" />
-                  )}
+            <CardContent className="space-y-6">
+              {/* Settings Area */}
+              <div className="grid grid-cols-1 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="model-size" className="text-neutral-300 flex items-center gap-2">
+                    <Settings className="w-4 h-4" /> Model Size
+                  </Label>
+                  <Select value={modelSize} onValueChange={setModelSize} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
+                    <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                      <SelectValue placeholder="Select model size" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
+                      {renderModelOption("tiny", "Tiny (Fastest)")}
+                      {renderModelOption("base", "Base")}
+                      {renderModelOption("medium", "Medium")}
+                      {renderModelOption("large-v2", "Large-v2 (Best)")}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="truncate">
-                  <p className="font-medium text-neutral-200 truncate">{file.name}</p>
-                  <p className="text-xs text-neutral-500">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+                
+                <div className="space-y-2">
+                  <Label htmlFor="language" className="text-neutral-300">Language (Optional)</Label>
+                  <Select value={language} onValueChange={setLanguage} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
+                    <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                      <SelectValue placeholder="Auto-detect" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
+                      <SelectItem value="">Auto-detect</SelectItem>
+                      <SelectItem value="en">English</SelectItem>
+                      <SelectItem value="es">Spanish</SelectItem>
+                      <SelectItem value="fr">French</SelectItem>
+                      <SelectItem value="de">German</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="max-words" className="text-neutral-300">Max Words Per Caption</Label>
+                  <Select value={maxWords} onValueChange={setMaxWords} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
+                    <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                      <SelectValue placeholder="Default" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
+                      <SelectItem value="0">Default (Strict Auto)</SelectItem>
+                      <SelectItem value="-1">Smart Mode (Normal: ~5 words)</SelectItem>
+                      <SelectItem value="-2">Smart Mode (Short: ~2-3 words)</SelectItem>
+                      <SelectItem value="1">1 Word (Strict)</SelectItem>
+                      <SelectItem value="2">2 Words (Strict)</SelectItem>
+                      <SelectItem value="3">3 Words (Strict)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Upload Area */}
+              {!file ? (
+                <div 
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="mt-6 border-2 border-dashed border-neutral-700 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-neutral-800/50 transition-all duration-300 group"
+                >
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleFileChange} 
+                    className="hidden" 
+                    accept="video/*,audio/*"
+                  />
+                  <Upload className="w-10 h-10 mx-auto text-neutral-500 group-hover:text-blue-400 transition-colors mb-4" />
+                  <h3 className="text-sm font-medium text-neutral-200">Drag & Drop Media</h3>
+                </div>
+              ) : (
+                <div className="border border-neutral-700 bg-neutral-800/50 rounded-xl p-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3 truncate">
+                    <div className="p-2 bg-blue-500/10 rounded-lg">
+                      {file.type.startsWith('video') ? (
+                        <FileVideo className="w-5 h-5 text-blue-400" />
+                      ) : (
+                        <FileAudio className="w-5 h-5 text-blue-400" />
+                      )}
+                    </div>
+                    <div className="truncate">
+                      <p className="font-medium text-sm text-neutral-200 truncate">{file.name}</p>
+                      <p className="text-xs text-neutral-500">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
+                    </div>
+                  </div>
+                  
+                  {status === "idle" || status === "error" ? (
+                    <Button variant="ghost" size="sm" onClick={() => setFile(null)} className="text-neutral-400 hover:text-white px-2">
+                      Remove
+                    </Button>
+                  ) : status === "done" ? (
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 ml-2" />
+                  ) : null}
+                </div>
+              )}
+
+              {/* Progress Area */}
+              {(status === "uploading" || status === "transcribing" || status === "downloading_model") && (
+                <div className="space-y-3 pt-4">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-blue-400 font-medium animate-pulse">
+                      {status === "uploading" ? "Uploading..." : 
+                       status === "downloading_model" ? `Downloading Model (${progress}%)` : 
+                       "Transcribing..."}
+                    </span>
+                    <span className="text-neutral-400">{progress}%</span>
+                  </div>
+                  <Progress value={progress} className="h-1.5 bg-neutral-800" />
+                </div>
+              )}
+
+              {/* Error Message */}
+              {status === "error" && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-xs">
+                  {errorMessage}
+                </div>
+              )}
+            </CardContent>
+
+            <CardFooter className="pt-2">
+              <Button 
+                className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-5 shadow-xl shadow-blue-900/20 disabled:opacity-50 text-sm"
+                disabled={!file || status === "uploading" || status === "transcribing" || status === "downloading_model"}
+                onClick={handleTranscribe}
+              >
+                {status === "uploading" || status === "transcribing" || status === "downloading_model" ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing Media</>
+                ) : status === "done" ? (
+                  "Transcribe Another"
+                ) : (
+                  "Start Transcription"
+                )}
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+
+        {/* Middle Column (Editable Subtitles List) */}
+        {status === "done" && result && (
+          <div className="lg:col-span-4 animate-in fade-in slide-in-from-bottom-4 duration-700 lg:h-[calc(100vh-4rem)]">
+            <Card className="h-full flex flex-col bg-neutral-900 border-neutral-800 shadow-2xl overflow-hidden">
+              <div className="p-4 border-b border-neutral-800 bg-neutral-900 flex justify-between items-center shrink-0">
+                <div className="flex items-center gap-2 text-sm font-medium text-neutral-300">
+                  <Edit3 className="w-4 h-4 text-blue-400" /> Subtitle Editor
+                </div>
+                <Button onClick={downloadSRT} size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white gap-2 h-8 text-xs px-3 shadow-lg shadow-emerald-900/20">
+                  <Download className="w-3 h-3" /> Download .SRT
+                </Button>
               </div>
               
-              {status === "idle" || status === "error" ? (
-                <Button variant="ghost" size="sm" onClick={() => setFile(null)} className="text-neutral-400 hover:text-white">
-                  Remove
-                </Button>
-              ) : status === "done" ? (
-                <CheckCircle2 className="w-6 h-6 text-emerald-400" />
-              ) : null}
-            </div>
-          )}
-
-          {/* Progress Area */}
-          {(status === "uploading" || status === "transcribing" || status === "downloading_model") && (
-            <div className="space-y-3 pt-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-blue-400 font-medium animate-pulse">
-                  {status === "uploading" ? "Uploading to AI Engine..." : 
-                   status === "downloading_model" ? `Downloading AI Model (${progress}%)` : 
-                   "Transcribing via WhisperX..."}
-                </span>
-                <span className="text-neutral-400">{progress}%</span>
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-neutral-950/50">
+                {editableSegments.map((segment, index) => {
+                  const isActive = currentTime >= segment.start && currentTime <= segment.end;
+                  return (
+                    <div 
+                      key={index} 
+                      className={`p-3 rounded-xl border transition-all duration-200 ${
+                        isActive 
+                          ? 'border-blue-500/50 bg-blue-500/10 shadow-[0_0_15px_rgba(59,130,246,0.1)]' 
+                          : 'border-neutral-800 bg-neutral-900 hover:border-neutral-700'
+                      }`}
+                    >
+                      <div className="text-xs text-neutral-500 mb-2 flex justify-between font-mono tracking-wider">
+                        <span>{formatUiTime(segment.start)}</span>
+                        <span>{formatUiTime(segment.end)}</span>
+                      </div>
+                      <textarea
+                        value={segment.text}
+                        onChange={(e) => handleSegmentChange(index, e.target.value)}
+                        className="w-full bg-transparent text-sm text-neutral-200 outline-none resize-none font-medium placeholder-neutral-700"
+                        rows={2}
+                      />
+                    </div>
+                  );
+                })}
               </div>
-              <Progress value={progress} className="h-2 bg-neutral-800" />
-            </div>
-          )}
+            </Card>
+          </div>
+        )}
 
-          {/* Error Message */}
-          {status === "error" && (
-            <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm">
-              {errorMessage}
-            </div>
-          )}
-
-          {/* Results Area */}
-          {status === "done" && result && (
-            <div className="pt-6 border-t border-neutral-800 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-medium text-neutral-200">Transcription Complete</h3>
-                  <p className="text-sm text-neutral-500">Detected language: {result.language}</p>
-                </div>
-                <Button onClick={downloadSRT} className="bg-emerald-600 hover:bg-emerald-500 text-white gap-2 shadow-lg shadow-emerald-900/20">
-                  <Download className="w-4 h-4" /> Download .SRT
-                </Button>
+        {/* Right Column (Live Preview Studio) */}
+        {status === "done" && result && (
+          <div className="lg:col-span-5 animate-in fade-in slide-in-from-right-8 duration-700 lg:h-[calc(100vh-4rem)]">
+            <div className="h-full rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl flex flex-col">
+              <div className="p-4 bg-neutral-900 border-b border-neutral-800 text-sm font-medium text-neutral-400 flex items-center gap-2 shrink-0">
+                <Video className="w-4 h-4 text-emerald-400" /> Live Preview Studio
               </div>
               
-              <div className="p-4 bg-neutral-950 border border-neutral-800 rounded-lg h-48 overflow-y-auto text-sm text-neutral-300 whitespace-pre-wrap leading-relaxed font-mono">
-                {result.segments.map((s: any) => s.text).join(' ')}
+              <div className="bg-black flex-1 flex items-center justify-center relative min-h-[300px]">
+                {file?.type.startsWith('video') ? (
+                  <video 
+                    src={mediaUrl} 
+                    controls 
+                    className="absolute inset-0 w-full h-full object-contain"
+                    onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                  />
+                ) : (
+                  <div className="w-full flex items-center justify-center p-8">
+                    <audio 
+                      src={mediaUrl} 
+                      controls 
+                      className="w-full max-w-md"
+                      onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Simple Subtitle Text Box Below Video */}
+              <div className="p-8 bg-neutral-950 border-t border-neutral-800 min-h-[140px] flex items-center justify-center shrink-0">
+                {(() => {
+                  const activeSegment = editableSegments.find((s: any) => currentTime >= s.start && currentTime <= s.end);
+                  if (!activeSegment) return <span className="text-neutral-700 italic">...</span>;
+                  
+                  return (
+                    <div className="text-center w-full">
+                      <span className="font-medium text-2xl md:text-3xl text-white tracking-wide">
+                        {activeSegment.text}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
-          )}
-        </CardContent>
+          </div>
+        )}
 
-        <CardFooter className="pt-2">
-          <Button 
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-6 shadow-xl shadow-blue-900/20 disabled:opacity-50"
-            disabled={!file || status === "uploading" || status === "transcribing" || status === "downloading_model"}
-            onClick={handleTranscribe}
-          >
-            {status === "uploading" || status === "transcribing" || status === "downloading_model" ? (
-              <><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Processing Media</>
-            ) : status === "done" ? (
-              "Transcribe Another File"
-            ) : (
-              "Start Transcription"
-            )}
-          </Button>
-        </CardFooter>
-      </Card>
+      </div>
     </div>
   );
 }
