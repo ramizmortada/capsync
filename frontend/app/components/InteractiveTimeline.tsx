@@ -76,8 +76,18 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       {/* Scrollable Timeline Container */}
       <div 
         ref={timelineRef}
-        onMouseEnter={() => isHoveringTimeline.current = true}
-        onMouseLeave={() => isHoveringTimeline.current = false}
+        onWheel={() => {
+          isHoveringTimeline.current = true;
+          clearTimeout((timelineRef as any)._timeout);
+          (timelineRef as any)._timeout = setTimeout(() => isHoveringTimeline.current = false, 1000);
+        }}
+        onPointerDown={() => {
+          isHoveringTimeline.current = true;
+          clearTimeout((timelineRef as any)._timeout);
+        }}
+        onPointerUp={() => {
+          (timelineRef as any)._timeout = setTimeout(() => isHoveringTimeline.current = false, 1000);
+        }}
         className="relative h-24 bg-neutral-950 rounded-xl overflow-x-auto overflow-y-hidden select-none [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-neutral-950 [&::-webkit-scrollbar-thumb]:bg-neutral-800 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-neutral-700 transition-colors"
       >
         {/* Scaled Inner Track */}

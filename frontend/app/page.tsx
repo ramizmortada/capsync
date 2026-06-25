@@ -440,6 +440,17 @@ export default function WhisperXApp() {
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, [editableSegments, togglePlay]);
 
+  // Center the timeline on the playhead whenever the zoom level changes
+  useEffect(() => {
+    if (timelineRef.current && trackRef.current && mediaRef.current && mediaDuration > 0) {
+      const trackWidth = trackRef.current.scrollWidth;
+      const playheadX = (mediaRef.current.currentTime / mediaDuration) * trackWidth;
+      const container = timelineRef.current;
+      
+      container.scrollLeft = playheadX - container.clientWidth / 2;
+    }
+  }, [zoomLevel, mediaDuration]);
+
   // Smooth Auto-scroll timeline when playing
   const isHoveringTimeline = useRef(false);
 
