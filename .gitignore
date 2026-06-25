@@ -1,0 +1,24 @@
+# Large model files
+models/
+
+# Python Virtual Environment
+whisperx_env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Downloaded installers
+installers/
+*.exe
+
+# Frontend specific ignores (in case the nested .gitignore is missed)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/build/
+frontend/.env*.local
+
+# System files
+.DS_Store
+Thumbs.db
