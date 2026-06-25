@@ -22,6 +22,7 @@ interface SettingsPanelProps {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   handleTranscribe: () => void;
   downloadedModels: Record<string, boolean>;
+  cancelTranscription: () => void;
 }
 
 export function SettingsPanel({
@@ -41,6 +42,7 @@ export function SettingsPanel({
   fileInputRef,
   handleTranscribe,
   downloadedModels,
+  cancelTranscription,
 }: SettingsPanelProps) {
   
   const renderModelOption = (val: string, label: string) => {
@@ -184,11 +186,20 @@ export function SettingsPanel({
         )}
       </CardContent>
       
-      <CardFooter className="bg-neutral-900/50 border-t border-neutral-800 p-6 rounded-b-xl">
+      <CardFooter className="bg-neutral-900/50 border-t border-neutral-800 p-6 rounded-b-xl flex gap-3">
+        {(status === "uploading" || status === "transcribing" || status === "downloading_model") && (
+          <Button 
+            onClick={cancelTranscription} 
+            variant="destructive"
+            className="w-1/3 font-semibold shadow-md transition-all duration-300 bg-red-600 hover:bg-red-500"
+          >
+            Cancel
+          </Button>
+        )}
         <Button 
           onClick={handleTranscribe} 
           disabled={!file || status === "uploading" || status === "transcribing" || status === "downloading_model"} 
-          className="w-full font-semibold shadow-md transition-all duration-300"
+          className="flex-1 font-semibold shadow-md transition-all duration-300"
         >
           {status === "uploading" || status === "transcribing" || status === "downloading_model" ? (
             <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing Media</>

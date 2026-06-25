@@ -1,9 +1,30 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Edit3, Trash2, Download, Combine, Check, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatUiTime } from "@/lib/utils";
+
+function AutoResizeTextarea({ value, onChange, className, ...props }: any) {
+  return (
+    <div className="grid">
+      <textarea
+        value={value}
+        onChange={onChange}
+        className={`${className} col-start-1 row-start-1 resize-none overflow-hidden h-full`}
+        rows={1}
+        {...props}
+      />
+      {/* Invisible clone to force the height of the grid */}
+      <div 
+        className={`${className} col-start-1 row-start-1 invisible whitespace-pre-wrap break-words pointer-events-none`}
+        aria-hidden="true"
+      >
+        {value + " "}
+      </div>
+    </div>
+  );
+}
 
 interface SubtitleEditorProps {
   editableSegments: any[];
@@ -44,6 +65,28 @@ export function SubtitleEditor({
     handleDeleteSegments(selectedIndexes);
     setSelectedIndexes([]);
   };
+
+  // Keyboard shortcut for deletion
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      
+      const isDeleteKey = e.key === 'Delete' || e.key === 'Backspace' || e.key.toLowerCase() === 'd';
+      
+      if (isDeleteKey && !isInput) {
+        // Prevent default browser behavior (like navigating back on Backspace)
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (selectedIndexes.length > 0) {
+          onBulkDeleteClick();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, [selectedIndexes, handleDeleteSegments]);
 
   // Only show merge button if exactly 2 are selected and they are adjacent
   const isMergeVisible = selectedIndexes.length === 2 && Math.abs(selectedIndexes[0] - selectedIndexes[1]) === 1;
@@ -133,15 +176,11 @@ export function SubtitleEditor({
                       </button>
                     </div>
 
-                    <textarea
+                    <AutoResizeTextarea
                       value={segment.text}
-                      onChange={(e) => handleSegmentChange(index, e.target.value)}
-                      className="w-full bg-transparent text-sm text-neutral-200 outline-none resize-none font-medium placeholder-neutral-700"
+                      onChange={(e: any) => handleSegmentChange(index, e.target.value)}
+                      className="w-full bg-transparent text-sm text-neutral-200 outline-none resize-none font-medium placeholder-neutral-700 overflow-hidden"
                       rows={1}
-                      onInput={(e) => {
-                        e.currentTarget.style.height = 'auto';
-                        e.currentTarget.style.height = e.currentTarget.scrollHeight + 'px';
-                      }}
                     />
                   </div>
                 </div>

@@ -1,7 +1,9 @@
 import { ZoomIn, ZoomOut, Play, Pause } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { memo } from "react";
 import { formatUiTime } from "@/lib/utils";
+import type { DragTarget } from "../page";
 
 interface InteractiveTimelineProps {
   isPlaying: boolean;
@@ -15,11 +17,11 @@ interface InteractiveTimelineProps {
   trackRef: React.RefObject<HTMLDivElement | null>;
   handleTrackClick: (e: React.PointerEvent<HTMLDivElement>) => void;
   editableSegments: any[];
-  setDraggingBoundary: (val: number | 'start' | 'end' | null) => void;
-  draggingBoundary: number | 'start' | 'end' | null;
+  setDraggingBoundary: (val: DragTarget | null) => void;
+  draggingBoundary: DragTarget | null;
 }
 
-export function InteractiveTimeline({
+export const InteractiveTimeline = memo(function InteractiveTimeline({
   isPlaying,
   togglePlay,
   currentTime,
@@ -133,53 +135,96 @@ export function InteractiveTimeline({
 
           {/* Draggable Boundaries */}
           
-          {/* Start Boundary */}
+          {/* First segment start boundary */}
           {editableSegments.length > 0 && (
             <div
               onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('start'); }}
-              className="absolute top-0 bottom-0 w-4 -ml-2 cursor-col-resize z-10 flex justify-center items-center group"
+              className="absolute top-0 bottom-0 w-4 -ml-2 cursor-w-resize z-10 flex justify-center items-center group"
               style={{ left: `${(editableSegments[0].start / mediaDuration) * 100}%` }}
             >
               <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'start' ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
             </div>
           )}
 
-          {/* End Boundary */}
-          {editableSegments.length > 0 && (
-            <div
-              onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('end'); }}
-              className="absolute top-0 bottom-0 w-4 -ml-2 cursor-col-resize z-10 flex justify-center items-center group"
-              style={{ left: `${(editableSegments[editableSegments.length - 1].end / mediaDuration) * 100}%` }}
-            >
-              <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'end' ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
-            </div>
-          )}
-
-          {/* Shared Boundaries */}
+          {/* Boundaries for segments */}
           {editableSegments.map((segment, index) => {
-            // The boundary is the END of the current segment
-            if (index === editableSegments.length - 1) return null; // Last segment has no right boundary to drag
-            
-            const left = (segment.end / mediaDuration) * 100;
-            
-            return (
-              <div
-                key={`boundary-${index}`}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  setDraggingBoundary(index);
-                }}
-                className="absolute top-0 bottom-0 w-4 -ml-2 cursor-col-resize z-10 flex justify-center items-center group"
-                style={{ left: `${left}%` }}
-              >
-                {/* Visual indicator on hover/drag */}
-                <div className={`w-0.5 h-full transition-colors ${
-                  draggingBoundary === index 
-                    ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' 
-                    : 'bg-neutral-600 group-hover:bg-emerald-400 group-hover:w-1'
-                }`} />
-              </div>
-            );
+            const elements = [];
+
+            if (index < editableSegments.length - 1) {
+              const nextSegment = editableSegments[index + 1];
+              const isTouching = nextSegment.start - segment.end <= 0.05;
+
+              if (isTouching) {
+                // Render 3-zone cluster at segment.end
+                const leftPercent = (segment.end / mediaDuration) * 100;
+                const isDraggingThisBoth = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'both' && draggingBoundary.index === index;
+                
+                elements.push(
+                  <div key={`cluster-${index}`} className="absolute top-0 bottom-0 w-8 -ml-4 z-10 flex" style={{ left: `${leftPercent}%` }}>
+                    {/* Left Zone (End of segment i) */}
+                    <div 
+                      className="flex-1 cursor-w-resize group flex justify-end" 
+                      onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'end', index }); }}
+                    >
+                      <div className="w-1 h-full bg-transparent group-hover:bg-emerald-400/30 transition-colors" />
+                    </div>
+                    {/* Center Zone (Both) */}
+                    <div 
+                      className="w-2 cursor-col-resize flex justify-center items-center group"
+                      onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'both', index }); }}
+                    >
+                      <div className={`w-0.5 h-full transition-colors ${isDraggingThisBoth ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                    </div>
+                    {/* Right Zone (Start of segment i+1) */}
+                    <div 
+                      className="flex-1 cursor-e-resize group flex justify-start"
+                      onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'start', index: index + 1 }); }}
+                    >
+                      <div className="w-1 h-full bg-transparent group-hover:bg-emerald-400/30 transition-colors" />
+                    </div>
+                  </div>
+                );
+              } else {
+                // Gap exists! Render two independent handles.
+                const isDraggingEnd = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'end' && draggingBoundary.index === index;
+                elements.push(
+                  <div
+                    key={`end-${index}`}
+                    onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'end', index }); }}
+                    className="absolute top-0 bottom-0 w-4 -ml-2 cursor-e-resize z-10 flex justify-center items-center group"
+                    style={{ left: `${(segment.end / mediaDuration) * 100}%` }}
+                  >
+                    <div className={`w-0.5 h-full transition-colors ${isDraggingEnd ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                  </div>
+                );
+                
+                const isDraggingStart = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'start' && draggingBoundary.index === index + 1;
+                elements.push(
+                  <div
+                    key={`start-${index + 1}`}
+                    onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'start', index: index + 1 }); }}
+                    className="absolute top-0 bottom-0 w-4 -ml-2 cursor-w-resize z-10 flex justify-center items-center group"
+                    style={{ left: `${(nextSegment.start / mediaDuration) * 100}%` }}
+                  >
+                    <div className={`w-0.5 h-full transition-colors ${isDraggingStart ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                  </div>
+                );
+              }
+            } else {
+              // Very last segment end boundary
+              elements.push(
+                <div
+                  key="last-end"
+                  onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('end'); }}
+                  className="absolute top-0 bottom-0 w-4 -ml-2 cursor-e-resize z-10 flex justify-center items-center group"
+                  style={{ left: `${(segment.end / mediaDuration) * 100}%` }}
+                >
+                  <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'end' ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                </div>
+              );
+            }
+
+            return elements;
           })}
 
           {/* Playhead */}
@@ -193,4 +238,4 @@ export function InteractiveTimeline({
       </div>
     </Card>
   );
-}
+});

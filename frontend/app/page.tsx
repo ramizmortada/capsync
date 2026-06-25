@@ -14,6 +14,8 @@ import { SubtitleEditor } from "./components/SubtitleEditor";
 import { LivePreview } from "./components/LivePreview";
 import { InteractiveTimeline } from "./components/InteractiveTimeline";
 
+export type DragTarget = { type: 'start' | 'end' | 'both', index: number } | 'start' | 'end';
+
 // Helper function for SRT time formatting
 const formatSrtTime = (seconds: number) => {
   const date = new Date(seconds * 1000);
@@ -52,13 +54,28 @@ export default function WhisperXApp() {
   const [mediaUrl, setMediaUrl] = useState<string>("");
   const [currentTime, setCurrentTime] = useState(0);
   const [mediaDuration, setMediaDuration] = useState<number>(0);
-  const [draggingBoundary, setDraggingBoundary] = useState<number | 'start' | 'end' | null>(null);
+  const [draggingBoundary, setDraggingBoundary] = useState<DragTarget | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
+  
+  // History for Undo/Redo
+  const [segmentHistory, setSegmentHistory] = useState<{ past: any[][], future: any[][] }>({ past: [], future: [] });
+
+  const updateSegments = (newSegments: any[] | ((prev: any[]) => any[])) => {
+    setEditableSegments((prevSegments) => {
+      const updated = typeof newSegments === 'function' ? newSegments(prevSegments) : newSegments;
+      setSegmentHistory(prevHistory => ({
+        past: [...prevHistory.past, prevSegments].slice(-50),
+        future: []
+      }));
+      return updated;
+    });
+  };
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const mediaRef = useRef<HTMLMediaElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const [isProjectLoaded, setIsProjectLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -196,9 +213,13 @@ export default function WhisperXApp() {
       formData.append("language", language);
     }
 
+    abortControllerRef.current = new AbortController();
+
     try {
       if (!downloadedModels[modelSize]) {
-        setTimeout(() => setStatus("downloading_model"), 500);
+        setTimeout(() => {
+          setStatus(prev => prev !== "idle" && prev !== "error" ? "downloading_model" : prev);
+        }, 500);
       } else {
         setStatus("transcribing");
         setProgress(40);
@@ -207,6 +228,7 @@ export default function WhisperXApp() {
       const response = await fetch("http://localhost:8000/api/transcribe", {
         method: "POST",
         body: formData,
+        signal: abortControllerRef.current.signal,
       });
 
       if (!response.ok) {
@@ -220,45 +242,63 @@ export default function WhisperXApp() {
       }
 
       setResult(data);
-      // Initialize the editable segments state
+      // Initialize the editable segments state (clear history on new transcript)
+      setSegmentHistory({ past: [], future: [] });
       setEditableSegments(data.segments);
       
       setProgress(100);
       setStatus("done");
       checkModelsStatus();
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        setStatus("idle");
+        setProgress(0);
+        return;
+      }
       setErrorMessage(err.message || "An unknown error occurred.");
       setStatus("error");
       setProgress(0);
     }
   };
 
+  const cancelTranscription = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setStatus("idle");
+    setProgress(0);
+  };
+
   const handleSegmentChange = (index: number, newText: string) => {
-    const newSegments = [...editableSegments];
-    newSegments[index] = { ...newSegments[index], text: newText };
-    setEditableSegments(newSegments);
+    updateSegments((prev) => {
+      const newSegments = [...prev];
+      newSegments[index] = { ...newSegments[index], text: newText };
+      return newSegments;
+    });
   };
 
   const handleMergeSegments = (index1: number, index2: number) => {
-    const minIndex = Math.min(index1, index2);
-    const maxIndex = Math.max(index1, index2);
-    
-    const newSegments = [...editableSegments];
-    const first = newSegments[minIndex];
-    const second = newSegments[maxIndex];
-    
-    newSegments[minIndex] = {
-      ...first,
-      end: second.end,
-      text: `${first.text.trim()} ${second.text.trim()}`.trim()
-    };
-    
-    newSegments.splice(maxIndex, 1);
-    setEditableSegments(newSegments);
+    updateSegments((prev) => {
+      const minIndex = Math.min(index1, index2);
+      const maxIndex = Math.max(index1, index2);
+      
+      const newSegments = [...prev];
+      const first = newSegments[minIndex];
+      const second = newSegments[maxIndex];
+      
+      newSegments[minIndex] = {
+        ...first,
+        end: second.end,
+        text: `${first.text.trim()} ${second.text.trim()}`.trim()
+      };
+      
+      newSegments.splice(maxIndex, 1);
+      return newSegments;
+    });
   };
 
   const handleDeleteSegments = (indices: number[]) => {
-    setEditableSegments((prev) => prev.filter((_, i) => !indices.includes(i)));
+    updateSegments((prev) => prev.filter((_, i) => !indices.includes(i)));
   };
 
   const togglePlay = () => {
@@ -272,18 +312,46 @@ export default function WhisperXApp() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        const target = e.target as HTMLElement;
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-          return; // Ignore if typing
-        }
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      
+      // Play/Pause with Space
+      if (e.code === 'Space' && !isInput) {
         e.preventDefault();
         togglePlay();
       }
+
+      // Undo/Redo
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !isInput) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          // Redo
+          setSegmentHistory(prev => {
+            if (prev.future.length === 0) return prev;
+            const nextState = prev.future[0];
+            setEditableSegments(nextState);
+            return {
+              past: [...prev.past, editableSegments],
+              future: prev.future.slice(1)
+            };
+          });
+        } else {
+          // Undo
+          setSegmentHistory(prev => {
+            if (prev.past.length === 0) return prev;
+            const prevState = prev.past[prev.past.length - 1];
+            setEditableSegments(prevState);
+            return {
+              past: prev.past.slice(0, -1),
+              future: [editableSegments, ...prev.future]
+            };
+          });
+        }
+      }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, [editableSegments, togglePlay]);
 
   // Smooth Auto-scroll timeline when playing
   const isHoveringTimeline = useRef(false);
@@ -375,7 +443,7 @@ export default function WhisperXApp() {
       const clickX = e.clientX - rect.left;
       let newTime = (clickX / rect.width) * mediaDuration;
       
-      const newSegments = [...editableSegments];
+      let newSegments = [...editableSegments];
       
       if (draggingBoundary === 'start') {
         const nextEnd = newSegments[0].end;
@@ -386,11 +454,28 @@ export default function WhisperXApp() {
         newTime = Math.max(prevStart + 0.1, Math.min(newTime, mediaDuration));
         newSegments[newSegments.length - 1] = { ...newSegments[newSegments.length - 1], end: newTime };
       } else {
-        const prevStart = newSegments[draggingBoundary].start;
-        const nextEnd = newSegments[draggingBoundary + 1].end;
-        newTime = Math.max(prevStart + 0.1, Math.min(newTime, nextEnd - 0.1));
-        newSegments[draggingBoundary] = { ...newSegments[draggingBoundary], end: newTime };
-        newSegments[draggingBoundary + 1] = { ...newSegments[draggingBoundary + 1], start: newTime };
+        const { type, index } = draggingBoundary;
+        const currSegment = newSegments[index];
+        const nextSegment = newSegments[index + 1];
+
+        if (type === 'start') {
+          // Dragging the start of `index`. Cannot overlap with previous segment's end (if any).
+          const prevEnd = index > 0 ? newSegments[index - 1].end : 0;
+          newTime = Math.max(prevEnd, Math.min(newTime, currSegment.end - 0.1));
+          newSegments[index] = { ...currSegment, start: newTime };
+        } else if (type === 'end') {
+          // Dragging the end of `index`. Cannot overlap with next segment's start (if any).
+          const nextStart = index < newSegments.length - 1 ? newSegments[index + 1].start : mediaDuration;
+          newTime = Math.max(currSegment.start + 0.1, Math.min(newTime, nextStart));
+          newSegments[index] = { ...currSegment, end: newTime };
+        } else if (type === 'both') {
+          // Dragging boundary between index and index+1.
+          const prevStart = currSegment.start;
+          const nextEnd = nextSegment.end;
+          newTime = Math.max(prevStart + 0.1, Math.min(newTime, nextEnd - 0.1));
+          newSegments[index] = { ...currSegment, end: newTime };
+          newSegments[index + 1] = { ...nextSegment, start: newTime };
+        }
       }
       
       setEditableSegments(newSegments);
@@ -398,6 +483,11 @@ export default function WhisperXApp() {
 
     const handleMouseUp = () => {
       if (draggingBoundary !== null) {
+        // We only commit history once the drag ends to avoid filling history with intermediate frames
+        setSegmentHistory(prev => ({
+          past: [...prev.past, editableSegments].slice(-50),
+          future: []
+        }));
         setDraggingBoundary(null);
       }
     };
@@ -456,6 +546,7 @@ export default function WhisperXApp() {
     setStatus("idle");
     setResult(null);
     setEditableSegments([]);
+    setSegmentHistory({ past: [], future: [] });
     setMediaUrl("");
   };
 
@@ -514,6 +605,7 @@ export default function WhisperXApp() {
               fileInputRef={fileInputRef}
               handleTranscribe={handleTranscribe}
               downloadedModels={downloadedModels}
+              cancelTranscription={cancelTranscription}
             />
           </div>
 
