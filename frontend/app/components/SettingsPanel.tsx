@@ -1,5 +1,7 @@
-import { Upload, FileAudio, FileVideo, Settings, CloudDownload, CheckCircle2, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Upload, FileAudio, FileVideo, Settings, CloudDownload, CheckCircle2, Loader2, Trash2, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
@@ -42,7 +44,7 @@ const FONT_WEIGHTS: Record<string, { value: string; label: string }[]> = {
   ],
 };
 
-import type { SubtitleStyle } from "../page";
+import type { SubtitleStyle, StylePreset } from "../page";
 
 interface SettingsPanelProps {
   file: File | null;
@@ -69,6 +71,12 @@ interface SettingsPanelProps {
   subtitleStyle: SubtitleStyle;
   setSubtitleStyle: React.Dispatch<React.SetStateAction<SubtitleStyle>>;
   handleExportVideo: () => void;
+  presets: StylePreset[];
+  activePresetId: string;
+  onSavePreset: (name: string) => void;
+  onDeletePreset: (presetId: string) => void;
+  onApplyPreset: (presetId: string) => void;
+  onUpdatePreset: (presetId: string) => void;
 }
 
 interface ColorPickerFieldProps {
@@ -135,8 +143,61 @@ export function SettingsPanel({
   subtitleStyle,
   setSubtitleStyle,
   handleExportVideo,
+  presets,
+  activePresetId,
+  onSavePreset,
+  onDeletePreset,
+  onApplyPreset,
+  onUpdatePreset,
 }: SettingsPanelProps) {
   
+  const [activeTab, setActiveTab] = useState("settings");
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState<'choice' | 'save-new'>('save-new');
+  const [newPresetName, setNewPresetName] = useState("");
+
+  const activePreset = presets.find(p => p.id === activePresetId);
+  const isCustomPreset = activePreset && !activePreset.isDefault;
+
+  useEffect(() => {
+    const savedTab = localStorage.getItem("capsync_active_tab");
+    if (savedTab) {
+      setActiveTab(savedTab);
+    }
+  }, []);
+
+  const handleTabChange = (val: string) => {
+    setActiveTab(val);
+    localStorage.setItem("capsync_active_tab", val);
+  };
+
+  const handleDialogOpenChange = (open: boolean) => {
+    setIsDialogOpen(open);
+    if (open) {
+      if (isCustomPreset) {
+        setDialogMode('choice');
+      } else {
+        setDialogMode('save-new');
+      }
+      setNewPresetName("");
+    }
+  };
+
+  const handleSaveSubmit = () => {
+    if (newPresetName.trim()) {
+      onSavePreset(newPresetName.trim());
+      setNewPresetName("");
+      setIsDialogOpen(false);
+    }
+  };
+
+  const handleUpdatePreset = () => {
+    if (activePresetId && isCustomPreset) {
+      onUpdatePreset(activePresetId);
+      setIsDialogOpen(false);
+    }
+  };
+
   const updateStyle = (key: keyof SubtitleStyle, value: any) => {
     setSubtitleStyle(prev => ({ ...prev, [key]: value }));
   };
@@ -159,7 +220,142 @@ export function SettingsPanel({
 
   return (
     <Card className="w-full h-full flex flex-col bg-neutral-900 border-neutral-800 shadow-2xl p-0 gap-0">
-      <Tabs defaultValue="settings" className="flex-1 flex flex-col h-full overflow-hidden">
+      {/* Preset Selector Area */}
+      <div className="p-4 border-b border-neutral-800 shrink-0 space-y-2 bg-neutral-950/20">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Style & Settings Preset</span>
+          {isCustomPreset && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5 text-red-500 hover:text-red-400 hover:bg-red-950/20 p-0"
+              onClick={() => onDeletePreset(activePresetId)}
+              title="Delete current custom preset"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Select value={activePresetId} onValueChange={onApplyPreset}>
+            <SelectTrigger className="bg-neutral-800 border-neutral-700 flex-1 text-xs text-neutral-200 h-9">
+              <SelectValue placeholder="Select preset..." />
+            </SelectTrigger>
+            <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
+              {presets.map(p => (
+                <SelectItem key={p.id} value={p.id} className="text-xs">
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          <Dialog open={isDialogOpen} onOpenChange={handleDialogOpenChange}>
+            <DialogTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-9 px-2 text-xs border-neutral-700 text-neutral-300 hover:text-white flex items-center gap-1.5 shrink-0"
+                title="Save current custom style & settings"
+              >
+                <Save className="w-3.5 h-3.5" /> Save
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md bg-neutral-900 border-neutral-800 p-6 rounded-lg text-neutral-100">
+              {dialogMode === 'choice' ? (
+                <>
+                  <DialogHeader>
+                    <DialogTitle>Update Preset or Save as New?</DialogTitle>
+                    <DialogDescription>
+                      Would you like to overwrite your active custom preset, or create a brand new one?
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="flex flex-col gap-3 py-4 mt-2">
+                    <Button 
+                      onClick={handleUpdatePreset}
+                      className="bg-blue-600 hover:bg-blue-500 text-white font-semibold w-full py-5 text-sm flex items-center justify-center gap-2"
+                    >
+                      <Save className="w-4 h-4" /> Update Preset "{activePreset?.name}"
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => setDialogMode('save-new')}
+                      className="border-neutral-700 text-neutral-300 hover:text-white hover:bg-neutral-800 w-full py-5 text-sm"
+                    >
+                      Save as New Preset...
+                    </Button>
+                  </div>
+                  <DialogFooter className="flex sm:flex-col gap-2 mt-2 w-full">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => setIsDialogOpen(false)} 
+                      className="border-neutral-700 text-neutral-300 hover:text-white hover:bg-neutral-800 w-full py-5 text-sm"
+                    >
+                      Cancel
+                    </Button>
+                  </DialogFooter>
+                </>
+              ) : (
+                <>
+                  <DialogHeader>
+                    <DialogTitle>Save Custom Preset</DialogTitle>
+                    <DialogDescription>
+                      Save your current style, model, and word limits settings.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="flex flex-col gap-3 py-2">
+                    <Label htmlFor="preset-name" className="text-neutral-300 text-xs">Preset Name</Label>
+                    <input
+                      id="preset-name"
+                      type="text"
+                      placeholder="e.g. My Fast Reels"
+                      value={newPresetName}
+                      onChange={(e) => setNewPresetName(e.target.value)}
+                      className="bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2 text-sm text-neutral-200 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                      autoFocus
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleSaveSubmit();
+                        }
+                      }}
+                    />
+                  </div>
+                  <DialogFooter className="flex sm:justify-end gap-2 mt-4 w-full">
+                    {isCustomPreset && (
+                      <Button 
+                        variant="outline" 
+                        size="lg" 
+                        onClick={() => setDialogMode('choice')} 
+                        className="border-neutral-700 text-neutral-300 hover:text-white hover:bg-neutral-800 mr-auto"
+                      >
+                        Back
+                      </Button>
+                    )}
+                    <Button 
+                      variant="outline" 
+                      size="lg" 
+                      onClick={() => setIsDialogOpen(false)} 
+                      className="border-neutral-700 text-neutral-300 hover:text-white hover:bg-neutral-800"
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={handleSaveSubmit} 
+                      disabled={!newPresetName.trim()}
+                      size="lg"
+                      className="bg-blue-600 hover:bg-blue-500 text-white font-semibold"
+                    >
+                      Save Preset
+                    </Button>
+                  </DialogFooter>
+                </>
+              )}
+            </DialogContent>
+          </Dialog>
+        </div>
+      </div>
+
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="flex-1 flex flex-col h-full overflow-hidden">
         <div className="p-4 border-b border-neutral-800 shrink-0">
           <TabsList className="grid w-full grid-cols-3 bg-neutral-950">
             <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -172,12 +368,12 @@ export function SettingsPanel({
           <TabsContent value="settings" className="p-6 m-0 space-y-6">
             {/* Settings Area */}
             <div className="grid grid-cols-1 gap-4">
-          <div className="space-y-2">
+          <div className="flex items-center justify-between">
             <Label htmlFor="model-size" className="text-neutral-300 flex items-center gap-2">
               <Settings className="w-4 h-4" /> Model Size
             </Label>
             <Select value={modelSize} onValueChange={setModelSize} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
-              <SelectTrigger className="bg-neutral-800 border-neutral-700">
+              <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
                 <SelectValue placeholder="Select model size" />
               </SelectTrigger>
               <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
@@ -189,10 +385,10 @@ export function SettingsPanel({
             </Select>
           </div>
           
-          <div className="space-y-2">
+          <div className="flex items-center justify-between">
             <Label htmlFor="language" className="text-neutral-300">Language (Optional)</Label>
             <Select value={language} onValueChange={setLanguage} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
-              <SelectTrigger className="bg-neutral-800 border-neutral-700">
+              <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
                 <SelectValue placeholder="Auto-detect" />
               </SelectTrigger>
               <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
@@ -205,10 +401,10 @@ export function SettingsPanel({
             </Select>
           </div>
 
-          <div className="space-y-2">
+          <div className="flex items-center justify-between">
             <Label htmlFor="max-words" className="text-neutral-300">Max Words Per Caption</Label>
             <Select value={maxWords} onValueChange={setMaxWords} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
-              <SelectTrigger className="bg-neutral-800 border-neutral-700">
+              <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
                 <SelectValue placeholder="Default" />
               </SelectTrigger>
               <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
@@ -361,18 +557,15 @@ export function SettingsPanel({
             <div className="space-y-4">
               <h3 className="font-semibold text-neutral-200">Layout & Position</h3>
               
-              <div className="space-y-2">
+              <div className="flex items-center justify-between">
                 <Label className="text-neutral-300">Text Alignment</Label>
-                <Select value={subtitleStyle.alignment || 'center'} onValueChange={(v) => updateStyle("alignment", v)}>
-                  <SelectTrigger className="bg-neutral-800 border-neutral-700">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                    <SelectItem value="left">Left</SelectItem>
-                    <SelectItem value="center">Center</SelectItem>
-                    <SelectItem value="right">Right</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Tabs value={subtitleStyle.alignment || 'center'} onValueChange={(v) => updateStyle("alignment", v)} className="w-[180px]">
+                  <TabsList className="grid w-full grid-cols-3 bg-neutral-950 h-8 p-0.5">
+                    <TabsTrigger value="left" className="text-xs py-1 px-2 h-7">Left</TabsTrigger>
+                    <TabsTrigger value="center" className="text-xs py-1 px-2 h-7">Center</TabsTrigger>
+                    <TabsTrigger value="right" className="text-xs py-1 px-2 h-7">Right</TabsTrigger>
+                  </TabsList>
+                </Tabs>
               </div>
 
               <div className="space-y-3">
@@ -391,7 +584,7 @@ export function SettingsPanel({
             <div className="space-y-4 pt-4 border-t border-neutral-800">
               <h3 className="font-semibold text-neutral-200">Typography</h3>
               
-              <div className="space-y-2">
+              <div className="flex items-center justify-between">
                 <Label className="text-neutral-300">Font Family</Label>
                 <Select value={subtitleStyle.fontFamily} onValueChange={(v) => {
                   updateStyle("fontFamily", v);
@@ -400,7 +593,7 @@ export function SettingsPanel({
                     updateStyle("fontWeight", "400");
                   }
                 }}>
-                  <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                  <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
@@ -412,10 +605,10 @@ export function SettingsPanel({
                 </Select>
               </div>
 
-              <div className="space-y-2">
+              <div className="flex items-center justify-between">
                 <Label className="text-neutral-300">Font Weight</Label>
                 <Select value={subtitleStyle.fontWeight} onValueChange={(v) => updateStyle("fontWeight", v)}>
-                  <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                  <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
@@ -426,10 +619,10 @@ export function SettingsPanel({
                 </Select>
               </div>
 
-              <div className="space-y-2">
+              <div className="flex items-center justify-between">
                 <Label className="text-neutral-300">Text Transform</Label>
                 <Select value={subtitleStyle.textTransform || 'none'} onValueChange={(v: any) => updateStyle("textTransform", v)}>
-                  <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                  <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
@@ -532,21 +725,21 @@ export function SettingsPanel({
 
           <TabsContent value="animation" className="p-6 m-0 space-y-8">
             <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-200">Word Animation Preset</h3>
-              <p className="text-sm text-neutral-500">Choose how active words are highlighted during playback.</p>
-              
-              <Select value={subtitleStyle.animationStyle || 'color'} onValueChange={(v) => updateStyle("animationStyle", v)}>
-                <SelectTrigger className="bg-neutral-800 border-neutral-700">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                  <SelectItem value="none">None (Static Text)</SelectItem>
-                  <SelectItem value="color">Color Pop</SelectItem>
-                  <SelectItem value="box">Box Highlight</SelectItem>
-                  <SelectItem value="scale">Scale Pop</SelectItem>
-                  <SelectItem value="karaoke">Karaoke Reveal</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex items-center justify-between">
+                <Label className="text-neutral-300">Animation Style</Label>
+                <Select value={subtitleStyle.animationStyle || 'color'} onValueChange={(v) => updateStyle("animationStyle", v)}>
+                  <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
+                    <SelectItem value="none">None (Static Text)</SelectItem>
+                    <SelectItem value="color">Color Pop</SelectItem>
+                    <SelectItem value="box">Box Highlight</SelectItem>
+                    <SelectItem value="scale">Scale Pop</SelectItem>
+                    <SelectItem value="karaoke">Karaoke Reveal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {subtitleStyle.animationStyle !== 'none' && (

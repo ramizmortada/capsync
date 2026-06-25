@@ -40,6 +40,111 @@ export interface SubtitleStyle {
   textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
 }
 
+export interface StylePreset {
+  id: string;
+  name: string;
+  subtitleStyle: SubtitleStyle;
+  modelSize: string;
+  maxWords: string;
+  isDefault?: boolean;
+}
+
+const DEFAULT_PRESETS: StylePreset[] = [
+  {
+    id: "default-studio",
+    name: "Default Studio",
+    modelSize: "large-v2",
+    maxWords: "0",
+    isDefault: true,
+    subtitleStyle: {
+      fontFamily: "Inter",
+      fontWeight: "800",
+      fontSize: 96,
+      textColor: "#ffffff",
+      strokeEnabled: false,
+      strokeColor: "#000000",
+      strokeWidth: 6,
+      shadowEnabled: false,
+      shadowColor: "#000000",
+      shadowBlur: 10,
+      shadowOffsetX: 0,
+      shadowOffsetY: 8,
+      backgroundEnabled: false,
+      backgroundColor: "#000000",
+      backgroundOpacity: 50,
+      highlightColor: "#ffff00",
+      alignment: 'center',
+      positionY: 10,
+      animationStyle: 'color',
+      highlightBackgroundColor: "#ff0000",
+      scaleFactor: 1.2,
+      textTransform: 'none',
+    }
+  },
+  {
+    id: "tiktok-highlight",
+    name: "TikTok Highlight",
+    modelSize: "large-v2",
+    maxWords: "-2",
+    isDefault: true,
+    subtitleStyle: {
+      fontFamily: "Oswald",
+      fontWeight: "700",
+      fontSize: 120,
+      textColor: "#ffffff",
+      strokeEnabled: true,
+      strokeColor: "#000000",
+      strokeWidth: 8,
+      shadowEnabled: true,
+      shadowColor: "#000000",
+      shadowBlur: 15,
+      shadowOffsetX: 4,
+      shadowOffsetY: 4,
+      backgroundEnabled: false,
+      backgroundColor: "#000000",
+      backgroundOpacity: 50,
+      highlightColor: "#ffff00",
+      alignment: 'center',
+      positionY: 15,
+      animationStyle: 'scale',
+      highlightBackgroundColor: "#ff0000",
+      scaleFactor: 1.3,
+      textTransform: 'uppercase',
+    }
+  },
+  {
+    id: "minimal-box",
+    name: "Minimalist Box",
+    modelSize: "medium",
+    maxWords: "-1",
+    isDefault: true,
+    subtitleStyle: {
+      fontFamily: "Poppins",
+      fontWeight: "500",
+      fontSize: 64,
+      textColor: "#ffffff",
+      strokeEnabled: false,
+      strokeColor: "#000000",
+      strokeWidth: 4,
+      shadowEnabled: false,
+      shadowColor: "#000000",
+      shadowBlur: 0,
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      backgroundEnabled: true,
+      backgroundColor: "#000000",
+      backgroundOpacity: 70,
+      highlightColor: "#ffffff",
+      alignment: 'center',
+      positionY: 8,
+      animationStyle: 'none',
+      highlightBackgroundColor: "#ff0000",
+      scaleFactor: 1.0,
+      textTransform: 'none',
+    }
+  }
+];
+
 export type DragTarget = { type: 'start' | 'end' | 'both', index: number } | 'start' | 'end';
 
 // Helper function for SRT time formatting
@@ -101,6 +206,9 @@ export default function WhisperXApp() {
   const [errorMessage, setErrorMessage] = useState("");
   const [downloadedModels, setDownloadedModels] = useState<Record<string, boolean>>({});
   
+  const [presets, setPresets] = useState<StylePreset[]>(DEFAULT_PRESETS);
+  const [activePresetId, setActivePresetId] = useState<string>("default-studio");
+
   // Editable subtitle segments
   const [editableSegments, setEditableSegments] = useState<any[]>([]);
 
@@ -168,6 +276,88 @@ export default function WhisperXApp() {
     }
     setIsStyleLoaded(true);
   }, []);
+
+  // Load custom presets from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedPresets = localStorage.getItem("capsync_style_presets");
+      if (savedPresets) {
+        const parsed = JSON.parse(savedPresets);
+        setPresets([...DEFAULT_PRESETS, ...parsed]);
+      }
+      
+      const savedActivePresetId = localStorage.getItem("capsync_active_preset_id");
+      if (savedActivePresetId) {
+        setActivePresetId(savedActivePresetId);
+      }
+    } catch (e) {
+      console.error("Failed to load presets", e);
+    }
+  }, []);
+
+  const savePreset = (name: string) => {
+    if (!name.trim()) return;
+    const newPreset: StylePreset = {
+      id: `preset-${Date.now()}`,
+      name: name.trim(),
+      subtitleStyle: { ...subtitleStyle },
+      modelSize,
+      maxWords,
+    };
+    
+    const customPresets = presets.filter(p => !p.isDefault);
+    const updatedCustomPresets = [...customPresets, newPreset];
+    setPresets([...DEFAULT_PRESETS, ...updatedCustomPresets]);
+    setActivePresetId(newPreset.id);
+    
+    localStorage.setItem("capsync_style_presets", JSON.stringify(updatedCustomPresets));
+    localStorage.setItem("capsync_active_preset_id", newPreset.id);
+  };
+
+  const deletePreset = (presetId: string) => {
+    const presetToDelete = presets.find(p => p.id === presetId);
+    if (!presetToDelete || presetToDelete.isDefault) return;
+    
+    const updatedCustomPresets = presets.filter(p => !p.isDefault && p.id !== presetId);
+    setPresets([...DEFAULT_PRESETS, ...updatedCustomPresets]);
+    
+    if (activePresetId === presetId) {
+      setActivePresetId("default-studio");
+    }
+    
+    localStorage.setItem("capsync_style_presets", JSON.stringify(updatedCustomPresets));
+  };
+
+  const applyPreset = (presetId: string) => {
+    const selected = presets.find(p => p.id === presetId);
+    if (!selected) return;
+    
+    setSubtitleStyle({ ...selected.subtitleStyle });
+    setModelSize(selected.modelSize);
+    setMaxWords(selected.maxWords);
+    setActivePresetId(presetId);
+    
+    localStorage.setItem("capsync_active_preset_id", presetId);
+  };
+
+  const updatePreset = (presetId: string) => {
+    const updatedCustomPresets = presets.map(p => {
+      if (p.id === presetId && !p.isDefault) {
+        return {
+          ...p,
+          subtitleStyle: { ...subtitleStyle },
+          modelSize,
+          maxWords
+        };
+      }
+      return p;
+    });
+    
+    setPresets(updatedCustomPresets);
+    
+    const customPresetsOnly = updatedCustomPresets.filter(p => !p.isDefault);
+    localStorage.setItem("capsync_style_presets", JSON.stringify(customPresetsOnly));
+  };
 
   // Save project to IndexedDB
   useEffect(() => {
@@ -828,6 +1018,12 @@ export default function WhisperXApp() {
               subtitleStyle={subtitleStyle}
               setSubtitleStyle={setSubtitleStyle}
               handleExportVideo={handleExportVideo}
+              presets={presets}
+              activePresetId={activePresetId}
+              onSavePreset={savePreset}
+              onDeletePreset={deletePreset}
+              onApplyPreset={applyPreset}
+              onUpdatePreset={updatePreset}
             />
           </div>
 
