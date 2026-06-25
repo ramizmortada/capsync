@@ -38,15 +38,20 @@ def generate_ass(segments, style, video_width, video_height):
     """
     Generates ASS subtitle content from segments and styling.
     """
-    font_name = style.get("fontFamily", "Arial")
+    font_name = style.get("fontFamily", "Inter")
     
-    # CSS-to-ASS rendering scale factor.
-    # CSS sets the EM square (100%), but libass renders the visual glyphs at ~67% of the EM square.
-    # Therefore, we multiply by 1.48 to make the libass visual size match the CSS visual size.
-    ass_scale = 1.48
+    # CSS-to-ASS rendering scale factor based on TTF OS/2 vertical metrics
+    # Formula: (usWinAscent + usWinDescent) / unitsPerEm
+    ass_scales = {
+        "Instrument Serif": 1.3000,
+        "Inter": 1.4302,
+        "Oswald": 1.7020,
+        "Poppins": 1.7620
+    }
+    ass_scale = ass_scales.get(font_name, 1.48)
     
-    # Compute exact pixels from percentages of video_height
-    font_size = int((float(style.get("fontSize", 5.0)) / 100.0) * video_height * ass_scale)
+    # Directly use the raw pixel values defined by the user for a 1920 reference height
+    font_size = int(float(style.get("fontSize", 96)) * ass_scale)
     
     primary_color = hex_to_ass_color(style.get("textColor", "#ffffff"))
     
@@ -56,12 +61,12 @@ def generate_ass(segments, style, video_width, video_height):
     
     stroke_enabled = style.get("strokeEnabled", False)
     stroke_color = hex_to_ass_color(style.get("strokeColor", "#000000"))
-    stroke_width = int((float(style.get("strokeWidth", 0.4)) / 100.0) * video_height * ass_scale) if stroke_enabled else 0
+    stroke_width = int(float(style.get("strokeWidth", 6)) * ass_scale) if stroke_enabled else 0
     
     shadow_enabled = style.get("shadowEnabled", False)
     shadow_color = hex_to_ass_color(style.get("shadowColor", "#000000"))
-    shadow_offset_max = max(abs(float(style.get("shadowOffsetX", 0))), abs(float(style.get("shadowOffsetY", 0.4))))
-    shadow_depth = int((shadow_offset_max / 100.0) * video_height * ass_scale) if shadow_enabled else 0
+    shadow_offset_max = max(abs(float(style.get("shadowOffsetX", 0))), abs(float(style.get("shadowOffsetY", 8))))
+    shadow_depth = int(shadow_offset_max * ass_scale) if shadow_enabled else 0
     
     font_weight_str = str(style.get("fontWeight", "400"))
     try:
@@ -74,7 +79,9 @@ def generate_ass(segments, style, video_width, video_height):
     
     position_y_pct = float(style.get("positionY", 10))
     margin_v = int(video_height * (position_y_pct / 100.0))
-    margin_l = margin_r = int(video_width * 0.05) # 5% side margins
+    
+    # LivePreview spans 100% width, so ASS margins should be 0 to match word-wrapping exactness
+    margin_l = margin_r = 0
 
     animation_style = style.get("animationStyle", "color")
     scale_factor = int(float(style.get("scaleFactor", 1.2)) * 100)

@@ -438,11 +438,11 @@ export function SettingsPanel({
               <div className="space-y-3">
                 <div className="flex justify-between">
                   <Label className="text-neutral-300">Font Size</Label>
-                  <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.fontSize).toFixed(1)}%</span>
+                  <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.fontSize).toFixed(0)}px</span>
                 </div>
                 <Slider 
                   value={[subtitleStyle.fontSize]} 
-                  min={1} max={15} step={0.1}
+                  min={10} max={300} step={1}
                   onValueChange={([v]) => updateStyle("fontSize", v)} 
                 />
               </div>
@@ -455,12 +455,12 @@ export function SettingsPanel({
               <ColorPickerField label="Enable Stroke" colorKey="strokeColor" enabledKey="strokeEnabled" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
               <div className={`space-y-3 transition-opacity ${subtitleStyle.strokeEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
                 <div className="flex justify-between">
-                  <Label className="text-neutral-400 text-xs">Stroke Width</Label>
-                  <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.strokeWidth).toFixed(2)}%</span>
+                  <Label className="text-neutral-300 text-xs">Width</Label>
+                  <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.strokeWidth).toFixed(0)}px</span>
                 </div>
                 <Slider 
                   value={[subtitleStyle.strokeWidth]} 
-                  min={0} max={2} step={0.05}
+                  min={0} max={50} step={1}
                   onValueChange={([v]) => updateStyle("strokeWidth", v)} 
                 />
               </div>
@@ -472,34 +472,34 @@ export function SettingsPanel({
               <div className={`space-y-4 transition-opacity ${subtitleStyle.shadowEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
                 <div className="space-y-3">
                   <div className="flex justify-between">
-                    <Label className="text-neutral-400 text-xs">Blur Radius</Label>
-                    <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.shadowBlur).toFixed(1)}%</span>
+                    <Label className="text-neutral-300 text-xs">Blur</Label>
+                    <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.shadowBlur).toFixed(0)}px</span>
                   </div>
                   <Slider 
                     value={[subtitleStyle.shadowBlur]} 
-                    min={0} max={5} step={0.1}
+                    min={0} max={100} step={1}
                     onValueChange={([v]) => updateStyle("shadowBlur", v)} 
                   />
                 </div>
                 <div className="space-y-3">
                   <div className="flex justify-between">
-                    <Label className="text-neutral-400 text-xs">X Offset</Label>
-                    <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.shadowOffsetX).toFixed(2)}%</span>
+                    <Label className="text-neutral-300 text-xs">Offset X</Label>
+                    <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.shadowOffsetX).toFixed(0)}px</span>
                   </div>
                   <Slider 
                     value={[subtitleStyle.shadowOffsetX]} 
-                    min={-2} max={2} step={0.05}
+                    min={-50} max={50} step={1}
                     onValueChange={([v]) => updateStyle("shadowOffsetX", v)} 
                   />
                 </div>
                 <div className="space-y-3">
                   <div className="flex justify-between">
-                    <Label className="text-neutral-400 text-xs">Y Offset</Label>
-                    <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.shadowOffsetY).toFixed(2)}%</span>
+                    <Label className="text-neutral-300 text-xs">Offset Y</Label>
+                    <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.shadowOffsetY).toFixed(0)}px</span>
                   </div>
                   <Slider 
                     value={[subtitleStyle.shadowOffsetY]} 
-                    min={-2} max={2} step={0.05}
+                    min={-50} max={50} step={1}
                     onValueChange={([v]) => updateStyle("shadowOffsetY", v)} 
                   />
                 </div>

@@ -128,12 +128,15 @@ export function LivePreview({
                   return `rgba(${r}, ${g}, ${b}, ${opacity / 100})`;
                 };
 
-                // Compute exact pixels from percentages of renderHeight
-                const pxFontSize = (subtitleStyle.fontSize / 100) * renderHeight;
-                const pxStrokeWidth = (subtitleStyle.strokeWidth / 100) * renderHeight;
-                const pxShadowBlur = (subtitleStyle.shadowBlur / 100) * renderHeight;
-                const pxShadowOffsetX = (subtitleStyle.shadowOffsetX / 100) * renderHeight;
-                const pxShadowOffsetY = (subtitleStyle.shadowOffsetY / 100) * renderHeight;
+                // Assume standard portrait format of 1080x1920 as the reference layout for pixels
+                const VIDEO_REFERENCE_HEIGHT = 1920;
+                const scaleRatio = renderHeight / VIDEO_REFERENCE_HEIGHT;
+
+                const pxFontSize = subtitleStyle.fontSize * scaleRatio;
+                const pxStrokeWidth = subtitleStyle.strokeWidth * scaleRatio;
+                const pxShadowBlur = subtitleStyle.shadowBlur * scaleRatio;
+                const pxShadowOffsetX = subtitleStyle.shadowOffsetX * scaleRatio;
+                const pxShadowOffsetY = subtitleStyle.shadowOffsetY * scaleRatio;
                 
                 // Box padding uses 0.5% v-padding, 1% h-padding
                 const pxPadY = (0.5 / 100) * renderHeight;

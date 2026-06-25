@@ -71,16 +71,16 @@ export default function WhisperXApp() {
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>({
     fontFamily: "Inter",
     fontWeight: "800",
-    fontSize: 5.0, // 5% of video height
+    fontSize: 96, // raw pixels relative to 1920 height
     textColor: "#ffffff",
     strokeEnabled: false,
     strokeColor: "#000000",
-    strokeWidth: 0.4, // 0.4% of video height
+    strokeWidth: 6, // raw pixels
     shadowEnabled: false,
     shadowColor: "#000000",
-    shadowBlur: 1.0, // 1% of video height
+    shadowBlur: 10, // raw pixels
     shadowOffsetX: 0,
-    shadowOffsetY: 0.4, // 0.4% of video height
+    shadowOffsetY: 8, // raw pixels
     backgroundEnabled: false,
     backgroundColor: "#000000",
     backgroundOpacity: 50,
