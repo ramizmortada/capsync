@@ -1,4 +1,7 @@
 @echo off
+:: Ensure the script always runs in the correct directory
+cd /d "%~dp0"
+
 echo ===================================
 echo     Starting CapSync Studio
 echo ===================================
