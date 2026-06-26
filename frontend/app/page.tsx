@@ -59,7 +59,7 @@ const DEFAULT_PRESETS: StylePreset[] = [
     id: "default-studio",
     name: "Default Studio",
     modelSize: "large-v2",
-    maxWords: "0",
+    maxWords: "-1",
     isDefault: true,
     subtitleStyle: {
       fontFamily: "Inter",
@@ -192,7 +192,7 @@ export default function WhisperXApp() {
   // States
   const [modelSize, setModelSize] = useState("large-v2");
   const [language, setLanguage] = useState("");
-  const [maxWords, setMaxWords] = useState("0");
+  const [maxWords, setMaxWords] = useState("-1");
   const [transcriptionMessage, setTranscriptionMessage] = useState<string>("Processing media...");
   
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>({
@@ -357,9 +357,16 @@ export default function WhisperXApp() {
     const selected = presets.find(p => p.id === presetId);
     if (!selected) return;
     
-    setSubtitleStyle({ ...selected.subtitleStyle });
-    setModelSize(selected.modelSize);
-    setMaxWords(selected.maxWords);
+    setSubtitleStyle({
+      ...selected.subtitleStyle,
+      alignment: selected.subtitleStyle.alignment ?? 'center',
+      alignmentVertical: selected.subtitleStyle.alignmentVertical ?? 'bottom',
+      positionY: selected.subtitleStyle.positionY ?? 10,
+      maxWidth: selected.subtitleStyle.maxWidth ?? 90,
+      shadow3DEnabled: selected.subtitleStyle.shadow3DEnabled ?? false,
+    });
+    setModelSize(selected.modelSize || "large-v2");
+    setMaxWords(selected.maxWords || "-1");
     setActivePresetId(presetId);
     
     localStorage.setItem("capsync_active_preset_id", presetId);

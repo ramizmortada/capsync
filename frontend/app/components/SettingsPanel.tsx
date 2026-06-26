@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Upload, FileAudio, FileVideo, Settings, CloudDownload, CheckCircle2, Loader2, Trash2, Save, AlignLeft, AlignCenter, AlignRight, ArrowUp, Minus, ArrowDown } from "lucide-react";
+import { Upload, FileAudio, FileVideo, Settings, CloudDownload, CheckCircle2, Loader2, Trash2, Save, AlignLeft, AlignCenter, AlignRight, ArrowUp, Minus, ArrowDown, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -370,7 +370,7 @@ export function SettingsPanel({
             <div className="grid grid-cols-1 gap-4">
           <div className="flex items-center justify-between">
             <Label htmlFor="model-size" className="text-neutral-300 flex items-center gap-2">
-              <Settings className="w-4 h-4" /> Model Size
+              <Bot className="w-4 h-4" /> Model Size
             </Label>
             <Select value={modelSize} onValueChange={setModelSize} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
               <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
@@ -402,18 +402,17 @@ export function SettingsPanel({
           </div>
 
           <div className="flex items-center justify-between">
-            <Label htmlFor="max-words" className="text-neutral-300">Max Words Per Caption</Label>
+            <Label htmlFor="max-words" className="text-neutral-300">Caption Length</Label>
             <Select value={maxWords} onValueChange={setMaxWords} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
               <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
                 <SelectValue placeholder="Default" />
               </SelectTrigger>
               <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                <SelectItem value="0">Default (Strict Auto)</SelectItem>
-                <SelectItem value="-1">Smart Mode (Normal: ~5 words)</SelectItem>
-                <SelectItem value="-2">Smart Mode (Short: ~2-3 words)</SelectItem>
-                <SelectItem value="1">1 Word (Strict)</SelectItem>
-                <SelectItem value="2">2 Words (Strict)</SelectItem>
-                <SelectItem value="3">3 Words (Strict)</SelectItem>
+                <SelectItem value="-1">Default (around 5 words)</SelectItem>
+                <SelectItem value="-2">Short (2 to 3 words)</SelectItem>
+                <SelectItem value="1">1 word exactly</SelectItem>
+                <SelectItem value="2">2 words exactly</SelectItem>
+                <SelectItem value="3">3 words exactly</SelectItem>
               </SelectContent>
             </Select>
           </div>
