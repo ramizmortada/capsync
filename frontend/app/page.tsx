@@ -25,9 +25,10 @@ export interface SubtitleStyle {
   strokeWidth: number;
   shadowEnabled: boolean;
   shadowColor: string;
-  shadowBlur: number;
   shadowOffsetX: number;
   shadowOffsetY: number;
+  shadowBlur: number;
+  shadow3DEnabled?: boolean;
   backgroundEnabled: boolean;
   backgroundColor: string;
   backgroundOpacity: number;
@@ -70,9 +71,10 @@ const DEFAULT_PRESETS: StylePreset[] = [
       strokeWidth: 6,
       shadowEnabled: false,
       shadowColor: "#000000",
-      shadowBlur: 10,
       shadowOffsetX: 0,
       shadowOffsetY: 8,
+      shadowBlur: 10,
+      shadow3DEnabled: false,
       backgroundEnabled: false,
       backgroundColor: "#000000",
       backgroundOpacity: 50,
@@ -105,9 +107,10 @@ const DEFAULT_PRESETS: StylePreset[] = [
       strokeWidth: 8,
       shadowEnabled: true,
       shadowColor: "#000000",
-      shadowBlur: 15,
       shadowOffsetX: 4,
       shadowOffsetY: 4,
+      shadowBlur: 15,
+      shadow3DEnabled: false,
       backgroundEnabled: false,
       backgroundColor: "#000000",
       backgroundOpacity: 50,
@@ -140,9 +143,10 @@ const DEFAULT_PRESETS: StylePreset[] = [
       strokeWidth: 4,
       shadowEnabled: false,
       shadowColor: "#000000",
-      shadowBlur: 0,
       shadowOffsetX: 0,
       shadowOffsetY: 0,
+      shadowBlur: 0,
+      shadow3DEnabled: false,
       backgroundEnabled: true,
       backgroundColor: "#000000",
       backgroundOpacity: 70,
@@ -201,9 +205,10 @@ export default function WhisperXApp() {
     strokeWidth: 6,
     shadowEnabled: false,
     shadowColor: "#000000",
-    shadowBlur: 10,
     shadowOffsetX: 0,
     shadowOffsetY: 8,
+    shadowBlur: 10,
+    shadow3DEnabled: false,
     backgroundEnabled: false,
     backgroundColor: "#000000",
     backgroundOpacity: 50,

@@ -64,9 +64,10 @@ def generate_ass(segments, style, video_width, video_height):
     stroke_width = int(float(style.get("strokeWidth", 6))) if stroke_enabled else 0
     
     shadow_enabled = style.get("shadowEnabled", False)
+    shadow_3d_enabled = style.get("shadow3DEnabled", False)
     shadow_color = hex_to_ass_color(style.get("shadowColor", "#000000"))
     shadow_offset_max = max(abs(float(style.get("shadowOffsetX", 0))), abs(float(style.get("shadowOffsetY", 8))))
-    shadow_depth = int(shadow_offset_max) if shadow_enabled else 0
+    shadow_depth = int(shadow_offset_max) if shadow_enabled and not shadow_3d_enabled else 0
     
     font_weight_str = str(style.get("fontWeight", "400"))
     weight_suffixes = {
@@ -132,6 +133,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     events = []
     
+    def append_events(layer, start, end, text):
+        if shadow_enabled and shadow_3d_enabled:
+            shadow_bgr = shadow_color[4:10]
+            max_steps = max(abs(float(style.get("shadowOffsetX", 0))), abs(float(style.get("shadowOffsetY", 8))))
+            steps = max(1, int(max_steps))
+            
+            for i in range(1, steps + 1):
+                dx = (float(style.get("shadowOffsetX", 0)) / steps) * i
+                dy = (float(style.get("shadowOffsetY", 8)) / steps) * i
+                shadow_tags = f"{{\\1c&H{shadow_bgr}&\\3c&H{shadow_bgr}&\\xshad{dx:.1f}\\yshad{dy:.1f}}}"
+                events.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{shadow_tags}{text}")
+                
+        # Main text layer
+        actual_layer = layer if not shadow_3d_enabled else max(layer, 1)
+        events.append(f"Dialogue: {actual_layer},{start},{end},Default,,0,0,0,,{text}")
+    
     for segment in segments:
         words = segment.get("words", [])
         seg_start = segment.get("start", 0)
@@ -179,7 +196,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             start_time = format_ass_time(seg_start)
             end_time = format_ass_time(seg_end)
             text = segment.get("text", "")
-            events.append(f"Dialogue: 0,{start_time},{end_time},Default,,0,0,0,,{text}")
+            append_events(0, start_time, end_time, text)
             continue
 
         if animation_style == "none" or animation_style == "box":
@@ -196,7 +213,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             prefix = get_prefix_tags(True, True, event_dur)
             full_text = prefix + " ".join(line_parts)
             layer = 1 if animation_style == "box" else 0
-            events.append(f"Dialogue: {layer},{event_start},{event_end},Default,,0,0,0,,{full_text}")
+            append_events(layer, event_start, event_end, full_text)
             
             if animation_style == "none":
                 continue
@@ -229,7 +246,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 event_dur = int((event_end_s - word_start) * 1000)
                 prefix = get_prefix_tags(i == 0, i == len(words) - 1, event_dur)
                 full_text = prefix + f"{{\\alpha&HFF&}}" + " ".join(line_parts)
-                events.append(f"Dialogue: 0,{event_start},{event_end},Default,,0,0,0,,{full_text}")
+                events.append(f"Dialogue: 0,{event_start},{event_end},Default,,0,0,0,,{full_text}") # keep direct append for background box
             continue
 
         # Overlapping events for word-by-word highlights
@@ -275,6 +292,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             event_dur = int((event_end_s - word_start) * 1000)
             prefix = get_prefix_tags(i == 0, i == len(words) - 1, event_dur)
             full_text = prefix + " ".join(line_parts)
-            events.append(f"Dialogue: 0,{event_start},{event_end},Default,,0,0,0,,{full_text}")
+            append_events(0, event_start, event_end, full_text)
 
     return ass_header + "\n".join(events) + "\n"

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Video, FileAudio, Maximize2, Minimize2, Download, Loader2 } from "lucide-react";
+import { Video, FileAudio, Maximize2, Minimize2, Download, Loader2, BoxSelect } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface LivePreviewProps {
@@ -34,6 +34,7 @@ export function LivePreview({
   const [localVideoDim, setLocalVideoDim] = useState({ width: 1920, height: 1080 });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [localTime, setLocalTime] = useState(currentTime);
+  const [showBounds, setShowBounds] = useState(false);
 
   // Sync localTime with high frequency for smooth animations
   useEffect(() => {
@@ -142,6 +143,17 @@ export function LivePreview({
       </div>
       
       <div ref={containerRef} className="bg-black flex-1 flex flex-col relative min-h-[300px]">
+        {/* Toggle Bounds Button */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className={`absolute top-2 right-2 z-50 rounded-md shadow backdrop-blur transition-all duration-300 ${showBounds ? 'bg-blue-500/80 text-white hover:bg-blue-600/80' : 'bg-black/40 text-neutral-300 hover:bg-black/60 hover:text-white'}`}
+          onClick={() => setShowBounds(!showBounds)}
+          title="Toggle Container Bounds"
+        >
+          <BoxSelect className="w-4 h-4" />
+        </Button>
+
         {/* Media Element */}
         <div 
           onClick={handleVideoClick}
@@ -195,13 +207,23 @@ export function LivePreview({
                 subtitleStyle.alignment === 'left' ? 'justify-start' : 
                 subtitleStyle.alignment === 'right' ? 'justify-end' : 'justify-center'
               }`}
-              style={
-                subtitleStyle.alignmentVertical === 'top' 
-                  ? { top: `${subtitleStyle.positionY ?? 10}%` }
+              style={{
+                top: subtitleStyle.alignmentVertical === 'top' 
+                  ? `${subtitleStyle.positionY ?? 10}%` 
                   : subtitleStyle.alignmentVertical === 'middle'
-                  ? { top: '50%', transform: `translateY(calc(-50% + ${subtitleStyle.positionY ?? 0}%))` }
-                  : { bottom: `${subtitleStyle.positionY ?? 10}%` }
-              }
+                  ? '50%' 
+                  : undefined,
+                bottom: subtitleStyle.alignmentVertical === 'bottom' || !subtitleStyle.alignmentVertical 
+                  ? `${subtitleStyle.positionY ?? 10}%` 
+                  : undefined,
+                transform: subtitleStyle.alignmentVertical === 'middle' 
+                  ? `translateY(calc(-50% + ${subtitleStyle.positionY ?? 0}%))` 
+                  : undefined,
+                border: showBounds ? '2px dashed rgba(59, 130, 246, 0.5)' : undefined,
+                backgroundColor: showBounds ? 'rgba(59, 130, 246, 0.1)' : undefined,
+                paddingTop: showBounds ? '4px' : undefined,
+                paddingBottom: showBounds ? '4px' : undefined,
+              }}
             >
               {(() => {
                 const activeSegment = editableSegments.find((s: any) => localTime >= s.start && localTime < s.end);
@@ -313,7 +335,17 @@ export function LivePreview({
                   if (strokeShadow !== 'none') combinedShadows.push(strokeShadow);
                 }
                 if (subtitleStyle.shadowEnabled) {
-                  combinedShadows.push(`${pxShadowOffsetX}px ${pxShadowOffsetY}px ${pxShadowBlur}px ${subtitleStyle.shadowColor}`);
+                  if (subtitleStyle.shadow3DEnabled) {
+                    const maxSteps = Math.max(Math.abs(pxShadowOffsetX), Math.abs(pxShadowOffsetY));
+                    const steps = Math.max(1, Math.ceil(maxSteps));
+                    for (let i = 1; i <= steps; i++) {
+                      const dx = (pxShadowOffsetX / steps) * i;
+                      const dy = (pxShadowOffsetY / steps) * i;
+                      combinedShadows.push(`${dx.toFixed(1)}px ${dy.toFixed(1)}px 0 ${subtitleStyle.shadowColor}`);
+                    }
+                  } else {
+                    combinedShadows.push(`${pxShadowOffsetX}px ${pxShadowOffsetY}px ${pxShadowBlur}px ${subtitleStyle.shadowColor}`);
+                  }
                 }
 
                 // The stroke layer (drawn double thick, under the text)

@@ -739,6 +739,13 @@ export function SettingsPanel({
                     onValueChange={([v]) => updateStyle("shadowOffsetY", v)} 
                   />
                 </div>
+                <div className="flex items-center justify-between pt-2 border-t border-neutral-800">
+                  <Label className="text-neutral-300 text-sm font-medium">Solid 3D Extrusion</Label>
+                  <Switch 
+                    checked={subtitleStyle.shadow3DEnabled ?? false} 
+                    onCheckedChange={(c) => updateStyle("shadow3DEnabled", c)} 
+                  />
+                </div>
               </div>
             </div>
 
