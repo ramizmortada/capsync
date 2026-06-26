@@ -84,7 +84,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
   const duration = Math.max(mediaDuration, 0.1);
   return (
-    <Card className="bg-neutral-900 border-neutral-800 shadow-2xl p-2">
+    <Card className="bg-card border-border shadow-2xl p-2">
       {/* Timeline Header (Controls) */}
       <div className="flex items-center justify-between px-2 mb-2 gap-4">
         
@@ -94,7 +94,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
             onClick={togglePlay} 
             variant="ghost"
             size="icon" 
-            className="rounded-full shrink-0 text-neutral-300 hover:text-white hover:bg-white/10"
+            className="rounded-full shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted"
             title={isPlaying ? "Pause" : "Play"}
           >
             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 ml-1 fill-current" />}
@@ -103,19 +103,19 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
             onClick={stopPlay} 
             variant="ghost"
             size="icon" 
-            className="rounded-full shrink-0 text-neutral-400 hover:text-white hover:bg-white/10"
+            className="rounded-full shrink-0 text-muted-foreground/80 hover:text-foreground hover:bg-muted"
             title="Stop and reset to start"
           >
             <Square className="w-4 h-4 fill-current" />
           </Button>
-          <div className="ml-2 text-xs font-mono text-neutral-400 bg-neutral-950 px-3 py-1.5 rounded-lg border border-neutral-800 tracking-widest hidden sm:block">
+          <div className="ml-2 text-xs font-mono text-muted-foreground bg-background px-3 py-1.5 rounded-lg border border-border tracking-widest hidden sm:block">
             {formatUiTime(currentTime)} / {formatUiTime(mediaDuration)}
           </div>
         </div>
 
         {/* Zoom Controls */}
-        <div className="flex items-center gap-3 w-48 bg-neutral-950 px-3 py-1.5 rounded-lg border border-neutral-800">
-          <ZoomOut className="w-4 h-4 text-neutral-500" />
+        <div className="flex items-center gap-3 w-48 bg-background px-3 py-1.5 rounded-lg border border-border">
+          <ZoomOut className="w-4 h-4 text-muted-foreground" />
           <input 
             type="range" 
             min="1" 
@@ -123,9 +123,9 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
             step="0.5" 
             value={zoomLevel} 
             onChange={(e) => setZoomLevel(parseFloat(e.target.value))}
-            className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:rounded-full"
+            className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-accent-blue [&::-webkit-slider-thumb]:rounded-full"
           />
-          <ZoomIn className="w-4 h-4 text-neutral-500" />
+          <ZoomIn className="w-4 h-4 text-muted-foreground" />
         </div>
       </div>
 
@@ -144,7 +144,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
         onPointerUp={() => {
           (timelineRef as any)._timeout = setTimeout(() => isHoveringTimeline.current = false, 1000);
         }}
-        className="relative h-24 bg-neutral-950 rounded-xl overflow-x-auto overflow-y-hidden select-none [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-neutral-950 [&::-webkit-scrollbar-thumb]:bg-neutral-800 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-neutral-700 transition-colors"
+        className="relative h-24 bg-background rounded-xl overflow-x-auto overflow-y-hidden select-none [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-background [&::-webkit-scrollbar-thumb]:bg-muted [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-accent transition-colors"
       >
         {/* Scaled Inner Track */}
         <div 
@@ -190,8 +190,8 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                 key={index}
                 className={`absolute top-6 bottom-2 rounded text-[10px] p-1 font-medium overflow-hidden transition-colors border pointer-events-none ${
                   isActive 
-                    ? 'bg-blue-500/30 border-blue-400/50 text-blue-100 shadow-[0_0_10px_rgba(59,130,246,0.3)]' 
-                    : 'bg-neutral-800 border-neutral-700 text-neutral-400'
+                    ? 'bg-accent-blue/30 border-accent-blue/50 text-blue-100 shadow-accent-blue/30 shadow-[0_0_10px]' 
+                    : 'bg-muted/40 border-border text-muted-foreground'
                 }`}
                 style={{ left: `${left}%`, width: `${width}%` }}
               >
@@ -209,7 +209,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
               className="absolute top-0 bottom-0 w-8 -ml-4 z-10 flex justify-center items-center group"
               style={{ left: `${(editableSegments[0].start / duration) * 100}%`, ...getCursorStyle('right') }}
             >
-              <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'start' ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+              <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'start' ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
             </div>
           )}
 
@@ -242,7 +242,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                       style={getCursorStyle('both')}
                       onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'both', index }); }}
                     >
-                      <div className={`w-0.5 h-full transition-colors ${isDraggingThisBoth ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                      <div className={`w-0.5 h-full transition-colors ${isDraggingThisBoth ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
                     </div>
                     {/* Right Zone (Start of segment i+1) */}
                     <div 
@@ -264,7 +264,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                     className="absolute top-0 bottom-0 w-8 -ml-4 z-10 flex justify-center items-center group"
                     style={{ left: `${(segment.end / duration) * 100}%`, ...getCursorStyle('left') }}
                   >
-                    <div className={`w-0.5 h-full transition-colors ${isDraggingEnd ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                    <div className={`w-0.5 h-full transition-colors ${isDraggingEnd ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
                   </div>
                 );
                 
@@ -276,7 +276,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                     className="absolute top-0 bottom-0 w-8 -ml-4 z-10 flex justify-center items-center group"
                     style={{ left: `${(nextSegment.start / duration) * 100}%`, ...getCursorStyle('right') }}
                   >
-                    <div className={`w-0.5 h-full transition-colors ${isDraggingStart ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                    <div className={`w-0.5 h-full transition-colors ${isDraggingStart ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
                   </div>
                 );
               }
@@ -289,7 +289,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                   className="absolute top-0 bottom-0 w-8 -ml-4 z-10 flex justify-center items-center group"
                   style={{ left: `${(segment.end / duration) * 100}%`, ...getCursorStyle('left') }}
                 >
-                  <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'end' ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-blue-400/50 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                  <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'end' ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
                 </div>
               );
             }

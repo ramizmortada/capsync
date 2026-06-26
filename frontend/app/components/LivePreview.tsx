@@ -113,8 +113,8 @@ export function LivePreview({
   }
 
   return (
-    <div className="h-full rounded-xl overflow-hidden bg-neutral-900 border border-neutral-800 shadow-2xl flex flex-col">
-      <div className="p-3 bg-neutral-900 border-b border-neutral-800 text-sm font-medium text-neutral-400 flex items-center justify-between shrink-0">
+    <div className="h-full rounded-xl overflow-hidden bg-card border border-border shadow-2xl flex flex-col">
+      <div className="p-3 bg-muted/20 border-b border-border text-sm font-medium text-muted-foreground flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <Video className="w-4 h-4 text-emerald-400" /> Live Preview Studio
         </div>
@@ -123,7 +123,7 @@ export function LivePreview({
             <Button 
               variant="ghost" 
               size="icon" 
-              className="h-8 w-8 text-neutral-400 hover:text-white"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
               onClick={toggleFullScreen}
               title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
             >
@@ -131,11 +131,11 @@ export function LivePreview({
             </Button>
           )}
           {status === "burning" ? (
-            <Button disabled size="sm" className="bg-blue-600/50 text-white text-xs h-8 flex items-center gap-1.5 font-semibold">
+            <Button disabled size="sm" className="text-xs h-8 flex items-center gap-1.5 font-semibold">
               <Loader2 className="w-3.5 h-3.5 animate-spin" /> Exporting...
             </Button>
           ) : (status === "done" && file?.type.startsWith('video') && handleExportVideo) ? (
-            <Button onClick={handleExportVideo} size="sm" className="bg-blue-600 hover:bg-blue-500 text-white text-xs h-8 flex items-center gap-1.5 font-semibold">
+            <Button onClick={handleExportVideo} size="sm" className="text-xs h-8 flex items-center gap-1.5 font-semibold">
               <Download className="w-3.5 h-3.5" /> Export Video
             </Button>
           ) : null}
@@ -147,7 +147,7 @@ export function LivePreview({
         <Button
           variant="ghost"
           size="icon"
-          className={`absolute top-2 right-2 z-50 rounded-md shadow backdrop-blur transition-all duration-300 ${showBounds ? 'bg-blue-500/80 text-white hover:bg-blue-600/80' : 'bg-black/40 text-neutral-300 hover:bg-black/60 hover:text-white'}`}
+          className={`absolute top-2 right-2 z-50 rounded-md shadow backdrop-blur transition-all duration-350 border ${showBounds ? 'bg-accent text-accent-foreground border-border hover:bg-accent/80' : 'bg-background/40 text-muted-foreground border-transparent hover:bg-background/60 hover:text-foreground'}`}
           onClick={() => setShowBounds(!showBounds)}
           title="Toggle Container Bounds"
         >
@@ -185,8 +185,8 @@ export function LivePreview({
                 onLoadedMetadata={(e) => setMediaDuration(e.currentTarget.duration)}
               />
               {/* Audio visual placeholder */}
-              <div className="w-32 h-32 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center shadow-2xl">
-                <FileAudio className="w-12 h-12 text-neutral-600" />
+              <div className="w-32 h-32 rounded-full bg-card border border-border flex items-center justify-center shadow-2xl">
+                <FileAudio className="w-12 h-12 text-muted-foreground/60" />
               </div>
             </div>
           )}
@@ -219,8 +219,8 @@ export function LivePreview({
                 transform: subtitleStyle.alignmentVertical === 'middle' 
                   ? `translateY(calc(-50% + ${subtitleStyle.positionY ?? 0}%))` 
                   : undefined,
-                border: showBounds ? '2px dashed rgba(59, 130, 246, 0.5)' : undefined,
-                backgroundColor: showBounds ? 'rgba(59, 130, 246, 0.1)' : undefined,
+                border: showBounds ? '2px dashed var(--ring)' : undefined,
+                backgroundColor: showBounds ? 'color-mix(in srgb, var(--ring) 12%, transparent)' : undefined,
                 paddingTop: showBounds ? '4px' : undefined,
                 paddingBottom: showBounds ? '4px' : undefined,
               }}

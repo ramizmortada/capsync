@@ -96,21 +96,21 @@ const ColorPickerField = ({ label, colorKey, enabledKey, subtitleStyle, updateSt
           onCheckedChange={(val) => updateStyle(enabledKey, val)} 
         />
       )}
-      <Label className="text-neutral-300">{label}</Label>
+      <Label className="text-muted-foreground">{label}</Label>
     </div>
     <Popover>
       <PopoverTrigger asChild>
-        <div className="w-8 h-8 rounded border border-neutral-700 cursor-pointer shadow-sm" style={{ backgroundColor: (subtitleStyle[colorKey] as string) || '#ffffff' }} />
+        <div className="w-8 h-8 rounded border border-input cursor-pointer shadow-sm" style={{ backgroundColor: (subtitleStyle[colorKey] as string) || '#ffffff' }} />
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-3 bg-neutral-900 border-neutral-800 shadow-xl" side="left">
+      <PopoverContent className="w-auto p-3 bg-popover border-border shadow-xl" side="left">
         <HexColorPicker color={(subtitleStyle[colorKey] as string) || '#ffffff'} onChange={(val) => updateStyle(colorKey, val)} />
         <div className="mt-3 flex items-center gap-2">
-          <span className="text-neutral-400 text-xs font-mono">#</span>
+          <span className="text-muted-foreground text-xs font-mono">#</span>
           <input 
             type="text" 
             value={((subtitleStyle[colorKey] as string) || '#ffffff').replace('#', '')}
             onChange={(e) => updateStyle(colorKey, `#${e.target.value}`)}
-            className="bg-neutral-950 border border-neutral-800 rounded px-2 py-1 text-sm font-mono text-neutral-200 w-full"
+            className="bg-background border border-input rounded px-2 py-1 text-sm font-mono text-foreground w-full"
           />
         </div>
       </PopoverContent>
@@ -153,11 +153,13 @@ export function SettingsPanel({
   
   const [activeTab, setActiveTab] = useState("settings");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [dialogMode, setDialogMode] = useState<'choice' | 'save-new'>('save-new');
+  const [saveMode, setSaveMode] = useState<'new' | 'overwrite'>('new');
   const [newPresetName, setNewPresetName] = useState("");
+  const [overwritePresetId, setOverwritePresetId] = useState("");
 
   const activePreset = presets.find(p => p.id === activePresetId);
-  const isCustomPreset = activePreset && !activePreset.isDefault;
+  const isCustomPreset = activePreset && !activePreset.isDefault && activePreset.id !== 'custom';
+  const customPresets = presets.filter(p => !p.isDefault && p.id !== 'custom');
 
   useEffect(() => {
     const savedTab = localStorage.getItem("capsync_active_tab");
@@ -174,12 +176,18 @@ export function SettingsPanel({
   const handleDialogOpenChange = (open: boolean) => {
     setIsDialogOpen(open);
     if (open) {
-      if (isCustomPreset) {
-        setDialogMode('choice');
-      } else {
-        setDialogMode('save-new');
-      }
       setNewPresetName("");
+      if (isCustomPreset) {
+        setSaveMode('overwrite');
+        setOverwritePresetId(activePresetId);
+      } else {
+        setSaveMode('new');
+        if (customPresets.length > 0) {
+          setOverwritePresetId(customPresets[0].id);
+        } else {
+          setOverwritePresetId("");
+        }
+      }
     }
   };
 
@@ -191,9 +199,9 @@ export function SettingsPanel({
     }
   };
 
-  const handleUpdatePreset = () => {
-    if (activePresetId && isCustomPreset) {
-      onUpdatePreset(activePresetId);
+  const handleOverwritePreset = () => {
+    if (overwritePresetId) {
+      onUpdatePreset(overwritePresetId);
       setIsDialogOpen(false);
     }
   };
@@ -211,7 +219,7 @@ export function SettingsPanel({
           {isDownloaded ? (
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           ) : (
-            <CloudDownload className="w-3 h-3 text-neutral-500" />
+            <CloudDownload className="w-3 h-3 text-muted-foreground/80" />
           )}
         </div>
       </SelectItem>
@@ -219,16 +227,16 @@ export function SettingsPanel({
   };
 
   return (
-    <Card className="w-full h-full flex flex-col bg-neutral-900 border-neutral-800 shadow-2xl p-0 gap-0">
+    <Card className="w-full h-full flex flex-col bg-card border-border shadow-2xl p-0 gap-0">
       {/* Preset Selector Area */}
-      <div className="p-4 border-b border-neutral-800 shrink-0 space-y-2 bg-neutral-950/20">
+      <div className="p-4 border-b border-border shrink-0 space-y-2 bg-muted/20">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-bold text-neutral-400 uppercase tracking-widest">Style & Settings Preset</span>
+          <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Style & Settings Preset</span>
           {isCustomPreset && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-5 w-5 text-red-500 hover:text-red-400 hover:bg-red-950/20 p-0"
+              className="h-5 w-5 text-destructive hover:text-destructive hover:bg-destructive/10 p-0"
               onClick={() => onDeletePreset(activePresetId)}
               title="Delete current custom preset"
             >
@@ -238,15 +246,20 @@ export function SettingsPanel({
         </div>
         <div className="flex items-center gap-2">
           <Select value={activePresetId} onValueChange={onApplyPreset}>
-            <SelectTrigger className="bg-neutral-800 border-neutral-700 flex-1 text-xs text-neutral-200 h-9">
+            <SelectTrigger className="bg-background border-input flex-1 text-xs text-foreground h-9">
               <SelectValue placeholder="Select preset..." />
             </SelectTrigger>
-            <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
+            <SelectContent className="bg-popover border-border text-foreground">
               {presets.map(p => (
                 <SelectItem key={p.id} value={p.id} className="text-xs">
                   {p.name}
                 </SelectItem>
               ))}
+              {activePresetId === "custom" && (
+                <SelectItem value="custom" className="text-xs italic" disabled>
+                  Custom Preset
+                </SelectItem>
+              )}
             </SelectContent>
           </Select>
           
@@ -255,101 +268,95 @@ export function SettingsPanel({
               <Button 
                 variant="outline" 
                 size="sm" 
-                className="h-9 px-2 text-xs border-neutral-700 text-neutral-300 hover:text-white flex items-center gap-1.5 shrink-0"
+                className="h-9 px-2 text-xs border-input text-muted-foreground hover:text-foreground flex items-center gap-1.5 shrink-0"
                 title="Save current custom style & settings"
               >
                 <Save className="w-3.5 h-3.5" /> Save
               </Button>
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md bg-neutral-900 border-neutral-800 p-6 rounded-lg text-neutral-100">
-              {dialogMode === 'choice' ? (
-                <>
-                  <DialogHeader>
-                    <DialogTitle>Update Preset or Save as New?</DialogTitle>
-                    <DialogDescription>
-                      Would you like to overwrite your active custom preset, or create a brand new one?
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="flex flex-col gap-3 py-4 mt-2">
-                    <Button 
-                      onClick={handleUpdatePreset}
-                      className="bg-blue-600 hover:bg-blue-500 text-white font-semibold w-full py-5 text-sm flex items-center justify-center gap-2"
-                    >
-                      <Save className="w-4 h-4" /> Update Preset "{activePreset?.name}"
-                    </Button>
-                    <Button 
-                      variant="outline"
-                      onClick={() => setDialogMode('save-new')}
-                      className="border-neutral-700 text-neutral-300 hover:text-white hover:bg-neutral-800 w-full py-5 text-sm"
-                    >
-                      Save as New Preset...
-                    </Button>
-                  </div>
-                  <DialogFooter className="flex sm:flex-col gap-2 mt-2 w-full">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => setIsDialogOpen(false)} 
-                      className="border-neutral-700 text-neutral-300 hover:text-white hover:bg-neutral-800 w-full py-5 text-sm"
-                    >
-                      Cancel
-                    </Button>
-                  </DialogFooter>
-                </>
-              ) : (
-                <>
-                  <DialogHeader>
-                    <DialogTitle>Save Custom Preset</DialogTitle>
-                    <DialogDescription>
-                      Save your current style, model, and word limits settings.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="flex flex-col gap-3 py-2">
-                    <Label htmlFor="preset-name" className="text-neutral-300 text-xs">Preset Name</Label>
+            <DialogContent className="sm:max-w-md bg-popover border-border p-6 rounded-lg text-foreground">
+              <DialogHeader>
+                <DialogTitle>Save Custom Preset</DialogTitle>
+                <DialogDescription>
+                  Save your current style, model, and word limits settings.
+                </DialogDescription>
+              </DialogHeader>
+              
+              {customPresets.length > 0 && (
+                <div className="grid grid-cols-2 gap-1 p-1 bg-muted rounded-lg mt-4">
+                  <button
+                    type="button"
+                    onClick={() => setSaveMode('new')}
+                    className={`py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${saveMode === 'new' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Save as New
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSaveMode('overwrite')}
+                    className={`py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${saveMode === 'overwrite' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
+                  >
+                    Overwrite Existing
+                  </button>
+                </div>
+              )}
+
+              <div className="mt-4 min-h-[76px]">
+                {saveMode === 'new' ? (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="preset-name" className="text-muted-foreground text-xs font-medium">Preset Name</Label>
                     <input
                       id="preset-name"
                       type="text"
                       placeholder="e.g. My Fast Reels"
                       value={newPresetName}
                       onChange={(e) => setNewPresetName(e.target.value)}
-                      className="bg-neutral-950 border border-neutral-800 rounded-md px-3 py-2 text-sm text-neutral-200 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
+                      className="bg-background border border-input rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring w-full h-9"
                       autoFocus
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                        if (e.key === 'Enter' && newPresetName.trim()) {
                           handleSaveSubmit();
                         }
                       }}
                     />
                   </div>
-                  <DialogFooter className="flex sm:justify-end gap-2 mt-4 w-full">
-                    {isCustomPreset && (
-                      <Button 
-                        variant="outline" 
-                        size="lg" 
-                        onClick={() => setDialogMode('choice')} 
-                        className="border-neutral-700 text-neutral-300 hover:text-white hover:bg-neutral-800 mr-auto"
-                      >
-                        Back
-                      </Button>
-                    )}
-                    <Button 
-                      variant="outline" 
-                      size="lg" 
-                      onClick={() => setIsDialogOpen(false)} 
-                      className="border-neutral-700 text-neutral-300 hover:text-white hover:bg-neutral-800"
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      onClick={handleSaveSubmit} 
-                      disabled={!newPresetName.trim()}
-                      size="lg"
-                      className="bg-blue-600 hover:bg-blue-500 text-white font-semibold"
-                    >
-                      Save Preset
-                    </Button>
-                  </DialogFooter>
-                </>
-              )}
+                ) : (
+                  <div className="space-y-1.5">
+                    <Label className="text-muted-foreground text-xs font-medium">Select Preset to Overwrite</Label>
+                    <Select value={overwritePresetId} onValueChange={setOverwritePresetId}>
+                      <SelectTrigger className="bg-background border-input w-full text-xs text-foreground h-9">
+                        <SelectValue placeholder="Select preset to overwrite..." />
+                      </SelectTrigger>
+                      <SelectContent className="bg-popover border-border text-foreground">
+                        {customPresets.map(p => (
+                          <SelectItem key={p.id} value={p.id} className="text-xs">
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter className="grid grid-cols-2 gap-2 mt-6 w-full">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => setIsDialogOpen(false)} 
+                  className="h-9 text-xs font-semibold w-full cursor-pointer"
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  onClick={saveMode === 'new' ? handleSaveSubmit : handleOverwritePreset} 
+                  disabled={saveMode === 'new' ? !newPresetName.trim() : !overwritePresetId}
+                  size="sm"
+                  className="h-9 text-xs font-semibold w-full cursor-pointer"
+                >
+                  {saveMode === 'new' ? 'Save Preset' : 'Overwrite'}
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
@@ -557,36 +564,54 @@ export function SettingsPanel({
               <h3 className="font-semibold text-neutral-200">Layout & Position</h3>
               
               <div className="space-y-3">
-                <Label className="text-neutral-300">Text Alignment</Label>
+                <Label className="text-muted-foreground">Text Alignment</Label>
                 <div className="grid grid-cols-3 gap-2">
-                  <Button variant="outline" size="sm" 
-                    className={`border-neutral-700 bg-neutral-800 ${subtitleStyle.alignment === 'left' ? 'ring-2 ring-indigo-500 text-indigo-400' : 'text-neutral-400'}`}
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className={`border-input ${subtitleStyle.alignment === 'left' ? 'text-white font-medium' : 'bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
+                    style={subtitleStyle.alignment === 'left' ? { backgroundColor: 'color-mix(in srgb, var(--accent-blue) 30%, transparent)', borderColor: 'color-mix(in srgb, var(--accent-blue) 50%, transparent)' } : undefined}
                     onClick={() => updateStyle("alignment", "left")}
                   ><AlignLeft className="w-4 h-4" /></Button>
-                  <Button variant="outline" size="sm" 
-                    className={`border-neutral-700 bg-neutral-800 ${subtitleStyle.alignment === 'center' ? 'ring-2 ring-indigo-500 text-indigo-400' : 'text-neutral-400'}`}
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className={`border-input ${subtitleStyle.alignment === 'center' ? 'text-white font-medium' : 'bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
+                    style={subtitleStyle.alignment === 'center' ? { backgroundColor: 'color-mix(in srgb, var(--accent-blue) 30%, transparent)', borderColor: 'color-mix(in srgb, var(--accent-blue) 50%, transparent)' } : undefined}
                     onClick={() => updateStyle("alignment", "center")}
                   ><AlignCenter className="w-4 h-4" /></Button>
-                  <Button variant="outline" size="sm" 
-                    className={`border-neutral-700 bg-neutral-800 ${subtitleStyle.alignment === 'right' ? 'ring-2 ring-indigo-500 text-indigo-400' : 'text-neutral-400'}`}
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className={`border-input ${subtitleStyle.alignment === 'right' ? 'text-white font-medium' : 'bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
+                    style={subtitleStyle.alignment === 'right' ? { backgroundColor: 'color-mix(in srgb, var(--accent-blue) 30%, transparent)', borderColor: 'color-mix(in srgb, var(--accent-blue) 50%, transparent)' } : undefined}
                     onClick={() => updateStyle("alignment", "right")}
                   ><AlignRight className="w-4 h-4" /></Button>
                 </div>
               </div>
 
               <div className="space-y-3">
-                <Label className="text-neutral-300">Vertical Alignment</Label>
+                <Label className="text-muted-foreground">Vertical Alignment</Label>
                 <div className="grid grid-cols-3 gap-2">
-                  <Button variant="outline" size="sm" 
-                    className={`border-neutral-700 bg-neutral-800 ${subtitleStyle.alignmentVertical === 'top' ? 'ring-2 ring-indigo-500 text-indigo-400' : 'text-neutral-400'}`}
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className={`border-input ${subtitleStyle.alignmentVertical === 'top' ? 'text-white font-medium' : 'bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
+                    style={subtitleStyle.alignmentVertical === 'top' ? { backgroundColor: 'color-mix(in srgb, var(--accent-blue) 30%, transparent)', borderColor: 'color-mix(in srgb, var(--accent-blue) 50%, transparent)' } : undefined}
                     onClick={() => updateStyle("alignmentVertical", "top")}
                   ><ArrowUp className="w-4 h-4" /></Button>
-                  <Button variant="outline" size="sm" 
-                    className={`border-neutral-700 bg-neutral-800 ${subtitleStyle.alignmentVertical === 'middle' ? 'ring-2 ring-indigo-500 text-indigo-400' : 'text-neutral-400'}`}
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className={`border-input ${subtitleStyle.alignmentVertical === 'middle' ? 'text-white font-medium' : 'bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
+                    style={subtitleStyle.alignmentVertical === 'middle' ? { backgroundColor: 'color-mix(in srgb, var(--accent-blue) 30%, transparent)', borderColor: 'color-mix(in srgb, var(--accent-blue) 50%, transparent)' } : undefined}
                     onClick={() => updateStyle("alignmentVertical", "middle")}
                   ><Minus className="w-4 h-4" /></Button>
-                  <Button variant="outline" size="sm" 
-                    className={`border-neutral-700 bg-neutral-800 ${subtitleStyle.alignmentVertical === 'bottom' || !subtitleStyle.alignmentVertical ? 'ring-2 ring-indigo-500 text-indigo-400' : 'text-neutral-400'}`}
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className={`border-input ${subtitleStyle.alignmentVertical === 'bottom' || !subtitleStyle.alignmentVertical ? 'text-white font-medium' : 'bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
+                    style={subtitleStyle.alignmentVertical === 'bottom' || !subtitleStyle.alignmentVertical ? { backgroundColor: 'color-mix(in srgb, var(--accent-blue) 30%, transparent)', borderColor: 'color-mix(in srgb, var(--accent-blue) 50%, transparent)' } : undefined}
                     onClick={() => updateStyle("alignmentVertical", "bottom")}
                   ><ArrowDown className="w-4 h-4" /></Button>
                 </div>

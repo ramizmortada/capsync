@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Upload, FileAudio, FileVideo, Settings, Download, CheckCircle2, Loader2, CloudDownload, Video, Edit3, ZoomIn, ZoomOut, Trash2, Play, Pause } from "lucide-react";
 import { get, set, del } from "idb-keyval";
 import { Button } from "@/components/ui/button";
@@ -57,7 +57,7 @@ export interface StylePreset {
 const DEFAULT_PRESETS: StylePreset[] = [
   {
     id: "default-studio",
-    name: "Default Studio",
+    name: "Default",
     modelSize: "large-v2",
     maxWords: "-1",
     isDefault: true,
@@ -87,78 +87,6 @@ const DEFAULT_PRESETS: StylePreset[] = [
       animationOut: 'none',
       highlightBackgroundColor: "#ff0000",
       scaleFactor: 1.2,
-      maxWidth: 90,
-      textTransform: 'none',
-    }
-  },
-  {
-    id: "tiktok-highlight",
-    name: "TikTok Highlight",
-    modelSize: "large-v2",
-    maxWords: "-2",
-    isDefault: true,
-    subtitleStyle: {
-      fontFamily: "Oswald",
-      fontWeight: "700",
-      fontSize: 120,
-      textColor: "#ffffff",
-      strokeEnabled: true,
-      strokeColor: "#000000",
-      strokeWidth: 8,
-      shadowEnabled: true,
-      shadowColor: "#000000",
-      shadowOffsetX: 4,
-      shadowOffsetY: 4,
-      shadowBlur: 15,
-      shadow3DEnabled: false,
-      backgroundEnabled: false,
-      backgroundColor: "#000000",
-      backgroundOpacity: 50,
-      highlightColor: "#ffff00",
-      alignment: 'center',
-      alignmentVertical: 'bottom',
-      positionY: 15,
-      animationStyle: 'scale',
-      animationIn: 'none',
-      animationOut: 'none',
-      highlightBackgroundColor: "#ff0000",
-      scaleFactor: 1.3,
-      maxWidth: 90,
-      textTransform: 'uppercase',
-    }
-  },
-  {
-    id: "minimal-box",
-    name: "Minimalist Box",
-    modelSize: "medium",
-    maxWords: "-1",
-    isDefault: true,
-    subtitleStyle: {
-      fontFamily: "Poppins",
-      fontWeight: "500",
-      fontSize: 64,
-      textColor: "#ffffff",
-      strokeEnabled: false,
-      strokeColor: "#000000",
-      strokeWidth: 4,
-      shadowEnabled: false,
-      shadowColor: "#000000",
-      shadowOffsetX: 0,
-      shadowOffsetY: 0,
-      shadowBlur: 0,
-      shadow3DEnabled: false,
-      backgroundEnabled: true,
-      backgroundColor: "#000000",
-      backgroundOpacity: 70,
-      highlightColor: "#ffffff",
-      alignment: 'center',
-      alignmentVertical: 'bottom',
-      positionY: 8,
-      animationStyle: 'none',
-      animationIn: 'none',
-      animationOut: 'none',
-      highlightBackgroundColor: "#ff0000",
-      scaleFactor: 1.0,
       maxWidth: 90,
       textTransform: 'none',
     }
@@ -257,6 +185,26 @@ export default function WhisperXApp() {
       return updated;
     });
   };
+
+  const markCustom = useCallback(() => {
+    setActivePresetId("custom");
+    localStorage.setItem("capsync_active_preset_id", "custom");
+  }, []);
+
+  const handleModelSizeChange = useCallback((size: string) => {
+    setModelSize(size);
+    markCustom();
+  }, [markCustom]);
+
+  const handleMaxWordsChange = useCallback((words: string) => {
+    setMaxWords(words);
+    markCustom();
+  }, [markCustom]);
+
+  const handleSubtitleStyleChange = useCallback((updater: React.SetStateAction<SubtitleStyle>) => {
+    setSubtitleStyle(updater);
+    markCustom();
+  }, [markCustom]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
@@ -386,9 +334,11 @@ export default function WhisperXApp() {
     });
     
     setPresets(updatedCustomPresets);
+    setActivePresetId(presetId);
     
     const customPresetsOnly = updatedCustomPresets.filter(p => !p.isDefault);
     localStorage.setItem("capsync_style_presets", JSON.stringify(customPresetsOnly));
+    localStorage.setItem("capsync_active_preset_id", presetId);
   };
 
   // Save project to IndexedDB
@@ -1031,11 +981,11 @@ export default function WhisperXApp() {
               status={status}
               progress={progress}
               modelSize={modelSize}
-              setModelSize={setModelSize}
+              setModelSize={handleModelSizeChange}
               language={language}
               setLanguage={setLanguage}
               maxWords={maxWords}
-              setMaxWords={setMaxWords}
+              setMaxWords={handleMaxWordsChange}
               handleFileChange={handleFileChange}
               handleDragOver={handleDragOver}
               handleDrop={handleDrop}
@@ -1048,7 +998,7 @@ export default function WhisperXApp() {
               transcriptionMessage={transcriptionMessage}
               clearProject={clearProject}
               subtitleStyle={subtitleStyle}
-              setSubtitleStyle={setSubtitleStyle}
+              setSubtitleStyle={handleSubtitleStyleChange}
               handleExportVideo={handleExportVideo}
               presets={presets}
               activePresetId={activePresetId}

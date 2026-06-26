@@ -98,30 +98,30 @@ export function SubtitleEditor({
   const isMergeVisible = selectedIndexes.length === 2 && Math.abs(selectedIndexes[0] - selectedIndexes[1]) === 1;
 
   return (
-    <Card className="h-full flex flex-col bg-neutral-900 border-neutral-800 shadow-2xl overflow-hidden p-0 gap-0">
-      <div className="p-4 border-b border-neutral-800 bg-neutral-900 flex justify-between items-center shrink-0">
-        <div className="flex items-center gap-2 text-sm font-medium text-neutral-300">
-          <Edit3 className="w-4 h-4 text-blue-400" /> Subtitle Editor
+    <Card className="h-full flex flex-col bg-card border-border shadow-2xl overflow-hidden p-0 gap-0">
+      <div className="p-4 border-b border-border bg-card flex justify-between items-center shrink-0">
+        <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+          <Edit3 className="w-4 h-4 text-accent-blue" /> Subtitle Editor
           {selectedIndexes.length > 0 && (
             <span className="ml-2 text-xs font-semibold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
               {selectedIndexes.length} selected
             </span>
           )}
           {selectedIndexes.length === 0 && (
-            <div className="flex items-center gap-0.5 ml-3 bg-neutral-950 border border-neutral-800 rounded-md overflow-hidden">
+            <div className="flex items-center gap-0.5 ml-3 bg-background border border-border rounded-md overflow-hidden">
               <button 
                 onClick={() => handleOffsetSegments(-0.1)} 
-                className="hover:bg-neutral-800 p-1 transition-colors text-neutral-400 hover:text-white outline-none focus:outline-none"
+                className="hover:bg-muted p-1 transition-colors text-muted-foreground hover:text-foreground outline-none focus:outline-none"
                 title="Shift all subtitles 100ms earlier"
               >
                 <ChevronLeft className="w-3 h-3" />
               </button>
-              <div className="flex items-center gap-1 px-1.5 text-[10px] uppercase font-bold text-neutral-500 select-none">
+              <div className="flex items-center gap-1 px-1.5 text-[10px] uppercase font-bold text-muted-foreground/80 select-none">
                 <Clock className="w-3 h-3" /> Offset
               </div>
               <button 
                 onClick={() => handleOffsetSegments(0.1)} 
-                className="hover:bg-neutral-800 p-1 transition-colors text-neutral-400 hover:text-white outline-none focus:outline-none"
+                className="hover:bg-muted p-1 transition-colors text-muted-foreground hover:text-foreground outline-none focus:outline-none"
                 title="Shift all subtitles 100ms later"
               >
                 <ChevronRight className="w-3 h-3" />
@@ -142,7 +142,7 @@ export function SubtitleEditor({
         </div>
       </div>
       
-      <ScrollArea className="flex-1 h-0 bg-neutral-950/50">
+      <ScrollArea className="flex-1 h-0 bg-background/50">
         <div className="p-0 relative">
           {editableSegments.map((segment, index) => {
             const isActive = currentTime >= segment.start && currentTime < segment.end;
@@ -158,8 +158,8 @@ export function SubtitleEditor({
                     isSelected
                       ? 'bg-emerald-500/10 border-l-2 border-l-emerald-500 border-b-emerald-500/30'
                       : isActive 
-                        ? 'bg-blue-500/10 border-l-2 border-l-blue-500 border-b-blue-500/20' 
-                        : 'bg-neutral-900 border-neutral-800 hover:bg-neutral-800/50 border-l-2 border-l-transparent'
+                        ? 'bg-accent-blue/10 border-l-2 border-l-accent-blue border-b-accent-blue/20' 
+                        : 'bg-card border-border hover:bg-muted/50 border-l-2 border-l-transparent'
                   }`}
                 >
                   {/* Left Column: Checkbox */}
@@ -169,7 +169,7 @@ export function SubtitleEditor({
                       className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
                         isSelected 
                           ? 'bg-emerald-500 border-emerald-500 text-neutral-950' 
-                          : 'border-neutral-600 hover:border-neutral-400 text-transparent'
+                          : 'border-input hover:border-accent-foreground text-transparent'
                       }`}
                     >
                       <Check className="w-3 h-3" strokeWidth={3} />
@@ -179,18 +179,18 @@ export function SubtitleEditor({
                   {/* Right Column: Content */}
                   <div className="flex-1 flex flex-col">
                     {/* Top Row: Timestamps and Delete Action */}
-                    <div className="text-xs text-neutral-500 mb-2 flex justify-between items-center font-mono tracking-wider">
+                    <div className="text-xs text-muted-foreground mb-2 flex justify-between items-center font-mono tracking-wider">
                       <div className="flex items-center gap-2">
-                        <span className="text-neutral-400">{formatUiTime(segment.start)}</span>
-                        <ArrowRight className="w-3 h-3 text-neutral-600" />
-                        <span className="text-neutral-400">{formatUiTime(segment.end)}</span>
+                        <span className="text-muted-foreground/95">{formatUiTime(segment.start)}</span>
+                        <ArrowRight className="w-3 h-3 text-muted-foreground/60" />
+                        <span className="text-muted-foreground/95">{formatUiTime(segment.end)}</span>
                       </div>
                       <div className="flex items-center gap-1">
                         {/* Individual Split Button */}
                         {canSplit && (
                           <button 
                             onClick={() => handleDuplicateSegment(index)}
-                            className="text-neutral-600 hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-blue-500/10"
+                            className="text-muted-foreground/60 hover:text-accent-blue transition-colors opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-accent-blue/10"
                             title="Split Segment in Half"
                           >
                             <SquareSplitHorizontal className="w-3 h-3" />
@@ -203,7 +203,7 @@ export function SubtitleEditor({
                             handleDeleteSegments([index]);
                             setSelectedIndexes([]);
                           }}
-                          className="text-neutral-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-red-500/10"
+                          className="text-muted-foreground/60 hover:text-destructive transition-colors opacity-0 group-hover:opacity-100 p-1 rounded-md hover:bg-destructive/10"
                           title="Delete Segment"
                         >
                           <Trash2 className="w-3 h-3" />
@@ -215,7 +215,7 @@ export function SubtitleEditor({
                       value={segment.text}
                       onChange={(e: any) => handleSegmentChange(index, e.target.value)}
                       onFocus={() => onSeek(segment.start)}
-                      className="w-full bg-transparent text-sm text-neutral-200 outline-none resize-none font-medium placeholder-neutral-700 overflow-hidden"
+                      className="w-full bg-transparent text-sm text-foreground outline-none resize-none font-medium placeholder-muted-foreground/30 overflow-hidden"
                       rows={1}
                     />
                   </div>
@@ -227,7 +227,7 @@ export function SubtitleEditor({
                     <Button 
                       size="sm" 
                       onClick={onMergeClick}
-                      className="h-8 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-900/50 rounded-full px-4 pointer-events-auto border-2 border-neutral-950"
+                      className="h-8 gap-2 bg-emerald-600 hover:bg-emerald-500 text-white shadow-xl shadow-emerald-900/50 rounded-full px-4 pointer-events-auto border-2 border-background"
                     >
                       <Combine className="w-4 h-4" /> Merge Segments
                     </Button>
