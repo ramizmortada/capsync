@@ -58,17 +58,17 @@ const DEFAULT_PRESETS: StylePreset[] = [
   {
     id: "default-studio",
     name: "Default",
-    modelSize: "large-v2",
+    modelSize: "tiny",
     maxWords: "-1",
     isDefault: true,
     subtitleStyle: {
       fontFamily: "Inter",
-      fontWeight: "800",
-      fontSize: 96,
+      fontWeight: "500",
+      fontSize: 50,
       textColor: "#ffffff",
-      strokeEnabled: false,
+      strokeEnabled: true,
       strokeColor: "#000000",
-      strokeWidth: 6,
+      strokeWidth: 2,
       shadowEnabled: false,
       shadowColor: "#000000",
       shadowOffsetX: 0,
@@ -80,14 +80,14 @@ const DEFAULT_PRESETS: StylePreset[] = [
       backgroundOpacity: 50,
       highlightColor: "#ffff00",
       alignment: 'center',
-      alignmentVertical: 'bottom',
-      positionY: 10,
-      animationStyle: 'color',
+      alignmentVertical: 'top',
+      positionY: 70,
+      animationStyle: 'none',
       animationIn: 'none',
       animationOut: 'none',
       highlightBackgroundColor: "#ff0000",
       scaleFactor: 1.2,
-      maxWidth: 90,
+      maxWidth: 100,
       textTransform: 'none',
     }
   }
@@ -118,19 +118,19 @@ export default function WhisperXApp() {
   const [file, setFile] = useState<File | null>(null);
   
   // States
-  const [modelSize, setModelSize] = useState("large-v2");
+  const [modelSize, setModelSize] = useState("tiny");
   const [language, setLanguage] = useState("");
   const [maxWords, setMaxWords] = useState("-1");
   const [transcriptionMessage, setTranscriptionMessage] = useState<string>("Processing media...");
   
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>({
     fontFamily: "Inter",
-    fontWeight: "800",
-    fontSize: 96,
+    fontWeight: "500",
+    fontSize: 50,
     textColor: "#ffffff",
-    strokeEnabled: false,
+    strokeEnabled: true,
     strokeColor: "#000000",
-    strokeWidth: 6,
+    strokeWidth: 2,
     shadowEnabled: false,
     shadowColor: "#000000",
     shadowOffsetX: 0,
@@ -142,14 +142,14 @@ export default function WhisperXApp() {
     backgroundOpacity: 50,
     highlightColor: "#ffff00",
     alignment: 'center',
-    alignmentVertical: 'bottom',
-    positionY: 10,
-    animationStyle: 'color',
+    alignmentVertical: 'top',
+    positionY: 70,
+    animationStyle: 'none',
     animationIn: 'none',
     animationOut: 'none',
     highlightBackgroundColor: "#ff0000",
     scaleFactor: 1.2,
-    maxWidth: 90,
+    maxWidth: 100,
     textTransform: 'none',
   });
 

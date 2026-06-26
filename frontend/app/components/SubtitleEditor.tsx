@@ -145,7 +145,7 @@ export function SubtitleEditor({
       <ScrollArea className="flex-1 h-0 bg-background/50">
         <div className="p-0 relative">
           {editableSegments.map((segment, index) => {
-            const isActive = currentTime >= segment.start && currentTime < segment.end;
+            const isActive = currentTime >= (segment.start - 0.05) && currentTime < (segment.end - 0.05);
             const isSelected = selectedIndexes.includes(index);
             const isFirstSelected = isMergeVisible && Math.min(...selectedIndexes) === index;
             const canSplit = segment.text.trim().split(/\s+/).filter(Boolean).length >= 2;
