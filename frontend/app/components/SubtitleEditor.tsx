@@ -28,11 +28,11 @@ function AutoResizeTextarea({ value, onChange, className, ...props }: any) {
 
 interface SubtitleEditorProps {
   editableSegments: any[];
-  selectedIndexes: number[];
-  setSelectedIndexes: React.Dispatch<React.SetStateAction<number[]>>;
+  selectedIndexes: (number | string)[];
+  setSelectedIndexes: React.Dispatch<React.SetStateAction<(number | string)[]>>;
   rippleDeletes: {start: number, end: number}[];
-  handleLiftDelete: (indices: number[]) => void;
-  handleRippleDelete: (indices: number[]) => void;
+  handleLiftDelete: (indices: (number | string)[]) => void;
+  handleRippleDelete: (indices: (number | string)[]) => void;
   silenceThreshold: number;
   setSilenceThreshold: (val: number) => void;
   safePadding: number;
@@ -85,22 +85,29 @@ export function SubtitleEditor({
         const start = Math.min(lastSelectedRef.current, index);
         const end = Math.max(lastSelectedRef.current, index);
         const range = Array.from({ length: end - start + 1 }, (_, i) => start + i);
-        setSelectedIndexes(prev => Array.from(new Set([...prev, ...range])));
+        setSelectedIndexes(prev => {
+          const newSelection = new Set(prev);
+          range.forEach(r => newSelection.add(r));
+          return Array.from(newSelection);
+        });
       } else {
         setSelectedIndexes([index]);
         lastSelectedRef.current = index;
       }
-    } else {
+    } else if (e.ctrlKey || e.metaKey) {
       setSelectedIndexes(prev => 
         prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
       );
+      lastSelectedRef.current = index;
+    } else {
+      setSelectedIndexes([index]);
       lastSelectedRef.current = index;
     }
   };
 
   const onMergeClick = () => {
     if (selectedIndexes.length === 2) {
-      handleMergeSegments(selectedIndexes[0], selectedIndexes[1]);
+      handleMergeSegments(Number(selectedIndexes[0]), Number(selectedIndexes[1]));
       setSelectedIndexes([]);
     }
   };
@@ -143,7 +150,7 @@ export function SubtitleEditor({
   }, [selectedIndexes, handleLiftDelete, handleRippleDelete]);
 
   // Only show merge button if exactly 2 are selected and they are adjacent
-  const isMergeVisible = selectedIndexes.length === 2 && Math.abs(selectedIndexes[0] - selectedIndexes[1]) === 1;
+  const isMergeVisible = selectedIndexes.length === 2 && typeof selectedIndexes[0] === 'number' && typeof selectedIndexes[1] === 'number' && Math.abs(Number(selectedIndexes[0]) - Number(selectedIndexes[1])) === 1;
 
   return (
     <Card className="h-full flex flex-col bg-card border-border shadow-2xl overflow-hidden p-0 gap-0">
@@ -265,7 +272,7 @@ export function SubtitleEditor({
           {editableSegments.map((segment, index) => {
             const isActive = currentTime >= (segment.start - 0.05) && currentTime < (segment.end - 0.05);
             const isSelected = selectedIndexes.includes(index);
-            const isFirstSelected = isMergeVisible && Math.min(...selectedIndexes) === index;
+            const isFirstSelected = isMergeVisible && Math.min(...(selectedIndexes.filter(i => typeof i === 'number') as number[])) === index;
             const canSplit = segment.text.trim().split(/\s+/).filter(Boolean).length >= 2;
             
             return (

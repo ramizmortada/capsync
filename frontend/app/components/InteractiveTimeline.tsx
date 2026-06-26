@@ -19,13 +19,14 @@ interface InteractiveTimelineProps {
   editableSegments: any[];
   cutZones: { start: number; end: number }[];
   rippleDeletes: { start: number; end: number }[];
-  selectedIndexes: number[];
-  setSelectedIndexes: React.Dispatch<React.SetStateAction<number[]>>;
-  handleLiftDelete: (indices: number[]) => void;
-  handleRippleDelete: (indices: number[]) => void;
+  selectedIndexes: (number|string)[];
+  setSelectedIndexes: React.Dispatch<React.SetStateAction<(number|string)[]>>;
+  handleLiftDelete: (indices: (number|string)[]) => void;
+  handleRippleDelete: (indices: (number|string)[]) => void;
   setDraggingBoundary: (val: DragTarget | null) => void;
   draggingBoundary: DragTarget | null;
   onSeek: (time: number) => void;
+  handleToggleWordDelete: (segmentIndex: number, wordIndex: number) => void;
 }
 
 // Easily change this variable to adjust the size of the boundary cursors!
@@ -66,6 +67,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   setDraggingBoundary,
   draggingBoundary,
   onSeek,
+  handleToggleWordDelete,
 }: InteractiveTimelineProps) {
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
   const lastSelectedRef = useRef<number | null>(null);
@@ -280,8 +282,9 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
               <div 
                 key={index}
                 onPointerDown={(e) => {
+                  if (zoomLevel >= 15) return; // Parent is intangible when zoomed in
+                  e.stopPropagation();
                   if (e.shiftKey) {
-                    e.stopPropagation();
                     if (lastSelectedRef.current !== null) {
                       const start = Math.min(lastSelectedRef.current, index);
                       const end = Math.max(lastSelectedRef.current, index);
@@ -292,37 +295,70 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                       lastSelectedRef.current = index;
                     }
                   } else if (e.ctrlKey || e.metaKey) {
-                    e.stopPropagation();
                     setSelectedIndexes(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]);
                     lastSelectedRef.current = index;
+                  } else {
+                    setSelectedIndexes([index]);
+                    lastSelectedRef.current = index;
                   }
-                  // Otherwise, let it bubble up to handleTrackClick
                 }}
-                className={`absolute top-5 h-8 rounded text-[10px] p-1 font-medium overflow-hidden transition-colors border cursor-pointer ${
-                  isSelected
-                    ? 'bg-emerald-500/20 border-emerald-400 z-20 text-emerald-100'
-                    : isSilenced
-                      ? 'bg-red-950/20 border-red-900/30 text-red-500/60 opacity-60 line-through z-10'
-                      : isActive 
+                className={`absolute top-5 h-8 rounded text-[10px] p-1 font-medium transition-colors border ${
+                  zoomLevel >= 15 
+                    ? 'bg-transparent border-transparent z-10'
+                    : 'overflow-hidden ' + (isSelected
+                      ? 'bg-emerald-500/20 border-emerald-400 z-20 text-emerald-100'
+                      : isSilenced
+                        ? 'bg-red-950/20 border-red-900/30 text-red-500/60 opacity-60 line-through z-10'
+                        : isActive 
                         ? 'bg-accent-blue/30 border-accent-blue/50 text-blue-100 z-20' 
-                        : 'bg-muted/40 border-border text-muted-foreground z-10 hover:border-muted-foreground/50 hover:z-20'
+                        : 'bg-muted/40 border-border text-muted-foreground z-10 hover:border-muted-foreground/50 hover:z-20')
                 }`}
                 style={{ left: `${left}%`, width: `${width}%` }}
               >
                 {zoomLevel >= 15 && segment.words && segment.words.length > 0 ? (
                   <div className="relative w-full h-full">
                     {segment.words.map((word: any, wIdx: number) => {
-                      if (word.isGap) return null;
                       const segDuration = segment.end - segment.start;
                       const relativeStart = Math.max(0, ((word.start - segment.start) / segDuration) * 100);
-                      const relativeWidth = Math.min(100 - relativeStart, ((word.end - word.start) / segDuration) * 100);
+                      const relativeWidth = ((word.end - word.start) / segDuration) * 100;
                       
+                      const isDeleted = word.deleted;
+                      
+                      if (word.isGap) {
+                        return (
+                          <div 
+                            key={wIdx} 
+                            onPointerDown={(e) => { 
+                              e.stopPropagation(); 
+                              if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                                setSelectedIndexes(prev => prev.includes(`gap:${index}:${wIdx}`) ? prev.filter(i => i !== `gap:${index}:${wIdx}`) : [...prev, `gap:${index}:${wIdx}`]);
+                              } else {
+                                setSelectedIndexes([`gap:${index}:${wIdx}`]);
+                              }
+                            }}
+                            onDoubleClick={(e) => { e.stopPropagation(); onSeek(word.start); }}
+                            className={`pointer-events-auto absolute top-0 bottom-0 flex items-center justify-center transition-colors z-20 cursor-pointer rounded border ${isDeleted ? 'bg-red-950/60 text-red-500/60 border-red-900/30 line-through' : selectedIndexes.includes(`gap:${index}:${wIdx}`) ? 'bg-emerald-500/40 border-emerald-400 z-30 text-emerald-100' : 'bg-emerald-950/50 text-emerald-400 border-emerald-900/50 hover:bg-emerald-950/70'}`}
+                            style={{ left: `${relativeStart}%`, width: `${relativeWidth}%` }}
+                          >
+                            <span className="truncate w-full text-center text-[9px] opacity-60">⏸️</span>
+                          </div>
+                        );
+                      }
+
                       return (
                         <div 
                           key={wIdx} 
-                          className="absolute top-0 bottom-0 flex items-center justify-center border-r border-white/10 hover:bg-white/20 transition-colors z-20 px-0.5"
+                          onPointerDown={(e) => { 
+                            e.stopPropagation(); 
+                            if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                              setSelectedIndexes(prev => prev.includes(`word:${index}:${wIdx}`) ? prev.filter(i => i !== `word:${index}:${wIdx}`) : [...prev, `word:${index}:${wIdx}`]);
+                            } else {
+                              setSelectedIndexes([`word:${index}:${wIdx}`]);
+                            }
+                          }}
+                          onDoubleClick={(e) => { e.stopPropagation(); onSeek(word.start); }}
+                          className={`pointer-events-auto absolute top-0 bottom-0 flex items-center justify-center transition-colors z-20 cursor-pointer rounded border ${isDeleted ? 'bg-red-950/70 text-red-400 border-red-900/50 hover:bg-red-900/70 line-through' : selectedIndexes.includes(`word:${index}:${wIdx}`) ? 'bg-emerald-500/40 border-emerald-400 z-30 text-emerald-100' : 'bg-muted/40 border-border hover:border-muted-foreground/50 hover:z-20 text-muted-foreground'}`}
                           style={{ left: `${relativeStart}%`, width: `${relativeWidth}%` }}
-                          title={word.word}
                         >
                           <span className="truncate w-full text-center text-[9px]">{word.word}</span>
                         </div>
@@ -372,14 +408,53 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
               {editableSegments.map((segment, index) => {
             const elements = [];
 
-            if (index < editableSegments.length - 1) {
+            if (zoomLevel >= 15 && segment.words && segment.words.length > 0) {
+              segment.words.forEach((word: any, wIdx: number) => {
+                if (word.isGap) return;
+                const nextWord = segment.words[wIdx + 1];
+                const isTouching = nextWord && !nextWord.isGap && (nextWord.start - word.end <= 0.05);
+
+                if (isTouching) {
+                  const leftPercent = (toTimelineTime(word.end) / timelineDuration) * 100;
+                  const isDraggingThisBoth = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'both' && 'wordIdx' in draggingBoundary && draggingBoundary.wordIdx === wIdx;
+                  elements.push(
+                    <div key={`cluster-${index}-${wIdx}`} className="absolute top-0 bottom-0 w-8 -ml-4 z-30 flex" style={{ left: `${leftPercent}%` }}>
+                      <div className="flex-1 group flex justify-end" style={getCursorStyle('left')} onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'end', segmentIdx: index, wordIdx: wIdx }); }}>
+                        <div className="w-1 h-full bg-transparent group-hover:bg-emerald-400/30 transition-colors" />
+                      </div>
+                      <div className="w-2 shrink-0 group flex justify-center items-center relative z-20" style={getCursorStyle('both')} onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'both', segmentIdx: index, wordIdx: wIdx }); }}>
+                        <div className={`h-full transition-colors ${isDraggingThisBoth ? 'bg-emerald-400 w-1' : 'bg-accent-blue/40 w-0.5 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                      </div>
+                      <div className="flex-1 group flex justify-start" style={getCursorStyle('right')} onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'start', segmentIdx: index, wordIdx: wIdx + 1 }); }}>
+                        <div className="w-1 h-full bg-transparent group-hover:bg-emerald-400/30 transition-colors" />
+                      </div>
+                    </div>
+                  );
+                } else {
+                  const leftPercent1 = (toTimelineTime(word.end) / timelineDuration) * 100;
+                  elements.push(
+                    <div key={`end-${index}-${wIdx}`} className="absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group" style={{ left: `${leftPercent1}%`, ...getCursorStyle('left') }} onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'end', segmentIdx: index, wordIdx: wIdx }); }}>
+                      <div className="w-0.5 h-full bg-accent-blue/40 transition-colors group-hover:bg-emerald-400 group-hover:w-1" />
+                    </div>
+                  );
+                  if (nextWord && !nextWord.isGap) {
+                    const leftPercent2 = (toTimelineTime(nextWord.start) / timelineDuration) * 100;
+                    elements.push(
+                      <div key={`start-${index}-${wIdx + 1}`} className="absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group" style={{ left: `${leftPercent2}%`, ...getCursorStyle('right') }} onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'start', segmentIdx: index, wordIdx: wIdx + 1 }); }}>
+                        <div className="w-0.5 h-full bg-accent-blue/40 transition-colors group-hover:bg-emerald-400 group-hover:w-1" />
+                      </div>
+                    );
+                  }
+                }
+              });
+            } else if (index < editableSegments.length - 1) {
               const nextSegment = editableSegments[index + 1];
               const isTouching = nextSegment.start - segment.end <= 0.05;
 
               if (isTouching) {
                 // Render 3-zone cluster at segment.end
                 const leftPercent = (toTimelineTime(segment.end) / timelineDuration) * 100;
-                const isDraggingThisBoth = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'both' && draggingBoundary.index === index;
+                const isDraggingThisBoth = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'both' && 'index' in draggingBoundary && draggingBoundary.index === index;
                 
                 elements.push(
                   <div key={`cluster-${index}`} className="absolute top-0 bottom-0 w-16 -ml-8 z-30 flex" style={{ left: `${leftPercent}%` }}>

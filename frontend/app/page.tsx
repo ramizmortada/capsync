@@ -93,7 +93,10 @@ const DEFAULT_PRESETS: StylePreset[] = [
   }
 ];
 
-export type DragTarget = { type: 'start' | 'end' | 'both', index: number } | 'start' | 'end';
+export type DragTarget = 
+  | { type: 'start' | 'end' | 'both', index: number } 
+  | { type: 'start' | 'end' | 'both', segmentIdx: number, wordIdx: number }
+  | 'start' | 'end';
 
 // Helper function for SRT time formatting
 const formatSrtTime = (seconds: number) => {
@@ -129,7 +132,7 @@ const injectPauseChips = (segs: any[]): any[] => {
         const w1 = cleanWords[i];
         const w2 = cleanWords[i + 1];
         const gap = w2.start - w1.end;
-        if (gap > 0.15) {
+        if (gap > 0.02) {
           newWords.push({
             word: `[Pause ${gap.toFixed(1)}s]`,
             start: w1.end,
@@ -149,7 +152,7 @@ const injectPauseChips = (segs: any[]): any[] => {
         if (wLast && nextCleanWords.length > 0) {
           const wNextFirst = nextCleanWords[0];
           const gap = wNextFirst.start - wLast.end;
-          if (gap > 0.15) {
+          if (gap > 0.02) {
             newWords.push({
               word: `[Pause ${gap.toFixed(1)}s]`,
               start: wLast.end,
@@ -220,7 +223,7 @@ export default function WhisperXApp() {
 
   // Editable subtitle segments
   const [editableSegments, setEditableSegments] = useState<any[]>([]);
-  const [selectedIndexes, setSelectedIndexes] = useState<number[]>([]);
+  const [selectedIndexes, setSelectedIndexes] = useState<(number | string)[]>([]);
   const [rippleDeletes, setRippleDeletes] = useState<{start: number, end: number}[]>([]);
 
   const [mediaUrl, setMediaUrl] = useState<string>("");
@@ -735,14 +738,21 @@ export default function WhisperXApp() {
     updateSegments((prev) => prev.filter((_, i) => !indices.includes(i)));
   };
 
-  const handleLiftDelete = (indices: number[]) => {
+  const handleLiftDelete = (indices: (number|string)[]) => {
     updateSegments((prev) => {
       const newSegments = [...prev];
       indices.forEach(idx => {
-        if (newSegments[idx]) {
+        if (typeof idx === 'number' && newSegments[idx]) {
           newSegments[idx] = { ...newSegments[idx] };
           if (newSegments[idx].words) {
             newSegments[idx].words = newSegments[idx].words.map((w: any) => ({ ...w, deleted: true }));
+          }
+        } else if (typeof idx === 'string' && (idx.startsWith('gap:') || idx.startsWith('word:'))) {
+          const [, sIdx, wIdx] = idx.split(':').map(Number);
+          if (newSegments[sIdx] && newSegments[sIdx].words && newSegments[sIdx].words[wIdx]) {
+            newSegments[sIdx] = { ...newSegments[sIdx] };
+            newSegments[sIdx].words = [...newSegments[sIdx].words];
+            newSegments[sIdx].words[wIdx] = { ...newSegments[sIdx].words[wIdx], deleted: true };
           }
         }
       });
@@ -750,15 +760,29 @@ export default function WhisperXApp() {
     });
   };
 
-  const handleRippleDelete = (indices: number[]) => {
+  const handleRippleDelete = (indices: (number|string)[]) => {
     const regionsToAdd: {start: number, end: number}[] = [];
-    editableSegments.forEach((seg, i) => {
-      if (indices.includes(i)) {
-        regionsToAdd.push({ start: seg.start, end: seg.end });
+    const segmentIndicesToDelete: number[] = [];
+    
+    indices.forEach(idx => {
+      if (typeof idx === 'number') {
+        segmentIndicesToDelete.push(idx);
+        if (editableSegments[idx]) {
+          regionsToAdd.push({ start: editableSegments[idx].start, end: editableSegments[idx].end });
+        }
+      } else if (typeof idx === 'string' && (idx.startsWith('gap:') || idx.startsWith('word:'))) {
+        const [, sIdx, wIdx] = idx.split(':').map(Number);
+        if (editableSegments[sIdx] && editableSegments[sIdx].words && editableSegments[sIdx].words[wIdx]) {
+          const word = editableSegments[sIdx].words[wIdx];
+          regionsToAdd.push({ start: word.start, end: word.end });
+          handleToggleWordDelete(sIdx, wIdx);
+        }
       }
     });
     setRippleDeletes(prev => [...prev, ...regionsToAdd]);
-    handleDeleteSegments(indices);
+    if (segmentIndicesToDelete.length > 0) {
+      handleDeleteSegments(segmentIndicesToDelete);
+    }
   };
 
   const handleDuplicateSegment = (index: number) => {
@@ -1054,27 +1078,53 @@ export default function WhisperXApp() {
         newTime = Math.max(prevStart + 0.1, Math.min(newTime, mediaDuration));
         newSegments[newSegments.length - 1] = { ...newSegments[newSegments.length - 1], end: newTime };
       } else {
-        const { type, index } = draggingBoundary;
-        const currSegment = newSegments[index];
-        const nextSegment = newSegments[index + 1];
+        const boundary = draggingBoundary as any;
+        if ('wordIdx' in boundary) {
+          const { type, segmentIdx, wordIdx } = boundary;
+          const currSegment = newSegments[segmentIdx];
+          const currWords = [...(currSegment.words || [])];
+          const currWord = currWords[wordIdx];
+          const nextWord = currWords[wordIdx + 1];
 
-        if (type === 'start') {
-          // Dragging the start of `index`. Cannot overlap with previous segment's end (if any).
-          const prevEnd = index > 0 ? newSegments[index - 1].end : 0;
-          newTime = Math.max(prevEnd, Math.min(newTime, currSegment.end - 0.1));
-          newSegments[index] = { ...currSegment, start: newTime };
-        } else if (type === 'end') {
-          // Dragging the end of `index`. Cannot overlap with next segment's start (if any).
-          const nextStart = index < newSegments.length - 1 ? newSegments[index + 1].start : mediaDuration;
-          newTime = Math.max(currSegment.start + 0.1, Math.min(newTime, nextStart));
-          newSegments[index] = { ...currSegment, end: newTime };
-        } else if (type === 'both') {
-          // Dragging boundary between index and index+1.
-          const prevStart = currSegment.start;
-          const nextEnd = nextSegment.end;
-          newTime = Math.max(prevStart + 0.1, Math.min(newTime, nextEnd - 0.1));
-          newSegments[index] = { ...currSegment, end: newTime };
-          newSegments[index + 1] = { ...nextSegment, start: newTime };
+          if (type === 'start') {
+            const prevEnd = wordIdx > 0 ? currWords[wordIdx - 1].end : currSegment.start;
+            newTime = Math.max(prevEnd, Math.min(newTime, currWord.end - 0.05));
+            currWords[wordIdx] = { ...currWord, start: newTime };
+          } else if (type === 'end') {
+            const nextStart = wordIdx < currWords.length - 1 ? currWords[wordIdx + 1].start : currSegment.end;
+            newTime = Math.max(currWord.start + 0.05, Math.min(newTime, nextStart));
+            currWords[wordIdx] = { ...currWord, end: newTime };
+          } else if (type === 'both' && nextWord) {
+            const prevStart = currWord.start;
+            const nextEnd = nextWord.end;
+            newTime = Math.max(prevStart + 0.05, Math.min(newTime, nextEnd - 0.05));
+            currWords[wordIdx] = { ...currWord, end: newTime };
+            currWords[wordIdx + 1] = { ...nextWord, start: newTime };
+          }
+          newSegments[segmentIdx] = { ...currSegment, words: currWords };
+        } else {
+          const { type, index } = boundary;
+          const currSegment = newSegments[index];
+          const nextSegment = newSegments[index + 1];
+
+          if (type === 'start') {
+            // Dragging the start of `index`. Cannot overlap with previous segment's end (if any).
+            const prevEnd = index > 0 ? newSegments[index - 1].end : 0;
+            newTime = Math.max(prevEnd, Math.min(newTime, currSegment.end - 0.1));
+            newSegments[index] = { ...currSegment, start: newTime };
+          } else if (type === 'end') {
+            // Dragging the end of `index`. Cannot overlap with next segment's start (if any).
+            const nextStart = index < newSegments.length - 1 ? newSegments[index + 1].start : mediaDuration;
+            newTime = Math.max(currSegment.start + 0.1, Math.min(newTime, nextStart));
+            newSegments[index] = { ...currSegment, end: newTime };
+          } else if (type === 'both') {
+            // Dragging boundary between index and index+1.
+            const prevStart = currSegment.start;
+            const nextEnd = nextSegment.end;
+            newTime = Math.max(prevStart + 0.1, Math.min(newTime, nextEnd - 0.1));
+            newSegments[index] = { ...currSegment, end: newTime };
+            newSegments[index + 1] = { ...nextSegment, start: newTime };
+          }
         }
       }
       
@@ -1190,7 +1240,7 @@ export default function WhisperXApp() {
           <div className="lg:col-span-4 animate-in fade-in slide-in-from-bottom-4 duration-700 h-full overflow-hidden">
             <SubtitleEditor 
               editableSegments={editableSegments}
-              selectedIndexes={selectedIndexes}
+              selectedIndexes={selectedIndexes.filter(i => typeof i === 'number') as number[]}
               setSelectedIndexes={setSelectedIndexes}
               rippleDeletes={rippleDeletes}
               handleMergeSegments={handleMergeSegments}
@@ -1260,6 +1310,7 @@ export default function WhisperXApp() {
             cutZones={cutZones}
             setDraggingBoundary={setDraggingBoundary}
             draggingBoundary={draggingBoundary}
+            handleToggleWordDelete={handleToggleWordDelete}
               onSeek={(time) => {
                 if (mediaRef.current) {
                   mediaRef.current.currentTime = time;
