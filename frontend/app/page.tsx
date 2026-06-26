@@ -33,10 +33,14 @@ export interface SubtitleStyle {
   backgroundOpacity: number;
   highlightColor: string;
   alignment: 'left' | 'center' | 'right';
+  alignmentVertical: 'top' | 'middle' | 'bottom';
   positionY: number;
-  animationStyle: 'none' | 'color' | 'box' | 'scale' | 'karaoke';
+  animationStyle: 'none' | 'color' | 'box' | 'scale' | 'karaoke' | 'reveal';
+  animationIn: 'none' | 'fade' | 'zoomIn' | 'zoomOut';
+  animationOut: 'none' | 'fade' | 'zoomIn' | 'zoomOut';
   highlightBackgroundColor: string;
   scaleFactor: number;
+  maxWidth: number;
   textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
 }
 
@@ -74,10 +78,14 @@ const DEFAULT_PRESETS: StylePreset[] = [
       backgroundOpacity: 50,
       highlightColor: "#ffff00",
       alignment: 'center',
+      alignmentVertical: 'bottom',
       positionY: 10,
       animationStyle: 'color',
+      animationIn: 'none',
+      animationOut: 'none',
       highlightBackgroundColor: "#ff0000",
       scaleFactor: 1.2,
+      maxWidth: 90,
       textTransform: 'none',
     }
   },
@@ -105,10 +113,14 @@ const DEFAULT_PRESETS: StylePreset[] = [
       backgroundOpacity: 50,
       highlightColor: "#ffff00",
       alignment: 'center',
+      alignmentVertical: 'bottom',
       positionY: 15,
       animationStyle: 'scale',
+      animationIn: 'none',
+      animationOut: 'none',
       highlightBackgroundColor: "#ff0000",
       scaleFactor: 1.3,
+      maxWidth: 90,
       textTransform: 'uppercase',
     }
   },
@@ -136,10 +148,14 @@ const DEFAULT_PRESETS: StylePreset[] = [
       backgroundOpacity: 70,
       highlightColor: "#ffffff",
       alignment: 'center',
+      alignmentVertical: 'bottom',
       positionY: 8,
       animationStyle: 'none',
+      animationIn: 'none',
+      animationOut: 'none',
       highlightBackgroundColor: "#ff0000",
       scaleFactor: 1.0,
+      maxWidth: 90,
       textTransform: 'none',
     }
   }
@@ -193,10 +209,14 @@ export default function WhisperXApp() {
     backgroundOpacity: 50,
     highlightColor: "#ffff00",
     alignment: 'center',
+    alignmentVertical: 'bottom',
     positionY: 10,
     animationStyle: 'color',
+    animationIn: 'none',
+    animationOut: 'none',
     highlightBackgroundColor: "#ff0000",
     scaleFactor: 1.2,
+    maxWidth: 90,
     textTransform: 'none',
   });
 

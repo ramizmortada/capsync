@@ -82,16 +82,28 @@ def generate_ass(segments, style, video_width, video_height):
     font_name = f"{font_family}{suffix}"
     is_bold = 0
 
-    alignment_str = style.get("alignment", "center")
-    ass_alignment = 1 if alignment_str == "left" else 3 if alignment_str == "right" else 2
+    horiz_map = {"left": 1, "center": 2, "right": 3}
+    vert_map = {"bottom": 0, "middle": 4, "top": 8}
+    
+    h_align = style.get("alignment", "center")
+    v_align = style.get("alignmentVertical", "bottom")
+    
+    ass_align = horiz_map.get(h_align, 2)
+    
+    if v_align == "middle":
+        ass_align = horiz_map.get(h_align, 2) + 3
+    elif v_align == "top":
+        ass_align = horiz_map.get(h_align, 2) + 6
     
     position_y_pct = float(style.get("positionY", 10))
     margin_v = int(video_height * (position_y_pct / 100.0))
     
-    # LivePreview spans 100% width, so ASS margins should be 0 to match word-wrapping exactness
-    margin_l = margin_r = 0
+    max_width_pct = float(style.get("maxWidth", 90))
+    margin_l = margin_r = int(video_width * ((100 - max_width_pct) / 2) / 100)
 
     animation_style = style.get("animationStyle", "color")
+    animation_in = style.get("animationIn", "none")
+    animation_out = style.get("animationOut", "none")
     scale_factor = int(float(style.get("scaleFactor", 1.2)) * 100)
     
     text_transform = style.get("textTransform", "none")
@@ -101,6 +113,8 @@ def generate_ass(segments, style, video_width, video_height):
         if text_transform == "capitalize": return " ".join(w.capitalize() for w in t.split(" "))
         return t
     highlight_bg_color = hex_to_ass_color(style.get("highlightBackgroundColor", "#ff0000"))
+    background_color_bgr = highlight_bg_color[4:-1]
+    background_opacity_hex = "80"
 
     ass_header = f"""[Script Info]
 ScriptType: v4.00+
@@ -110,7 +124,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{font_name},{font_size},{primary_color},&H000000FF,{stroke_color},{shadow_color},{is_bold},0,0,0,100,100,0,0,1,{stroke_width},{shadow_depth},{ass_alignment},{margin_l},{margin_r},{margin_v},1
+Style: Default,{font_name},{font_size},{primary_color},&H000000FF,{stroke_color},{shadow_color},{is_bold},0,0,0,100,100,0,0,1,{stroke_width},{shadow_depth},{ass_align},{margin_l},{margin_r},{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -122,6 +136,43 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         words = segment.get("words", [])
         seg_start = segment.get("start", 0)
         seg_end = segment.get("end", 0)
+
+        first_word_dur = int((words[0].get("end", seg_start) - words[0].get("start", seg_start)) * 1000) if words else int((seg_end - seg_start) * 1000)
+        last_word_dur = int((words[-1].get("end", seg_end) - words[-1].get("start", seg_end)) * 1000) if words else int((seg_end - seg_start) * 1000)
+        
+        if len(words) <= 1:
+            t_in = min(200, max(0, first_word_dur // 2))
+            t_out = min(200, max(0, first_word_dur // 2))
+        else:
+            t_in = min(200, max(0, first_word_dur))
+            t_out = min(200, max(0, last_word_dur))
+
+        def get_prefix_tags(is_first, is_last, event_dur):
+            local_t_in = t_in if is_first else 0
+            local_t_out = t_out if is_last else 0
+            p_tags = ""
+            
+            do_fade_in = (animation_in != "none" and is_first and local_t_in > 0)
+            do_fade_out = (animation_out != "none" and is_last and local_t_out > 0)
+            
+            if do_fade_in or do_fade_out:
+                f_in = local_t_in if do_fade_in else 0
+                f_out = local_t_out if do_fade_out else 0
+                p_tags += f"\\fad({f_in},{f_out})"
+                
+            if do_fade_in:
+                if animation_in == "zoomIn":
+                    p_tags += f"\\fscx80\\fscy80\\t(0,{local_t_in},\\fscx100\\fscy100)"
+                elif animation_in == "zoomOut":
+                    p_tags += f"\\fscx120\\fscy120\\t(0,{local_t_in},\\fscx100\\fscy100)"
+                    
+            if do_fade_out:
+                if animation_out == "zoomIn":
+                    p_tags += f"\\t({max(0, event_dur - local_t_out)},{event_dur},\\fscx80\\fscy80)"
+                elif animation_out == "zoomOut":
+                    p_tags += f"\\t({max(0, event_dur - local_t_out)},{event_dur},\\fscx120\\fscy120)"
+                    
+            return f"{{{p_tags}}}" if p_tags else ""
 
         if not words:
             # Fallback if no word-level timestamps
@@ -141,7 +192,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 clean_word = apply_transform(w.get("word", "").strip())
                 line_parts.append(clean_word)
                     
-            full_text = " ".join(line_parts)
+            event_dur = int((seg_end - seg_start) * 1000)
+            prefix = get_prefix_tags(True, True, event_dur)
+            full_text = prefix + " ".join(line_parts)
             layer = 1 if animation_style == "box" else 0
             events.append(f"Dialogue: {layer},{event_start},{event_end},Default,,0,0,0,,{full_text}")
             
@@ -157,9 +210,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 
                 if i < len(words) - 1:
                     next_word_start = words[i+1].get("start", word_end)
-                    event_end = format_ass_time(next_word_start)
+                    event_end_s = next_word_start
                 else:
-                    event_end = format_ass_time(seg_end)
+                    event_end_s = seg_end
+                event_end = format_ass_time(event_end_s)
                 
                 if word_start == word_end and i < len(words) - 1:
                     continue
@@ -172,7 +226,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     else:
                         line_parts.append(clean_word)
                 
-                full_text = f"{{\\alpha&HFF&}}" + " ".join(line_parts)
+                event_dur = int((event_end_s - word_start) * 1000)
+                prefix = get_prefix_tags(i == 0, i == len(words) - 1, event_dur)
+                full_text = prefix + f"{{\\alpha&HFF&}}" + " ".join(line_parts)
                 events.append(f"Dialogue: 0,{event_start},{event_end},Default,,0,0,0,,{full_text}")
             continue
 
@@ -185,9 +241,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             
             if i < len(words) - 1:
                 next_word_start = words[i+1].get("start", word_end)
-                event_end = format_ass_time(next_word_start)
+                event_end_s = next_word_start
             else:
-                event_end = format_ass_time(seg_end)
+                event_end_s = seg_end
+            event_end = format_ass_time(event_end_s)
             
             if word_start == word_end and i < len(words) - 1:
                 continue
@@ -201,6 +258,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         line_parts.append(f"{{\\c{highlight_color}}}{clean_word}{{\\c{primary_color}}}")
                     else:
                         line_parts.append(clean_word)
+                elif animation_style == "reveal":
+                    if j <= i:
+                        line_parts.append(clean_word)
+                    else:
+                        line_parts.append(f"{{\\alpha&HFF&}}{clean_word}{{\\alpha&H00&}}")
                 else:
                     if j == i:
                         if animation_style == "color":
@@ -210,7 +272,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     else:
                         line_parts.append(clean_word)
             
-            full_text = " ".join(line_parts)
+            event_dur = int((event_end_s - word_start) * 1000)
+            prefix = get_prefix_tags(i == 0, i == len(words) - 1, event_dur)
+            full_text = prefix + " ".join(line_parts)
             events.append(f"Dialogue: 0,{event_start},{event_end},Default,,0,0,0,,{full_text}")
 
     return ass_header + "\n".join(events) + "\n"

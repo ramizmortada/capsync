@@ -33,6 +33,25 @@ export function LivePreview({
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [localVideoDim, setLocalVideoDim] = useState({ width: 1920, height: 1080 });
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [localTime, setLocalTime] = useState(currentTime);
+
+  // Sync localTime with high frequency for smooth animations
+  useEffect(() => {
+    let rafId: number;
+    const updateTime = () => {
+      if (mediaRef.current) {
+        setLocalTime(mediaRef.current.currentTime);
+      }
+      rafId = requestAnimationFrame(updateTime);
+    };
+    rafId = requestAnimationFrame(updateTime);
+    return () => cancelAnimationFrame(rafId);
+  }, [mediaRef]);
+
+  // Sync back to parent when paused/seeking
+  useEffect(() => {
+    setLocalTime(currentTime);
+  }, [currentTime]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -176,10 +195,16 @@ export function LivePreview({
                 subtitleStyle.alignment === 'left' ? 'justify-start' : 
                 subtitleStyle.alignment === 'right' ? 'justify-end' : 'justify-center'
               }`}
-              style={{ bottom: `${subtitleStyle.positionY ?? 10}%` }}
+              style={
+                subtitleStyle.alignmentVertical === 'top' 
+                  ? { top: `${subtitleStyle.positionY ?? 10}%` }
+                  : subtitleStyle.alignmentVertical === 'middle'
+                  ? { top: '50%', transform: `translateY(calc(-50% + ${subtitleStyle.positionY ?? 0}%))` }
+                  : { bottom: `${subtitleStyle.positionY ?? 10}%` }
+              }
             >
               {(() => {
-                const activeSegment = editableSegments.find((s: any) => currentTime >= s.start && currentTime < s.end);
+                const activeSegment = editableSegments.find((s: any) => localTime >= s.start && localTime < s.end);
                 if (!activeSegment) return null;
                 
                 const hexToRgba = (hex: string, opacity: number) => {
@@ -189,12 +214,31 @@ export function LivePreview({
                   return `rgba(${r}, ${g}, ${b}, ${opacity / 100})`;
                 };
 
+                const generateRoundedStroke = (width: number, color: string) => {
+                  if (width <= 0) return 'none';
+                  let shadows = [];
+                  const step = 2;
+                  for (let r = step; r < width; r += step) {
+                    const numAngles = Math.max(8, Math.ceil(r * Math.PI));
+                    for (let i = 0; i < numAngles; i++) {
+                      const rad = (i * 2 * Math.PI) / numAngles;
+                      shadows.push(`${(Math.cos(rad) * r).toFixed(1)}px ${(Math.sin(rad) * r).toFixed(1)}px 0 ${color}`);
+                    }
+                  }
+                  const numAngles = Math.max(8, Math.ceil(width * Math.PI));
+                  for (let i = 0; i < numAngles; i++) {
+                    const rad = (i * 2 * Math.PI) / numAngles;
+                    shadows.push(`${(Math.cos(rad) * width).toFixed(1)}px ${(Math.sin(rad) * width).toFixed(1)}px 0 ${color}`);
+                  }
+                  return shadows.join(', ');
+                };
+
                 // Assume standard portrait format of 1080x1920 as the reference layout for pixels
                 const VIDEO_REFERENCE_HEIGHT = 1920;
                 const scaleRatio = renderHeight / VIDEO_REFERENCE_HEIGHT;
 
                 const pxFontSize = subtitleStyle.fontSize * scaleRatio;
-                const pxStrokeWidth = subtitleStyle.strokeWidth * scaleRatio;
+                const pxStroke = subtitleStyle.strokeWidth * scaleRatio;
                 const pxShadowBlur = subtitleStyle.shadowBlur * scaleRatio;
                 const pxShadowOffsetX = subtitleStyle.shadowOffsetX * scaleRatio;
                 const pxShadowOffsetY = subtitleStyle.shadowOffsetY * scaleRatio;
@@ -207,12 +251,49 @@ export function LivePreview({
                 // Box highlight padding
                 const pxHighlightPad = (0.6 / 100) * renderHeight;
 
+                let segmentOpacity = 1;
+                let segmentScale = 1;
+
+                if (subtitleStyle.animationIn && subtitleStyle.animationIn !== 'none') {
+                  const dtIn = localTime - activeSegment.start;
+                  const segDur = activeSegment.end - activeSegment.start;
+                  const animDur = Math.min(0.2, segDur / 2);
+
+                  if (dtIn < animDur && animDur > 0) {
+                    const progress = dtIn / animDur;
+                    segmentOpacity = progress;
+                    if (subtitleStyle.animationIn === 'zoomIn') {
+                      segmentScale = 0.8 + 0.2 * progress;
+                    } else if (subtitleStyle.animationIn === 'zoomOut') {
+                      segmentScale = 1.2 - 0.2 * progress;
+                    }
+                  }
+                }
+
+                if (subtitleStyle.animationOut && subtitleStyle.animationOut !== 'none') {
+                  const dtOut = activeSegment.end - localTime;
+                  const segDur = activeSegment.end - activeSegment.start;
+                  const animDur = Math.min(0.2, segDur / 2);
+
+                  if (dtOut < animDur && animDur > 0) {
+                    const progress = dtOut / animDur; // 1 to 0 as dtOut goes animDur -> 0
+                    segmentOpacity = progress;
+                    if (subtitleStyle.animationOut === 'zoomIn') {
+                      segmentScale = 0.8 + 0.2 * progress;
+                    } else if (subtitleStyle.animationOut === 'zoomOut') {
+                      segmentScale = 1.2 - 0.2 * progress;
+                    }
+                  }
+                }
+
                 const wrapperStyle: React.CSSProperties = {
                   backgroundColor: subtitleStyle.backgroundEnabled ? hexToRgba(subtitleStyle.backgroundColor, subtitleStyle.backgroundOpacity) : 'transparent',
                   padding: subtitleStyle.backgroundEnabled ? `${pxPadY}px ${pxPadX}px` : '0',
                   borderRadius: subtitleStyle.backgroundEnabled ? `${pxRadius}px` : '0',
                   display: 'inline-block',
-                  maxWidth: '100%',
+                  maxWidth: `${subtitleStyle.maxWidth ?? 90}%`,
+                  opacity: segmentOpacity,
+                  transform: `scale(${segmentScale})`,
                 };
 
                 const textContainerStyle: React.CSSProperties = {
@@ -226,16 +307,21 @@ export function LivePreview({
                   textTransform: subtitleStyle.textTransform || 'none',
                 };
 
+                let combinedShadows = [];
+                if (subtitleStyle.strokeEnabled) {
+                  const strokeShadow = generateRoundedStroke(pxStroke, subtitleStyle.strokeColor);
+                  if (strokeShadow !== 'none') combinedShadows.push(strokeShadow);
+                }
+                if (subtitleStyle.shadowEnabled) {
+                  combinedShadows.push(`${pxShadowOffsetX}px ${pxShadowOffsetY}px ${pxShadowBlur}px ${subtitleStyle.shadowColor}`);
+                }
+
                 // The stroke layer (drawn double thick, under the text)
                 const strokeLayerStyle: React.CSSProperties = {
                   position: 'absolute',
-                  left: 0, top: 0, right: 0, bottom: 0,
-                  color: subtitleStyle.textColor,
-                  WebkitTextStroke: subtitleStyle.strokeEnabled ? `${pxStrokeWidth * 2}px ${subtitleStyle.strokeColor}` : undefined,
-                  WebkitTextFillColor: subtitleStyle.textColor,
-                  textShadow: subtitleStyle.shadowEnabled 
-                    ? `${pxShadowOffsetX}px ${pxShadowOffsetY}px ${pxShadowBlur}px ${subtitleStyle.shadowColor}`
-                    : undefined,
+                  inset: 0,
+                  textShadow: combinedShadows.length > 0 ? combinedShadows.join(', ') : undefined,
+                  color: 'transparent',
                   zIndex: 0,
                   pointerEvents: 'none',
                 };
@@ -254,15 +340,18 @@ export function LivePreview({
                 }
 
                 return activeSegment.words.map((word: any, i: number) => {
-                  const isActive = currentTime >= word.start && currentTime < word.end;
-                  const isPast = currentTime >= word.end;
+                  const isActive = localTime >= word.start && localTime < word.end;
+                  const isPast = localTime >= word.end;
                   
                   let wordStyle: React.CSSProperties = {
                     display: 'inline-block',
-                    transition: 'all 0.1s ease-out',
+                    transition: 'all 0.05s ease-out',
+                    verticalAlign: subtitleStyle.alignmentVertical === 'top' ? 'top' : subtitleStyle.alignmentVertical === 'middle' ? 'middle' : 'bottom',
                   };
 
-                  if (subtitleStyle.animationStyle !== 'none') {
+                  if (subtitleStyle.animationStyle === 'reveal' && !isActive && !isPast) {
+                    wordStyle.opacity = 0;
+                  } else if (subtitleStyle.animationStyle !== 'none') {
                     if (subtitleStyle.animationStyle === 'box') {
                       if (isActive && isStrokeLayer) {
                         wordStyle.backgroundColor = subtitleStyle.highlightBackgroundColor;
@@ -297,7 +386,7 @@ export function LivePreview({
               };
 
               return (
-                <div style={wrapperStyle} className="transition-all duration-75">
+                <div style={wrapperStyle} className="will-change-transform">
                   <div style={textContainerStyle} className="whitespace-pre-wrap">
                     <div style={strokeLayerStyle} aria-hidden="true">
                       {renderWords(true)}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Upload, FileAudio, FileVideo, Settings, CloudDownload, CheckCircle2, Loader2, Trash2, Save } from "lucide-react";
+import { Upload, FileAudio, FileVideo, Settings, CloudDownload, CheckCircle2, Loader2, Trash2, Save, AlignLeft, AlignCenter, AlignRight, ArrowUp, Minus, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -557,26 +557,63 @@ export function SettingsPanel({
             <div className="space-y-4">
               <h3 className="font-semibold text-neutral-200">Layout & Position</h3>
               
-              <div className="flex items-center justify-between">
+              <div className="space-y-3">
                 <Label className="text-neutral-300">Text Alignment</Label>
-                <Tabs value={subtitleStyle.alignment || 'center'} onValueChange={(v) => updateStyle("alignment", v)} className="w-[180px]">
-                  <TabsList className="grid w-full grid-cols-3 bg-neutral-950 h-8 p-0.5">
-                    <TabsTrigger value="left" className="text-xs py-1 px-2 h-7">Left</TabsTrigger>
-                    <TabsTrigger value="center" className="text-xs py-1 px-2 h-7">Center</TabsTrigger>
-                    <TabsTrigger value="right" className="text-xs py-1 px-2 h-7">Right</TabsTrigger>
-                  </TabsList>
-                </Tabs>
+                <div className="grid grid-cols-3 gap-2">
+                  <Button variant="outline" size="sm" 
+                    className={`border-neutral-700 bg-neutral-800 ${subtitleStyle.alignment === 'left' ? 'ring-2 ring-indigo-500 text-indigo-400' : 'text-neutral-400'}`}
+                    onClick={() => updateStyle("alignment", "left")}
+                  ><AlignLeft className="w-4 h-4" /></Button>
+                  <Button variant="outline" size="sm" 
+                    className={`border-neutral-700 bg-neutral-800 ${subtitleStyle.alignment === 'center' ? 'ring-2 ring-indigo-500 text-indigo-400' : 'text-neutral-400'}`}
+                    onClick={() => updateStyle("alignment", "center")}
+                  ><AlignCenter className="w-4 h-4" /></Button>
+                  <Button variant="outline" size="sm" 
+                    className={`border-neutral-700 bg-neutral-800 ${subtitleStyle.alignment === 'right' ? 'ring-2 ring-indigo-500 text-indigo-400' : 'text-neutral-400'}`}
+                    onClick={() => updateStyle("alignment", "right")}
+                  ><AlignRight className="w-4 h-4" /></Button>
+                </div>
               </div>
 
               <div className="space-y-3">
+                <Label className="text-neutral-300">Vertical Alignment</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  <Button variant="outline" size="sm" 
+                    className={`border-neutral-700 bg-neutral-800 ${subtitleStyle.alignmentVertical === 'top' ? 'ring-2 ring-indigo-500 text-indigo-400' : 'text-neutral-400'}`}
+                    onClick={() => updateStyle("alignmentVertical", "top")}
+                  ><ArrowUp className="w-4 h-4" /></Button>
+                  <Button variant="outline" size="sm" 
+                    className={`border-neutral-700 bg-neutral-800 ${subtitleStyle.alignmentVertical === 'middle' ? 'ring-2 ring-indigo-500 text-indigo-400' : 'text-neutral-400'}`}
+                    onClick={() => updateStyle("alignmentVertical", "middle")}
+                  ><Minus className="w-4 h-4" /></Button>
+                  <Button variant="outline" size="sm" 
+                    className={`border-neutral-700 bg-neutral-800 ${subtitleStyle.alignmentVertical === 'bottom' || !subtitleStyle.alignmentVertical ? 'ring-2 ring-indigo-500 text-indigo-400' : 'text-neutral-400'}`}
+                    onClick={() => updateStyle("alignmentVertical", "bottom")}
+                  ><ArrowDown className="w-4 h-4" /></Button>
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-2">
                 <div className="flex justify-between">
-                  <Label className="text-neutral-300">Vertical Position</Label>
-                  <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.positionY ?? 10}% from bottom</span>
+                  <Label className="text-neutral-300">Vertical Margin</Label>
+                  <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.positionY ?? 10}%</span>
                 </div>
                 <Slider 
                   value={[subtitleStyle.positionY ?? 10]} 
                   min={0} max={100} step={1}
                   onValueChange={([v]) => updateStyle("positionY", v)} 
+                />
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <div className="flex justify-between">
+                  <Label className="text-neutral-300">Max Width</Label>
+                  <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.maxWidth ?? 90}%</span>
+                </div>
+                <Slider 
+                  value={[subtitleStyle.maxWidth ?? 90]} 
+                  min={20} max={100} step={1}
+                  onValueChange={([v]) => updateStyle("maxWidth", v)} 
                 />
               </div>
             </div>
@@ -725,8 +762,42 @@ export function SettingsPanel({
 
           <TabsContent value="animation" className="p-6 m-0 space-y-8">
             <div className="space-y-4">
+              <h3 className="font-semibold text-neutral-200">Segment Appearance</h3>
               <div className="flex items-center justify-between">
-                <Label className="text-neutral-300">Animation Style</Label>
+                <Label className="text-neutral-300">Animation In</Label>
+                <Select value={subtitleStyle.animationIn || 'none'} onValueChange={(v) => updateStyle("animationIn", v)}>
+                  <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
+                    <SelectItem value="none">None (Instant)</SelectItem>
+                    <SelectItem value="fade">Fade In</SelectItem>
+                    <SelectItem value="zoomIn">Zoom In</SelectItem>
+                    <SelectItem value="zoomOut">Zoom Out</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <Label className="text-neutral-300">Animation Out</Label>
+                <Select value={subtitleStyle.animationOut || 'none'} onValueChange={(v) => updateStyle("animationOut", v)}>
+                  <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
+                    <SelectItem value="none">None (Instant)</SelectItem>
+                    <SelectItem value="fade">Fade Out</SelectItem>
+                    <SelectItem value="zoomIn">Zoom In</SelectItem>
+                    <SelectItem value="zoomOut">Zoom Out</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-4 pt-4 border-t border-neutral-800">
+              <h3 className="font-semibold text-neutral-200">Word Highlighting</h3>
+              <div className="flex items-center justify-between">
+                <Label className="text-neutral-300">Highlighting Style</Label>
                 <Select value={subtitleStyle.animationStyle || 'color'} onValueChange={(v) => updateStyle("animationStyle", v)}>
                   <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
                     <SelectValue />
@@ -737,6 +808,7 @@ export function SettingsPanel({
                     <SelectItem value="box">Box Highlight</SelectItem>
                     <SelectItem value="scale">Scale Pop</SelectItem>
                     <SelectItem value="karaoke">Karaoke Reveal</SelectItem>
+                    <SelectItem value="reveal">Word Reveal</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
