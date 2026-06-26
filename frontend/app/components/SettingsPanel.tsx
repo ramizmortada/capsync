@@ -1,50 +1,14 @@
 import { useState, useEffect } from "react";
-import { Upload, FileAudio, FileVideo, Settings, CloudDownload, CheckCircle2, Loader2, Trash2, Save, AlignLeft, AlignCenter, AlignRight, ArrowUp, Minus, ArrowDown, Bot } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { HexColorPicker } from "react-colorful";
-
-const FONT_WEIGHTS: Record<string, { value: string; label: string }[]> = {
-  "Inter": [
-    { value: "300", label: "Light (300)" },
-    { value: "400", label: "Regular (400)" },
-    { value: "500", label: "Medium (500)" },
-    { value: "600", label: "Semi-Bold (600)" },
-    { value: "700", label: "Bold (700)" },
-    { value: "800", label: "Extra Bold (800)" },
-    { value: "900", label: "Black (900)" },
-  ],
-  "Poppins": [
-    { value: "300", label: "Light (300)" },
-    { value: "400", label: "Regular (400)" },
-    { value: "500", label: "Medium (500)" },
-    { value: "600", label: "Semi-Bold (600)" },
-    { value: "700", label: "Bold (700)" },
-    { value: "800", label: "Extra Bold (800)" },
-    { value: "900", label: "Black (900)" },
-  ],
-  "Oswald": [
-    { value: "300", label: "Light (300)" },
-    { value: "400", label: "Regular (400)" },
-    { value: "500", label: "Medium (500)" },
-    { value: "600", label: "Semi-Bold (600)" },
-    { value: "700", label: "Bold (700)" },
-  ],
-  "Instrument Serif": [
-    { value: "400", label: "Regular (400)" },
-  ],
-};
-
-import type { SubtitleStyle, StylePreset } from "../page";
+import type { SubtitleStyle, StylePreset } from "../types";
+import { SavePresetDialog } from "./settings/SavePresetDialog";
+import { SettingsTab } from "./settings/SettingsTab";
+import { StyleTab } from "./settings/StyleTab";
+import { AnimationTab } from "./settings/AnimationTab";
 
 interface SettingsPanelProps {
   file: File | null;
@@ -79,45 +43,6 @@ interface SettingsPanelProps {
   onUpdatePreset: (presetId: string) => void;
 }
 
-interface ColorPickerFieldProps {
-  label: string;
-  colorKey: keyof SubtitleStyle;
-  enabledKey?: keyof SubtitleStyle;
-  subtitleStyle: SubtitleStyle;
-  updateStyle: (key: keyof SubtitleStyle, value: any) => void;
-}
-
-const ColorPickerField = ({ label, colorKey, enabledKey, subtitleStyle, updateStyle }: ColorPickerFieldProps) => (
-  <div className="flex items-center justify-between">
-    <div className="flex items-center gap-2">
-      {enabledKey && (
-        <Switch 
-          checked={subtitleStyle[enabledKey] as boolean} 
-          onCheckedChange={(val) => updateStyle(enabledKey, val)} 
-        />
-      )}
-      <Label className="text-muted-foreground">{label}</Label>
-    </div>
-    <Popover>
-      <PopoverTrigger asChild>
-        <div className="w-8 h-8 rounded border border-input cursor-pointer shadow-sm" style={{ backgroundColor: (subtitleStyle[colorKey] as string) || '#ffffff' }} />
-      </PopoverTrigger>
-      <PopoverContent className="w-auto p-3 bg-popover border-border shadow-xl" side="left">
-        <HexColorPicker color={(subtitleStyle[colorKey] as string) || '#ffffff'} onChange={(val) => updateStyle(colorKey, val)} />
-        <div className="mt-3 flex items-center gap-2">
-          <span className="text-muted-foreground text-xs font-mono">#</span>
-          <input 
-            type="text" 
-            value={((subtitleStyle[colorKey] as string) || '#ffffff').replace('#', '')}
-            onChange={(e) => updateStyle(colorKey, `#${e.target.value}`)}
-            className="bg-background border border-input rounded px-2 py-1 text-sm font-mono text-foreground w-full"
-          />
-        </div>
-      </PopoverContent>
-    </Popover>
-  </div>
-);
-
 export function SettingsPanel({
   file,
   setFile,
@@ -142,7 +67,6 @@ export function SettingsPanel({
   clearProject,
   subtitleStyle,
   setSubtitleStyle,
-  handleExportVideo,
   presets,
   activePresetId,
   onSavePreset,
@@ -152,14 +76,9 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   
   const [activeTab, setActiveTab] = useState("settings");
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [saveMode, setSaveMode] = useState<'new' | 'overwrite'>('new');
-  const [newPresetName, setNewPresetName] = useState("");
-  const [overwritePresetId, setOverwritePresetId] = useState("");
 
   const activePreset = presets.find(p => p.id === activePresetId);
   const isCustomPreset = activePreset && !activePreset.isDefault && activePreset.id !== 'custom';
-  const customPresets = presets.filter(p => !p.isDefault && p.id !== 'custom');
 
   useEffect(() => {
     const savedTab = localStorage.getItem("capsync_active_tab");
@@ -173,57 +92,8 @@ export function SettingsPanel({
     localStorage.setItem("capsync_active_tab", val);
   };
 
-  const handleDialogOpenChange = (open: boolean) => {
-    setIsDialogOpen(open);
-    if (open) {
-      setNewPresetName("");
-      if (isCustomPreset) {
-        setSaveMode('overwrite');
-        setOverwritePresetId(activePresetId);
-      } else {
-        setSaveMode('new');
-        if (customPresets.length > 0) {
-          setOverwritePresetId(customPresets[0].id);
-        } else {
-          setOverwritePresetId("");
-        }
-      }
-    }
-  };
-
-  const handleSaveSubmit = () => {
-    if (newPresetName.trim()) {
-      onSavePreset(newPresetName.trim());
-      setNewPresetName("");
-      setIsDialogOpen(false);
-    }
-  };
-
-  const handleOverwritePreset = () => {
-    if (overwritePresetId) {
-      onUpdatePreset(overwritePresetId);
-      setIsDialogOpen(false);
-    }
-  };
-
   const updateStyle = (key: keyof SubtitleStyle, value: any) => {
     setSubtitleStyle(prev => ({ ...prev, [key]: value }));
-  };
-
-  const renderModelOption = (val: string, label: string) => {
-    const isDownloaded = downloadedModels[val];
-    return (
-      <SelectItem value={val}>
-        <div className="flex items-center gap-2">
-          {label}
-          {isDownloaded ? (
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-          ) : (
-            <CloudDownload className="w-3 h-3 text-muted-foreground/80" />
-          )}
-        </div>
-      </SelectItem>
-    );
   };
 
   return (
@@ -263,102 +133,12 @@ export function SettingsPanel({
             </SelectContent>
           </Select>
           
-          <Dialog open={isDialogOpen} onOpenChange={handleDialogOpenChange}>
-            <DialogTrigger asChild>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-9 px-2 text-xs border-input text-muted-foreground hover:text-foreground flex items-center gap-1.5 shrink-0"
-                title="Save current custom style & settings"
-              >
-                <Save className="w-3.5 h-3.5" /> Save
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md bg-popover border-border p-6 rounded-lg text-foreground">
-              <DialogHeader>
-                <DialogTitle>Save Custom Preset</DialogTitle>
-                <DialogDescription>
-                  Save your current style, model, and word limits settings.
-                </DialogDescription>
-              </DialogHeader>
-              
-              {customPresets.length > 0 && (
-                <div className="grid grid-cols-2 gap-1 p-1 bg-muted rounded-lg mt-4">
-                  <button
-                    type="button"
-                    onClick={() => setSaveMode('new')}
-                    className={`py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${saveMode === 'new' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
-                  >
-                    Save as New
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSaveMode('overwrite')}
-                    className={`py-1.5 text-xs font-medium rounded-md transition-all cursor-pointer ${saveMode === 'overwrite' ? 'bg-background text-foreground shadow' : 'text-muted-foreground hover:text-foreground'}`}
-                  >
-                    Overwrite Existing
-                  </button>
-                </div>
-              )}
-
-              <div className="mt-4 min-h-[76px]">
-                {saveMode === 'new' ? (
-                  <div className="space-y-1.5">
-                    <Label htmlFor="preset-name" className="text-muted-foreground text-xs font-medium">Preset Name</Label>
-                    <input
-                      id="preset-name"
-                      type="text"
-                      placeholder="e.g. My Fast Reels"
-                      value={newPresetName}
-                      onChange={(e) => setNewPresetName(e.target.value)}
-                      className="bg-background border border-input rounded-md px-3 py-2 text-sm text-foreground focus:outline-none focus:border-ring focus:ring-1 focus:ring-ring w-full h-9"
-                      autoFocus
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && newPresetName.trim()) {
-                          handleSaveSubmit();
-                        }
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <Label className="text-muted-foreground text-xs font-medium">Select Preset to Overwrite</Label>
-                    <Select value={overwritePresetId} onValueChange={setOverwritePresetId}>
-                      <SelectTrigger className="bg-background border-input w-full text-xs text-foreground h-9">
-                        <SelectValue placeholder="Select preset to overwrite..." />
-                      </SelectTrigger>
-                      <SelectContent className="bg-popover border-border text-foreground">
-                        {customPresets.map(p => (
-                          <SelectItem key={p.id} value={p.id} className="text-xs">
-                            {p.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-              </div>
-
-              <DialogFooter className="grid grid-cols-2 gap-2 mt-6 w-full">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => setIsDialogOpen(false)} 
-                  className="h-9 text-xs font-semibold w-full cursor-pointer"
-                >
-                  Cancel
-                </Button>
-                <Button 
-                  onClick={saveMode === 'new' ? handleSaveSubmit : handleOverwritePreset} 
-                  disabled={saveMode === 'new' ? !newPresetName.trim() : !overwritePresetId}
-                  size="sm"
-                  className="h-9 text-xs font-semibold w-full cursor-pointer"
-                >
-                  {saveMode === 'new' ? 'Save Preset' : 'Overwrite'}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <SavePresetDialog
+            presets={presets}
+            activePresetId={activePresetId}
+            onSavePreset={onSavePreset}
+            onUpdatePreset={onUpdatePreset}
+          />
         </div>
       </div>
 
@@ -372,499 +152,44 @@ export function SettingsPanel({
         </div>
         
         <div className="flex-1 overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-neutral-800 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-neutral-700">
-          <TabsContent value="settings" className="p-6 m-0 space-y-6">
-            {/* Settings Area */}
-            <div className="grid grid-cols-1 gap-4">
-          <div className="flex items-center justify-between">
-            <Label htmlFor="model-size" className="text-neutral-300 flex items-center gap-2">
-              <Bot className="w-4 h-4" /> Model Size
-            </Label>
-            <Select value={modelSize} onValueChange={setModelSize} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
-              <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
-                <SelectValue placeholder="Select model size" />
-              </SelectTrigger>
-              <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                {renderModelOption("tiny", "Tiny (Fastest)")}
-                {renderModelOption("base", "Base")}
-                {renderModelOption("medium", "Medium")}
-                {renderModelOption("large-v2", "Large-v2 (Best)")}
-              </SelectContent>
-            </Select>
-          </div>
-          
-          <div className="flex items-center justify-between">
-            <Label htmlFor="language" className="text-neutral-300">Language (Optional)</Label>
-            <Select value={language} onValueChange={setLanguage} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
-              <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
-                <SelectValue placeholder="Auto-detect" />
-              </SelectTrigger>
-              <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                <SelectItem value="">Auto-detect</SelectItem>
-                <SelectItem value="en">English</SelectItem>
-                <SelectItem value="es">Spanish</SelectItem>
-                <SelectItem value="fr">French</SelectItem>
-                <SelectItem value="de">German</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <Label htmlFor="max-words" className="text-neutral-300">Caption Length</Label>
-            <Select value={maxWords} onValueChange={setMaxWords} disabled={status === "transcribing" || status === "uploading" || status === "downloading_model"}>
-              <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
-                <SelectValue placeholder="Default" />
-              </SelectTrigger>
-              <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                <SelectItem value="-1">Default (around 5 words)</SelectItem>
-                <SelectItem value="-2">Short (2 to 3 words)</SelectItem>
-                <SelectItem value="1">1 word exactly</SelectItem>
-                <SelectItem value="2">2 words exactly</SelectItem>
-                <SelectItem value="3">3 words exactly</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {/* Upload Area */}
-        {!file ? (
-          <div 
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className="mt-6 border border-neutral-700 bg-neutral-800/30 border-dashed rounded-xl p-4 flex items-center justify-between cursor-pointer hover:border-blue-500 hover:bg-neutral-800/50 transition-all duration-300 group"
-          >
-            <input 
-              type="file" 
-              ref={fileInputRef} 
-              onChange={handleFileChange} 
-              className="hidden" 
-              accept="video/*,audio/*"
+          <TabsContent value="settings" className="m-0">
+            <SettingsTab
+              status={status}
+              modelSize={modelSize}
+              setModelSize={setModelSize}
+              language={language}
+              setLanguage={setLanguage}
+              maxWords={maxWords}
+              setMaxWords={setMaxWords}
+              downloadedModels={downloadedModels}
+              file={file}
+              setFile={setFile}
+              handleFileChange={handleFileChange}
+              handleDragOver={handleDragOver}
+              handleDrop={handleDrop}
+              fileInputRef={fileInputRef}
+              transcriptionMessage={transcriptionMessage}
+              progress={progress}
+              cancelTranscription={cancelTranscription}
+              handleTranscribe={handleTranscribe}
+              handleResegment={handleResegment}
+              clearProject={clearProject}
+              result={result}
             />
-            <div className="flex items-center gap-3 truncate w-full">
-              <div className="p-2 bg-neutral-800/50 rounded-lg border border-neutral-700 shrink-0 group-hover:scale-105 transition-transform">
-                <Upload className="w-5 h-5 text-neutral-400 group-hover:text-blue-400 transition-colors" />
-              </div>
-              <div className="min-w-0 flex-1 text-left">
-                <p className="text-sm font-medium text-neutral-300 group-hover:text-blue-400 transition-colors truncate">Drag & Drop media here</p>
-                <p className="text-xs text-neutral-500 mt-0.5 truncate">or click to browse files</p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-6 border border-neutral-700 bg-neutral-800/50 rounded-xl p-4 flex items-center justify-between">
-            <div className="flex items-center gap-3 truncate w-full">
-              <div className="p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg shrink-0">
-                {file.type.startsWith('video') ? (
-                  <FileVideo className="w-5 h-5 text-blue-400" />
-                ) : (
-                  <FileAudio className="w-5 h-5 text-blue-400" />
-                )}
-              </div>
-              <div className="truncate flex-1">
-                <p className="font-medium text-sm text-neutral-200 truncate">{file.name}</p>
-                <p className="text-xs text-neutral-500 mt-0.5 truncate">{(file.size / (1024 * 1024)).toFixed(2)} MB</p>
-              </div>
-            </div>
-            
-            {status === "idle" || status === "error" ? (
-              <Button variant="ghost" size="sm" onClick={() => setFile(null)} className="text-neutral-400 hover:text-white px-2">
-                Remove
-              </Button>
-            ) : status === "done" ? (
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 ml-2" />
-            ) : null}
-          </div>
-        )}
-
-        {/* Progress Area */}
-        {(status === "uploading" || status === "transcribing" || status === "downloading_model" || status === "burning") && (
-          <div className="space-y-3 pt-4 border-t border-neutral-800">
-            <div className="flex justify-between text-sm font-medium">
-              <span className="text-neutral-300 flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                {status === "uploading" ? (result ? "Re-uploading Media..." : "Uploading Media...") : 
-                 status === "downloading_model" ? `Downloading Model (${progress}%)` : 
-                 status === "burning" ? "Burning Subtitles into Video..." :
-                 (result ? (transcriptionMessage || "").replace("Transcribing", "Retranscribing") : transcriptionMessage)}
-              </span>
-              <div className="flex items-center gap-3">
-                {status !== "transcribing" && status !== "burning" && (
-                  <span className="text-neutral-400 font-mono">{progress}%</span>
-                )}
-                {status !== "burning" && (
-                  <Button variant="ghost" size="sm" onClick={cancelTranscription} className="h-6 px-2 text-xs text-neutral-400 hover:text-white border border-neutral-700">Cancel</Button>
-                )}
-              </div>
-            </div>
-            {status === "transcribing" || status === "burning" ? (
-              <div className="w-full h-2 bg-neutral-800 rounded-full overflow-hidden relative">
-                <div className="absolute inset-0 bg-primary/20" />
-                <div className="h-full bg-primary w-1/2 rounded-full animate-[progress_1.5s_ease-in-out_infinite] absolute left-0" />
-              </div>
-            ) : (
-              <Progress value={progress} className="h-2 bg-neutral-800" />
-            )}
-          </div>
-        )}
-
-            <div className="pt-4 flex flex-col gap-3">
-              <div className="flex gap-3">
-              {(status === "idle" || status === "error") && (
-                <>
-                  <Button 
-                    onClick={handleTranscribe} 
-                    disabled={!file} 
-                    className="flex-1 font-semibold shadow-md transition-all duration-300"
-                  >
-                    Start Transcription
-                  </Button>
-                  {file && status === "idle" && (
-                    <Button onClick={clearProject} variant="outline" className="font-semibold shadow-md transition-all duration-300 border-red-900/30 text-red-400 hover:text-red-300 hover:bg-red-950/30">
-                      Start Over
-                    </Button>
-                  )}
-                </>
-              )}
-              
-              {status === "done" && (
-                <>
-                  {result && result.raw_segments && (
-                    <Button 
-                      onClick={handleResegment} 
-                      className="flex-1 font-semibold shadow-md transition-all duration-300"
-                    >
-                      Re-segment
-                    </Button>
-                  )}
-                  <Button 
-                    onClick={handleTranscribe} 
-                    variant={result && result.raw_segments ? "secondary" : "default"}
-                    className="flex-1 font-semibold shadow-md transition-all duration-300"
-                  >
-                    Re-transcribe
-                  </Button>
-                  <Button onClick={clearProject} variant="outline" className="font-semibold shadow-md transition-all duration-300 border-red-900/30 text-red-400 hover:text-red-300 hover:bg-red-950/30">
-                    Start Over
-                  </Button>
-                </>
-              )}
-              </div>
-            </div>
           </TabsContent>
 
-          <TabsContent value="style" className="p-6 m-0 space-y-8">
-            <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-200">Layout & Position</h3>
-              
-              <div className="space-y-3">
-                <Label className="text-muted-foreground">Text Alignment</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className={`border-input ${subtitleStyle.alignment === 'left' ? 'text-white font-medium' : 'bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
-                    style={subtitleStyle.alignment === 'left' ? { backgroundColor: 'color-mix(in srgb, var(--accent-blue) 30%, transparent)', borderColor: 'color-mix(in srgb, var(--accent-blue) 50%, transparent)' } : undefined}
-                    onClick={() => updateStyle("alignment", "left")}
-                  ><AlignLeft className="w-4 h-4" /></Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className={`border-input ${subtitleStyle.alignment === 'center' ? 'text-white font-medium' : 'bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
-                    style={subtitleStyle.alignment === 'center' ? { backgroundColor: 'color-mix(in srgb, var(--accent-blue) 30%, transparent)', borderColor: 'color-mix(in srgb, var(--accent-blue) 50%, transparent)' } : undefined}
-                    onClick={() => updateStyle("alignment", "center")}
-                  ><AlignCenter className="w-4 h-4" /></Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className={`border-input ${subtitleStyle.alignment === 'right' ? 'text-white font-medium' : 'bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
-                    style={subtitleStyle.alignment === 'right' ? { backgroundColor: 'color-mix(in srgb, var(--accent-blue) 30%, transparent)', borderColor: 'color-mix(in srgb, var(--accent-blue) 50%, transparent)' } : undefined}
-                    onClick={() => updateStyle("alignment", "right")}
-                  ><AlignRight className="w-4 h-4" /></Button>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <Label className="text-muted-foreground">Vertical Alignment</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className={`border-input ${subtitleStyle.alignmentVertical === 'top' ? 'text-white font-medium' : 'bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
-                    style={subtitleStyle.alignmentVertical === 'top' ? { backgroundColor: 'color-mix(in srgb, var(--accent-blue) 30%, transparent)', borderColor: 'color-mix(in srgb, var(--accent-blue) 50%, transparent)' } : undefined}
-                    onClick={() => updateStyle("alignmentVertical", "top")}
-                  ><ArrowUp className="w-4 h-4" /></Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className={`border-input ${subtitleStyle.alignmentVertical === 'middle' ? 'text-white font-medium' : 'bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
-                    style={subtitleStyle.alignmentVertical === 'middle' ? { backgroundColor: 'color-mix(in srgb, var(--accent-blue) 30%, transparent)', borderColor: 'color-mix(in srgb, var(--accent-blue) 50%, transparent)' } : undefined}
-                    onClick={() => updateStyle("alignmentVertical", "middle")}
-                  ><Minus className="w-4 h-4" /></Button>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className={`border-input ${subtitleStyle.alignmentVertical === 'bottom' || !subtitleStyle.alignmentVertical ? 'text-white font-medium' : 'bg-transparent text-muted-foreground hover:bg-muted/50 hover:text-foreground'}`}
-                    style={subtitleStyle.alignmentVertical === 'bottom' || !subtitleStyle.alignmentVertical ? { backgroundColor: 'color-mix(in srgb, var(--accent-blue) 30%, transparent)', borderColor: 'color-mix(in srgb, var(--accent-blue) 50%, transparent)' } : undefined}
-                    onClick={() => updateStyle("alignmentVertical", "bottom")}
-                  ><ArrowDown className="w-4 h-4" /></Button>
-                </div>
-              </div>
-
-              <div className="space-y-3 pt-2">
-                <div className="flex justify-between">
-                  <Label className="text-neutral-300">Vertical Margin</Label>
-                  <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.positionY ?? 10}%</span>
-                </div>
-                <Slider 
-                  value={[subtitleStyle.positionY ?? 10]} 
-                  min={0} max={100} step={1}
-                  onValueChange={([v]) => updateStyle("positionY", v)} 
-                />
-              </div>
-
-              <div className="space-y-3 pt-2">
-                <div className="flex justify-between">
-                  <Label className="text-neutral-300">Max Width</Label>
-                  <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.maxWidth ?? 90}%</span>
-                </div>
-                <Slider 
-                  value={[subtitleStyle.maxWidth ?? 90]} 
-                  min={20} max={100} step={1}
-                  onValueChange={([v]) => updateStyle("maxWidth", v)} 
-                />
-              </div>
-            </div>
-
-            <div className="space-y-4 pt-4 border-t border-neutral-800">
-              <h3 className="font-semibold text-neutral-200">Typography</h3>
-              
-              <div className="flex items-center justify-between">
-                <Label className="text-neutral-300">Font Family</Label>
-                <Select value={subtitleStyle.fontFamily} onValueChange={(v) => {
-                  updateStyle("fontFamily", v);
-                  const available = FONT_WEIGHTS[v] || FONT_WEIGHTS["Inter"];
-                  if (!available.some(w => w.value === subtitleStyle.fontWeight)) {
-                    updateStyle("fontWeight", "400");
-                  }
-                }}>
-                  <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                    <SelectItem value="Inter">Inter</SelectItem>
-                    <SelectItem value="Instrument Serif">Instrument Serif</SelectItem>
-                    <SelectItem value="Poppins">Poppins</SelectItem>
-                    <SelectItem value="Oswald">Oswald</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label className="text-neutral-300">Font Weight</Label>
-                <Select value={subtitleStyle.fontWeight} onValueChange={(v) => updateStyle("fontWeight", v)}>
-                  <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                    {(FONT_WEIGHTS[subtitleStyle.fontFamily] || FONT_WEIGHTS["Inter"]).map(weight => (
-                      <SelectItem key={weight.value} value={weight.value}>{weight.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label className="text-neutral-300">Text Transform</Label>
-                <Select value={subtitleStyle.textTransform || 'none'} onValueChange={(v: any) => updateStyle("textTransform", v)}>
-                  <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                    <SelectItem value="none">Normal (None)</SelectItem>
-                    <SelectItem value="uppercase">UPPERCASE</SelectItem>
-                    <SelectItem value="lowercase">lowercase</SelectItem>
-                    <SelectItem value="capitalize">Capitalize (Title Case)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex justify-between">
-                  <Label className="text-neutral-300">Font Size</Label>
-                  <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.fontSize).toFixed(0)}px</span>
-                </div>
-                <Slider 
-                  value={[subtitleStyle.fontSize]} 
-                  min={28} max={164} step={1}
-                  onValueChange={([v]) => updateStyle("fontSize", v)} 
-                />
-              </div>
-
-              <ColorPickerField label="Text Color" colorKey="textColor" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
-            </div>
-
-            <div className="space-y-4 pt-4 border-t border-neutral-800">
-              <h3 className="font-semibold text-neutral-200">Stroke / Outline</h3>
-              <ColorPickerField label="Enable Stroke" colorKey="strokeColor" enabledKey="strokeEnabled" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
-              <div className={`space-y-3 transition-opacity ${subtitleStyle.strokeEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
-                <div className="flex justify-between">
-                  <Label className="text-neutral-300 text-xs">Width</Label>
-                  <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.strokeWidth).toFixed(0)}px</span>
-                </div>
-                <Slider 
-                  value={[subtitleStyle.strokeWidth]} 
-                  min={1} max={28} step={1}
-                  onValueChange={([v]) => updateStyle("strokeWidth", v)} 
-                />
-              </div>
-            </div>
-
-            <div className="space-y-4 pt-4 border-t border-neutral-800">
-              <h3 className="font-semibold text-neutral-200">Shadow</h3>
-              <ColorPickerField label="Enable Shadow" colorKey="shadowColor" enabledKey="shadowEnabled" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
-              <div className={`space-y-4 transition-opacity ${subtitleStyle.shadowEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <Label className="text-neutral-300 text-xs">Blur</Label>
-                    <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.shadowBlur).toFixed(0)}px</span>
-                  </div>
-                  <Slider 
-                    value={[subtitleStyle.shadowBlur]} 
-                    min={0} max={100} step={1}
-                    onValueChange={([v]) => updateStyle("shadowBlur", v)} 
-                  />
-                </div>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <Label className="text-neutral-300 text-xs">Offset X</Label>
-                    <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.shadowOffsetX).toFixed(0)}px</span>
-                  </div>
-                  <Slider 
-                    value={[subtitleStyle.shadowOffsetX]} 
-                    min={-50} max={50} step={1}
-                    onValueChange={([v]) => updateStyle("shadowOffsetX", v)} 
-                  />
-                </div>
-                <div className="space-y-3">
-                  <div className="flex justify-between">
-                    <Label className="text-neutral-300 text-xs">Offset Y</Label>
-                    <span className="text-xs text-neutral-500 font-mono">{Number(subtitleStyle.shadowOffsetY).toFixed(0)}px</span>
-                  </div>
-                  <Slider 
-                    value={[subtitleStyle.shadowOffsetY]} 
-                    min={-50} max={50} step={1}
-                    onValueChange={([v]) => updateStyle("shadowOffsetY", v)} 
-                  />
-                </div>
-                <div className="flex items-center justify-between pt-2 border-t border-neutral-800">
-                  <Label className="text-neutral-300 text-sm font-medium">Solid 3D Extrusion</Label>
-                  <Switch 
-                    checked={subtitleStyle.shadow3DEnabled ?? false} 
-                    onCheckedChange={(c) => updateStyle("shadow3DEnabled", c)} 
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4 pt-4 border-t border-neutral-800">
-              <h3 className="font-semibold text-neutral-200">Background Highlight</h3>
-              <ColorPickerField label="Enable Background" colorKey="backgroundColor" enabledKey="backgroundEnabled" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
-              <div className={`space-y-3 transition-opacity ${subtitleStyle.backgroundEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'}`}>
-                <div className="flex justify-between">
-                  <Label className="text-neutral-400 text-xs">Opacity</Label>
-                  <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.backgroundOpacity}%</span>
-                </div>
-                <Slider 
-                  value={[subtitleStyle.backgroundOpacity]} 
-                  min={0} max={100} step={1}
-                  onValueChange={([v]) => updateStyle("backgroundOpacity", v)} 
-                />
-              </div>
-            </div>
-
+          <TabsContent value="style" className="m-0">
+            <StyleTab 
+              subtitleStyle={subtitleStyle}
+              updateStyle={updateStyle}
+            />
           </TabsContent>
 
-          <TabsContent value="animation" className="p-6 m-0 space-y-8">
-            <div className="space-y-4">
-              <h3 className="font-semibold text-neutral-200">Segment Appearance</h3>
-              <div className="flex items-center justify-between">
-                <Label className="text-neutral-300">Animation In</Label>
-                <Select value={subtitleStyle.animationIn || 'none'} onValueChange={(v) => updateStyle("animationIn", v)}>
-                  <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                    <SelectItem value="none">None (Instant)</SelectItem>
-                    <SelectItem value="fade">Fade In</SelectItem>
-                    <SelectItem value="zoomIn">Zoom In</SelectItem>
-                    <SelectItem value="zoomOut">Zoom Out</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <Label className="text-neutral-300">Animation Out</Label>
-                <Select value={subtitleStyle.animationOut || 'none'} onValueChange={(v) => updateStyle("animationOut", v)}>
-                  <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                    <SelectItem value="none">None (Instant)</SelectItem>
-                    <SelectItem value="fade">Fade Out</SelectItem>
-                    <SelectItem value="zoomIn">Zoom In</SelectItem>
-                    <SelectItem value="zoomOut">Zoom Out</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-4 pt-4 border-t border-neutral-800">
-              <h3 className="font-semibold text-neutral-200">Word Highlighting</h3>
-              <div className="flex items-center justify-between">
-                <Label className="text-neutral-300">Highlighting Style</Label>
-                <Select value={subtitleStyle.animationStyle || 'color'} onValueChange={(v) => updateStyle("animationStyle", v)}>
-                  <SelectTrigger className="bg-neutral-800 border-neutral-700 w-[180px]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-neutral-800 border-neutral-700 text-neutral-100">
-                    <SelectItem value="none">None (Static Text)</SelectItem>
-                    <SelectItem value="color">Color Pop</SelectItem>
-                    <SelectItem value="box">Box Highlight</SelectItem>
-                    <SelectItem value="scale">Scale Pop</SelectItem>
-                    <SelectItem value="karaoke">Karaoke Reveal</SelectItem>
-                    <SelectItem value="reveal">Word Reveal</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            {subtitleStyle.animationStyle !== 'none' && (
-              <div className="space-y-4 pt-4 border-t border-neutral-800">
-                <h3 className="font-semibold text-neutral-200">Preset Settings</h3>
-                
-                {(subtitleStyle.animationStyle === 'color' || subtitleStyle.animationStyle === 'karaoke' || subtitleStyle.animationStyle === 'scale') && (
-                  <ColorPickerField label="Highlight Text Color" colorKey="highlightColor" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
-                )}
-
-                {subtitleStyle.animationStyle === 'box' && (
-                  <ColorPickerField label="Highlight Box Color" colorKey="highlightBackgroundColor" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
-                )}
-
-                {subtitleStyle.animationStyle === 'scale' && (
-                  <div className="space-y-3 pt-2">
-                    <div className="flex justify-between">
-                      <Label className="text-neutral-300">Scale Factor</Label>
-                      <span className="text-xs text-neutral-500 font-mono">x{subtitleStyle.scaleFactor ?? 1.2}</span>
-                    </div>
-                    <Slider 
-                      value={[subtitleStyle.scaleFactor ?? 1.2]} 
-                      min={1.0} max={2.0} step={0.05}
-                      onValueChange={([v]) => updateStyle("scaleFactor", v)} 
-                    />
-                  </div>
-                )}
-              </div>
-            )}
+          <TabsContent value="animation" className="m-0">
+            <AnimationTab
+              subtitleStyle={subtitleStyle}
+              updateStyle={updateStyle}
+            />
           </TabsContent>
         </div>
       </Tabs>
