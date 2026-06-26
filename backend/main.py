@@ -141,9 +141,10 @@ def transcribe(
             result = model.transcribe(audio, batch_size=16)
             align_language = result["language"]
         
-        current_transcription_status = "Aligning word timestamps..."
+        current_transcription_status = "Loading word alignment model (may download once per language)..."
         print("Transcription finished! Loading alignment model...", flush=True)
         model_a, metadata = whisperx.load_align_model(language_code=align_language, device=device)
+        current_transcription_status = "Aligning word timestamps..."
         print("Aligning timestamps...", flush=True)
         result = whisperx.align(result["segments"], model_a, metadata, audio, device, return_char_alignments=False)
         
@@ -235,6 +236,18 @@ def cleanup_files(*file_paths):
         except Exception as e:
             print(f"Error cleaning up file {f}: {e}")
 
+def get_video_duration(video_path):
+    command = [
+        "ffprobe", "-v", "error", "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1", video_path
+    ]
+    result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        return float(result.stdout.strip())
+    except Exception as e:
+        print(f"Error getting video duration: {e}", flush=True)
+        return 0.0
+
 @app.post("/api/burn")
 async def burn_subtitles(
     background_tasks: BackgroundTasks,
@@ -242,13 +255,15 @@ async def burn_subtitles(
     segments: str = Form(...),
     style: str = Form(...),
     videoWidth: int = Form(...),
-    videoHeight: int = Form(...)
+    videoHeight: int = Form(...),
+    cuts: str = Form(None)
 ):
     try:
         print(f"Received burn request for {file.filename} ({videoWidth}x{videoHeight})", flush=True)
         
         parsed_segments = json.loads(segments)
         parsed_style = json.loads(style)
+        parsed_cuts = json.loads(cuts) if cuts else []
         
         # 1. Save uploaded video to temp
         unique_id = str(uuid.uuid4())
@@ -263,17 +278,72 @@ async def burn_subtitles(
         with open(temp_video_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
             
-        # 2. Generate ASS content
+        # 2. Get video duration and shift subtitle timestamps if cuts are present
+        if parsed_cuts:
+            total_duration = get_video_duration(temp_video_path)
+            if total_duration <= 0.0:
+                total_duration = max([seg["end"] for seg in parsed_segments] + [0.0])
+                
+            def shift_timestamp(t, cuts_list):
+                total_cut_before = 0.0
+                for c in cuts_list:
+                    if c["end"] <= t:
+                        total_cut_before += (c["end"] - c["start"])
+                    elif c["start"] < t < c["end"]:
+                        total_cut_before += (t - c["start"])
+                return max(0.0, t - total_cut_before)
+                
+            # Filter out deleted words and gaps, and shift the remaining words
+            clean_segments = []
+            for seg in parsed_segments:
+                if "words" in seg:
+                    seg["words"] = [w for w in seg["words"] if not w.get("deleted") and not w.get("isGap")]
+                    if not seg["words"]:
+                        continue
+                    seg["text"] = " ".join([w["word"] for w in seg["words"]])
+                    seg["start"] = seg["words"][0]["start"]
+                    seg["end"] = seg["words"][-1]["end"]
+                
+                seg["start"] = shift_timestamp(seg["start"], parsed_cuts)
+                seg["end"] = shift_timestamp(seg["end"], parsed_cuts)
+                if "words" in seg:
+                    for w in seg["words"]:
+                        if "start" in w:
+                            w["start"] = shift_timestamp(w["start"], parsed_cuts)
+                        if "end" in w:
+                            w["end"] = shift_timestamp(w["end"], parsed_cuts)
+                clean_segments.append(seg)
+            parsed_segments = clean_segments
+            
+            # Generate kept ranges
+            kept_ranges = []
+            current_pos = 0.0
+            for c in sorted(parsed_cuts, key=lambda x: x["start"]):
+                if c["start"] > current_pos + 0.02:
+                    kept_ranges.append((current_pos, c["start"]))
+                current_pos = max(current_pos, c["end"])
+            if current_pos < total_duration - 0.02:
+                kept_ranges.append((current_pos, total_duration))
+        else:
+            # Shift timestamps (simple case, only filter out deleted/gap words but no cuts)
+            clean_segments = []
+            for seg in parsed_segments:
+                if "words" in seg:
+                    seg["words"] = [w for w in seg["words"] if not w.get("deleted") and not w.get("isGap")]
+                    if not seg["words"]:
+                        continue
+                    seg["text"] = " ".join([w["word"] for w in seg["words"]])
+                    seg["start"] = seg["words"][0]["start"]
+                    seg["end"] = seg["words"][-1]["end"]
+                clean_segments.append(seg)
+            parsed_segments = clean_segments
+            kept_ranges = []
+
+        # 3. Generate ASS content using cleaned/shifted segments
         ass_content = generate_ass(parsed_segments, parsed_style, videoWidth, videoHeight)
         
-        # 3. Save ASS file
-        # We need to escape backslashes for FFmpeg on Windows if we pass absolute paths directly in the filter
-        # It's easier to just pass the ASS path with forward slashes
+        # 4. Save ASS file
         temp_ass_path_fwd = temp_ass_path.replace("\\", "/")
-        # Also FFmpeg expects colon after drive letter to be escaped or just use relative paths.
-        # A trick on Windows for FFmpeg ASS filter is to write ASS in same directory and use relative path,
-        # but since we use tempdir, we can just format it properly:
-        # e.g., C:/Users/name/AppData/Local/Temp/subs.ass -> C\\:/Users/name/...
         ffmpeg_ass_path = temp_ass_path_fwd.replace(":", "\\:")
 
         with open(temp_ass_path, "w", encoding="utf-8") as f:
@@ -281,10 +351,8 @@ async def burn_subtitles(
             
         print(f"Generated ASS file at {temp_ass_path}", flush=True)
         
-        # 4. Run FFmpeg with fontsdir so libass can find Google Fonts
+        # 5. Run FFmpeg with fontsdir
         fonts_dir = get_fonts_dir()
-        # Flatten all font files into the fontsdir search path
-        # libass needs a flat directory, so we copy/symlink fonts to a temp flat dir
         temp_fonts_dir = os.path.join(tempfile.gettempdir(), f"fonts_{unique_id}")
         os.makedirs(temp_fonts_dir, exist_ok=True)
         for family_name in os.listdir(fonts_dir):
@@ -299,18 +367,40 @@ async def burn_subtitles(
         
         ffmpeg_fonts_path = temp_fonts_dir.replace("\\", "/").replace(":", "\\:")
         
-        # We encode to h264 for maximum compatibility
-        command = [
-            "ffmpeg",
-            "-y",
-            "-i", temp_video_path,
-            "-vf", f"ass='{ffmpeg_ass_path}':fontsdir='{ffmpeg_fonts_path}'",
-            "-c:v", "libx264",
-            "-preset", "fast",
-            "-crf", "18",
-            "-c:a", "copy",
-            output_video_path
-        ]
+        # 6. Build and execute splicing command or direct burn command
+        if parsed_cuts and kept_ranges:
+            filter_complex = []
+            concat_inputs = ""
+            for idx, (start, end) in enumerate(kept_ranges):
+                filter_complex.append(f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{idx}]")
+                filter_complex.append(f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{idx}]")
+                concat_inputs += f"[v{idx}][a{idx}]"
+            
+            n = len(kept_ranges)
+            filter_complex.append(f"{concat_inputs}concat=n={n}:v=1:a=1[splicedv][outa]")
+            filter_complex.append(f"[splicedv]ass='{ffmpeg_ass_path}':fontsdir='{ffmpeg_fonts_path}'[outv]")
+            
+            filter_str = "; ".join(filter_complex)
+            command = [
+                "ffmpeg", "-y", "-i", temp_video_path,
+                "-filter_complex", filter_str,
+                "-map", "[outv]", "-map", "[outa]",
+                "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+                "-c:a", "aac",
+                output_video_path
+            ]
+        else:
+            command = [
+                "ffmpeg",
+                "-y",
+                "-i", temp_video_path,
+                "-vf", f"ass='{ffmpeg_ass_path}':fontsdir='{ffmpeg_fonts_path}'",
+                "-c:v", "libx264",
+                "-preset", "fast",
+                "-crf", "18",
+                "-c:a", "copy",
+                output_video_path
+            ]
         
         print(f"Running FFmpeg: {' '.join(command)}", flush=True)
         process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

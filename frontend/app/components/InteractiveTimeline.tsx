@@ -1,7 +1,7 @@
 import { ZoomIn, ZoomOut, Play, Pause, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { memo, useState, useEffect } from "react";
+import { memo, useState, useEffect, useRef } from "react";
 import { formatUiTime } from "@/lib/utils";
 import type { DragTarget } from "../page";
 
@@ -16,8 +16,13 @@ interface InteractiveTimelineProps {
   timelineRef: React.RefObject<HTMLDivElement | null>;
   isHoveringTimeline: React.MutableRefObject<boolean>;
   trackRef: React.RefObject<HTMLDivElement | null>;
-  handleTrackClick: (e: React.PointerEvent<HTMLDivElement>) => void;
   editableSegments: any[];
+  cutZones: { start: number; end: number }[];
+  rippleDeletes: { start: number; end: number }[];
+  selectedIndexes: number[];
+  setSelectedIndexes: React.Dispatch<React.SetStateAction<number[]>>;
+  handleLiftDelete: (indices: number[]) => void;
+  handleRippleDelete: (indices: number[]) => void;
   setDraggingBoundary: (val: DragTarget | null) => void;
   draggingBoundary: DragTarget | null;
   onSeek: (time: number) => void;
@@ -51,13 +56,45 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   timelineRef,
   isHoveringTimeline,
   trackRef,
-  handleTrackClick,
   editableSegments,
+  cutZones,
+  rippleDeletes,
+  selectedIndexes,
+  setSelectedIndexes,
+  handleLiftDelete,
+  handleRippleDelete,
   setDraggingBoundary,
   draggingBoundary,
   onSeek,
 }: InteractiveTimelineProps) {
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
+  const lastSelectedRef = useRef<number | null>(null);
+
+  const sortedRippleDeletes = [...(rippleDeletes || [])].sort((a, b) => a.start - b.start);
+
+  const toTimelineTime = (mediaTime: number) => {
+    let timelineTime = mediaTime;
+    for (const zone of sortedRippleDeletes) {
+      if (mediaTime >= zone.end) {
+        timelineTime -= (zone.end - zone.start);
+      } else if (mediaTime > zone.start) {
+        timelineTime -= (mediaTime - zone.start);
+      }
+    }
+    return Math.max(0, timelineTime);
+  };
+
+  const toMediaTime = (timelineTime: number) => {
+    let mediaTime = timelineTime;
+    for (const zone of sortedRippleDeletes) {
+      if (mediaTime >= zone.start) {
+        mediaTime += (zone.end - zone.start);
+      }
+    }
+    return Math.min(mediaTime, mediaDuration);
+  };
+
+  const timelineDuration = Math.max(toTimelineTime(mediaDuration), 0.1);
 
   useEffect(() => {
     if (!isDraggingPlayhead || !trackRef.current) return;
@@ -67,7 +104,8 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       let clickX = e.clientX - trackRect.left;
       clickX = Math.max(0, Math.min(clickX, trackRect.width));
       const percentage = clickX / trackRect.width;
-      onSeek(percentage * mediaDuration);
+      const targetTimelineTime = percentage * timelineDuration;
+      onSeek(toMediaTime(targetTimelineTime));
     };
 
     const handleUp = () => {
@@ -80,9 +118,53 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [isDraggingPlayhead, mediaDuration, trackRef, onSeek]);
+  }, [isDraggingPlayhead, timelineDuration, mediaDuration, trackRef, onSeek, sortedRippleDeletes]);
 
-  const duration = Math.max(mediaDuration, 0.1);
+  const handleTrackClick = (e: React.PointerEvent<HTMLDivElement>) => {
+    // If holding modifier keys, don't move playhead (assume selection)
+    if (e.shiftKey || e.ctrlKey || e.metaKey) return;
+    
+    // Deselect all
+    setSelectedIndexes([]);
+    lastSelectedRef.current = null;
+
+    // Prevent triggering if clicking a draggable boundary
+    if ((e.target as HTMLElement).closest('.group')) return;
+    
+    if (!trackRef.current || timelineDuration <= 0) return;
+    const rect = trackRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percentage = clickX / rect.width;
+    const targetTimelineTime = percentage * timelineDuration;
+    onSeek(toMediaTime(targetTimelineTime));
+  };
+
+  useEffect(() => {
+    const el = timelineRef.current;
+    if (!el) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      isHoveringTimeline.current = true;
+      clearTimeout((timelineRef as any)._timeout);
+      (timelineRef as any)._timeout = setTimeout(() => isHoveringTimeline.current = false, 1000);
+
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const zoomDelta = e.deltaY < 0 ? 0.5 : -0.5;
+        setZoomLevel(Math.max(1, Math.min(50, zoomLevel + zoomDelta)));
+      } else if (e.deltaY !== 0) {
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+      }
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+    };
+  }, [timelineRef, zoomLevel, setZoomLevel, isHoveringTimeline]);
+
   return (
     <Card className="bg-card border-border shadow-2xl p-2">
       {/* Timeline Header (Controls) */}
@@ -119,7 +201,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           <input 
             type="range" 
             min="1" 
-            max="10" 
+            max="50" 
             step="0.5" 
             value={zoomLevel} 
             onChange={(e) => setZoomLevel(parseFloat(e.target.value))}
@@ -132,11 +214,6 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       {/* Scrollable Timeline Container */}
       <div 
         ref={timelineRef}
-        onWheel={() => {
-          isHoveringTimeline.current = true;
-          clearTimeout((timelineRef as any)._timeout);
-          (timelineRef as any)._timeout = setTimeout(() => isHoveringTimeline.current = false, 1000);
-        }}
         onPointerDown={() => {
           isHoveringTimeline.current = true;
           clearTimeout((timelineRef as any)._timeout);
@@ -144,7 +221,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
         onPointerUp={() => {
           (timelineRef as any)._timeout = setTimeout(() => isHoveringTimeline.current = false, 1000);
         }}
-        className="relative h-24 bg-background rounded-xl overflow-x-auto overflow-y-hidden select-none [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-background [&::-webkit-scrollbar-thumb]:bg-muted [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-accent transition-colors"
+        className="relative h-32 bg-background rounded-xl overflow-x-auto overflow-y-hidden select-none [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-background [&::-webkit-scrollbar-thumb]:bg-muted [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-accent transition-colors"
       >
         {/* Scaled Inner Track */}
         <div 
@@ -156,21 +233,29 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           {/* Time Ticks */}
           <div className="absolute inset-0 pointer-events-none opacity-20 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGgwLjV2NDBIMHoiIGZpbGw9IiNmZmYiLz48L3N2Zz4=')] bg-repeat-x" />
 
+          {/* Track Labels */}
+          <div className="absolute left-2 top-7 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-widest pointer-events-none z-0">Subtitles</div>
+          <div className="absolute left-2 top-20 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-widest pointer-events-none z-0">Video</div>
+
+          {/* Video Track Continuous Background */}
+          <div className="absolute top-18 h-10 bg-emerald-900/10 w-full border-y border-emerald-900/20 pointer-events-none z-0" />
+
           {/* Dynamic Time Ruler */}
           {(() => {
-            if (mediaDuration <= 0) return null;
-            // Determine interval based on zoom to keep ruler readable
+            if (timelineDuration <= 0) return null;
             let intervalSeconds = 5;
-            if (zoomLevel >= 4) intervalSeconds = 1;
+            if (zoomLevel >= 30) intervalSeconds = 0.1;
+            else if (zoomLevel >= 15) intervalSeconds = 0.5;
+            else if (zoomLevel >= 4) intervalSeconds = 1;
             else if (zoomLevel >= 2) intervalSeconds = 2;
-            else if (mediaDuration > 300) intervalSeconds = 15; // Zoomed out on long video
-            else if (mediaDuration > 60) intervalSeconds = 10;
+            else if (timelineDuration > 300) intervalSeconds = 15;
+            else if (timelineDuration > 60) intervalSeconds = 10;
             
-            const numTicks = Math.floor(mediaDuration / intervalSeconds);
+            const numTicks = Math.floor(timelineDuration / intervalSeconds);
             const ticks = Array.from({ length: numTicks + 1 }, (_, i) => i * intervalSeconds);
             
             return ticks.map(tick => {
-              const leftPercent = (tick / mediaDuration) * 100;
+              const leftPercent = (tick / timelineDuration) * 100;
               return (
                 <div key={`tick-${tick}`} className="absolute top-0 text-[10px] text-neutral-500 pointer-events-none transform -translate-x-1/2" style={{ left: `${leftPercent}%` }}>
                   {formatUiTime(tick)}
@@ -181,40 +266,110 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
           {/* Subtitle Segments blocks */}
           {editableSegments.map((segment, index) => {
-            const left = (segment.start / mediaDuration) * 100;
-            const width = ((segment.end - segment.start) / mediaDuration) * 100;
+            const tlStart = toTimelineTime(segment.start);
+            const tlEnd = toTimelineTime(segment.end);
+            const left = (tlStart / timelineDuration) * 100;
+            const width = ((tlEnd - tlStart) / timelineDuration) * 100;
             const isActive = currentTime >= (segment.start - 0.05) && currentTime < (segment.end - 0.05);
+            
+            const realWords = segment.words ? segment.words.filter((w: any) => !w.isGap) : [];
+            const isSilenced = realWords.length > 0 && realWords.every((w: any) => w.deleted);
+            const isSelected = selectedIndexes.includes(index);
             
             return (
               <div 
                 key={index}
-                className={`absolute top-6 bottom-2 rounded text-[10px] p-1 font-medium overflow-hidden transition-colors border pointer-events-none ${
-                  isActive 
-                    ? 'bg-accent-blue/30 border-accent-blue/50 text-blue-100 shadow-accent-blue/30 shadow-[0_0_10px]' 
-                    : 'bg-muted/40 border-border text-muted-foreground'
+                onPointerDown={(e) => {
+                  if (e.shiftKey) {
+                    e.stopPropagation();
+                    if (lastSelectedRef.current !== null) {
+                      const start = Math.min(lastSelectedRef.current, index);
+                      const end = Math.max(lastSelectedRef.current, index);
+                      const range = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+                      setSelectedIndexes(prev => Array.from(new Set([...prev, ...range])));
+                    } else {
+                      setSelectedIndexes([index]);
+                      lastSelectedRef.current = index;
+                    }
+                  } else if (e.ctrlKey || e.metaKey) {
+                    e.stopPropagation();
+                    setSelectedIndexes(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]);
+                    lastSelectedRef.current = index;
+                  }
+                  // Otherwise, let it bubble up to handleTrackClick
+                }}
+                className={`absolute top-5 h-8 rounded text-[10px] p-1 font-medium overflow-hidden transition-colors border cursor-pointer ${
+                  isSelected
+                    ? 'bg-emerald-500/20 border-emerald-400 z-20 text-emerald-100'
+                    : isSilenced
+                      ? 'bg-red-950/20 border-red-900/30 text-red-500/60 opacity-60 line-through z-10'
+                      : isActive 
+                        ? 'bg-accent-blue/30 border-accent-blue/50 text-blue-100 z-20' 
+                        : 'bg-muted/40 border-border text-muted-foreground z-10 hover:border-muted-foreground/50 hover:z-20'
                 }`}
                 style={{ left: `${left}%`, width: `${width}%` }}
               >
-                <div className="truncate">{segment.text}</div>
+                {zoomLevel >= 15 && segment.words && segment.words.length > 0 ? (
+                  <div className="relative w-full h-full">
+                    {segment.words.map((word: any, wIdx: number) => {
+                      if (word.isGap) return null;
+                      const segDuration = segment.end - segment.start;
+                      const relativeStart = Math.max(0, ((word.start - segment.start) / segDuration) * 100);
+                      const relativeWidth = Math.min(100 - relativeStart, ((word.end - word.start) / segDuration) * 100);
+                      
+                      return (
+                        <div 
+                          key={wIdx} 
+                          className="absolute top-0 bottom-0 flex items-center justify-center border-r border-white/10 hover:bg-white/20 transition-colors z-20 px-0.5"
+                          style={{ left: `${relativeStart}%`, width: `${relativeWidth}%` }}
+                          title={word.word}
+                        >
+                          <span className="truncate w-full text-center text-[9px]">{word.word}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="truncate relative z-20">{segment.text}</div>
+                )}
               </div>
             );
           })}
 
-          {/* Draggable Boundaries */}
-          
-          {/* First segment start boundary */}
-          {editableSegments.length > 0 && (
-            <div
-              onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('start'); }}
-              className="absolute top-0 bottom-0 w-8 -ml-4 z-10 flex justify-center items-center group"
-              style={{ left: `${(editableSegments[0].start / duration) * 100}%`, ...getCursorStyle('right') }}
-            >
-              <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'start' ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
-            </div>
-          )}
+          {/* Render global gap-free cut zones on the Video track */}
+          {cutZones && cutZones.map((zone, idx) => {
+            const tlStart = toTimelineTime(zone.start);
+            const tlEnd = toTimelineTime(zone.end);
+            const left = (tlStart / timelineDuration) * 100;
+            const width = ((tlEnd - tlStart) / timelineDuration) * 100;
+            
+            if (width <= 0.01) return null;
 
-          {/* Boundaries for segments */}
-          {editableSegments.map((segment, index) => {
+            return (
+              <div 
+                key={`zone-${idx}`}
+                className="absolute top-18 h-10 bg-red-600/35 border-l border-r border-red-500/50 pointer-events-none z-10"
+                style={{ left: `${left}%`, width: `${width}%` }}
+              />
+            );
+          })}
+
+          {/* Draggable Boundaries */}
+          {zoomLevel >= 3 && (
+            <>
+              {/* First segment start boundary */}
+              {editableSegments.length > 0 && (
+                <div
+                  onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('start'); }}
+                  className="absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group"
+                  style={{ left: `${(toTimelineTime(editableSegments[0].start) / timelineDuration) * 100}%`, ...getCursorStyle('right') }}
+                >
+                  <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'start' ? 'bg-emerald-400 w-1' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                </div>
+              )}
+
+              {/* Boundaries for segments */}
+              {editableSegments.map((segment, index) => {
             const elements = [];
 
             if (index < editableSegments.length - 1) {
@@ -223,11 +378,11 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
               if (isTouching) {
                 // Render 3-zone cluster at segment.end
-                const leftPercent = (segment.end / duration) * 100;
+                const leftPercent = (toTimelineTime(segment.end) / timelineDuration) * 100;
                 const isDraggingThisBoth = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'both' && draggingBoundary.index === index;
                 
                 elements.push(
-                  <div key={`cluster-${index}`} className="absolute top-0 bottom-0 w-16 -ml-8 z-10 flex" style={{ left: `${leftPercent}%` }}>
+                  <div key={`cluster-${index}`} className="absolute top-0 bottom-0 w-16 -ml-8 z-30 flex" style={{ left: `${leftPercent}%` }}>
                     {/* Left Zone (End of segment i) */}
                     <div 
                       className="flex-1 group flex justify-end" 
@@ -238,11 +393,11 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                     </div>
                     {/* Center Zone (Both) */}
                     <div 
-                      className="w-6 flex justify-center items-center group"
+                      className="w-2 shrink-0 group flex justify-center items-center relative z-20"
                       style={getCursorStyle('both')}
                       onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'both', index }); }}
                     >
-                      <div className={`w-0.5 h-full transition-colors ${isDraggingThisBoth ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                      <div className={`h-full transition-colors ${isDraggingThisBoth ? 'bg-emerald-400 w-1' : 'bg-accent-blue/40 w-0.5 group-hover:bg-emerald-400 group-hover:w-1'}`} />
                     </div>
                     {/* Right Zone (Start of segment i+1) */}
                     <div 
@@ -255,52 +410,56 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                   </div>
                 );
               } else {
-                // Gap exists! Render two independent handles.
-                const isDraggingEnd = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'end' && draggingBoundary.index === index;
+                // Render separate handles if there's a gap
+                const leftPercent1 = (toTimelineTime(segment.end) / timelineDuration) * 100;
+                const leftPercent2 = (toTimelineTime(nextSegment.start) / timelineDuration) * 100;
+                
                 elements.push(
-                  <div
-                    key={`end-${index}`}
+                  <div 
+                    key={`end-${index}`} 
+                    className="absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group" 
+                    style={{ left: `${leftPercent1}%`, ...getCursorStyle('left') }}
                     onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'end', index }); }}
-                    className="absolute top-0 bottom-0 w-8 -ml-4 z-10 flex justify-center items-center group"
-                    style={{ left: `${(segment.end / duration) * 100}%`, ...getCursorStyle('left') }}
                   >
-                    <div className={`w-0.5 h-full transition-colors ${isDraggingEnd ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                    <div className="w-0.5 h-full bg-accent-blue/40 transition-colors group-hover:bg-emerald-400 group-hover:w-1" />
                   </div>
                 );
                 
-                const isDraggingStart = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'start' && draggingBoundary.index === index + 1;
                 elements.push(
-                  <div
-                    key={`start-${index + 1}`}
+                  <div 
+                    key={`start-${index + 1}`} 
+                    className="absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group" 
+                    style={{ left: `${leftPercent2}%`, ...getCursorStyle('right') }}
                     onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'start', index: index + 1 }); }}
-                    className="absolute top-0 bottom-0 w-8 -ml-4 z-10 flex justify-center items-center group"
-                    style={{ left: `${(nextSegment.start / duration) * 100}%`, ...getCursorStyle('right') }}
                   >
-                    <div className={`w-0.5 h-full transition-colors ${isDraggingStart ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                    <div className="w-0.5 h-full bg-accent-blue/40 transition-colors group-hover:bg-emerald-400 group-hover:w-1" />
                   </div>
                 );
               }
             } else {
-              // Very last segment end boundary
+              // Last segment end boundary
+              const leftPercent = (toTimelineTime(segment.end) / timelineDuration) * 100;
               elements.push(
-                <div
-                  key="last-end"
+                <div 
+                  key={`end-${index}`} 
+                  className="absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group" 
+                  style={{ left: `${leftPercent}%`, ...getCursorStyle('left') }}
                   onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('end'); }}
-                  className="absolute top-0 bottom-0 w-8 -ml-4 z-10 flex justify-center items-center group"
-                  style={{ left: `${(segment.end / duration) * 100}%`, ...getCursorStyle('left') }}
                 >
-                  <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'end' ? 'bg-emerald-400 w-1 shadow-[0_0_10px_rgba(52,211,153,0.8)]' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
+                  <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'end' ? 'bg-emerald-400 w-1' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
                 </div>
               );
             }
 
             return elements;
-          })}
+              })}
+            </>
+          )}
 
           {/* Playhead */}
           <div 
             className="absolute top-0 bottom-0 w-8 -ml-4 z-20 flex justify-center cursor-grab active:cursor-grabbing group"
-            style={{ left: `${(currentTime / duration) * 100}%` }}
+            style={{ left: `${(toTimelineTime(currentTime) / timelineDuration) * 100}%` }}
             onPointerDown={(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -308,7 +467,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
             }}
           >
             {/* The visual line */}
-            <div className="w-0.5 h-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)] pointer-events-none relative">
+            <div className="w-0.5 h-full bg-red-500 pointer-events-none relative">
               {/* The top handle dot */}
               <div className={`absolute -top-1 -left-1.5 w-3.5 h-3.5 rounded-full transition-transform ${isDraggingPlayhead ? 'bg-red-400 scale-125' : 'bg-red-500 group-hover:scale-125'}`} />
             </div>

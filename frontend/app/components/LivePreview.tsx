@@ -9,6 +9,7 @@ interface LivePreviewProps {
   setCurrentTime: (time: number) => void;
   setMediaDuration: (duration: number) => void;
   editableSegments: any[];
+  cutZones: { start: number; end: number }[];
   currentTime: number;
   subtitleStyle: any; // We'll just pass the object directly
   setVideoDimensions: (dimensions: {width: number, height: number}) => void;
@@ -23,6 +24,7 @@ export function LivePreview({
   setCurrentTime,
   setMediaDuration,
   editableSegments,
+  cutZones,
   currentTime,
   subtitleStyle,
   setVideoDimensions,
@@ -41,13 +43,30 @@ export function LivePreview({
     let rafId: number;
     const updateTime = () => {
       if (mediaRef.current) {
-        setLocalTime(mediaRef.current.currentTime);
+        const time = mediaRef.current.currentTime;
+        
+        // Find if this time falls inside any cut zone
+        let skipTo = -1;
+        for (const zone of cutZones) {
+          if (time >= zone.start && time < zone.end) {
+            skipTo = zone.end;
+            break;
+          }
+        }
+
+        if (skipTo !== -1) {
+          mediaRef.current.currentTime = skipTo;
+          setLocalTime(skipTo);
+          setCurrentTime(skipTo);
+        } else {
+          setLocalTime(time);
+        }
       }
       rafId = requestAnimationFrame(updateTime);
     };
     rafId = requestAnimationFrame(updateTime);
     return () => cancelAnimationFrame(rafId);
-  }, [mediaRef]);
+  }, [mediaRef, cutZones, setCurrentTime]);
 
   // Sync back to parent when paused/seeking
   useEffect(() => {
@@ -221,12 +240,19 @@ export function LivePreview({
                   : undefined,
                 border: showBounds ? '2px dashed var(--ring)' : undefined,
                 backgroundColor: showBounds ? 'color-mix(in srgb, var(--ring) 12%, transparent)' : undefined,
-                paddingTop: showBounds ? '4px' : undefined,
+              paddingTop: showBounds ? '4px' : undefined,
                 paddingBottom: showBounds ? '4px' : undefined,
               }}
             >
               {(() => {
-                const activeSegment = editableSegments.find((s: any) => localTime >= s.start && localTime < s.end);
+                const activeSegment = editableSegments.find((s: any) => {
+                  const isCurrent = localTime >= s.start && localTime < s.end;
+                  if (!isCurrent) return false;
+                  if (s.words && s.words.length > 0) {
+                    return s.words.some((w: any) => !w.deleted && !w.isGap);
+                  }
+                  return true;
+                });
                 if (!activeSegment) return null;
                 
                 const hexToRgba = (hex: string, opacity: number) => {
@@ -371,7 +397,12 @@ export function LivePreview({
                   return activeSegment.text.trim();
                 }
 
-                return activeSegment.words.map((word: any, i: number) => {
+                const visibleWords = activeSegment.words.filter((word: any) => !word.deleted && !word.isGap);
+                if (visibleWords.length === 0) {
+                  return "";
+                }
+
+                return visibleWords.map((word: any, i: number) => {
                   const isActive = localTime >= word.start && localTime < word.end;
                   const isPast = localTime >= word.end;
                   

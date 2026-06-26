@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Upload, FileAudio, FileVideo, Settings, Download, CheckCircle2, Loader2, CloudDownload, Video, Edit3, ZoomIn, ZoomOut, Trash2, Play, Pause } from "lucide-react";
 import { get, set, del } from "idb-keyval";
 import { Button } from "@/components/ui/button";
@@ -113,6 +113,62 @@ const formatUiTime = (seconds: number) => {
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}.${ms}`;
 };
 
+const injectPauseChips = (segs: any[]): any[] => {
+  if (!segs || segs.length === 0) return segs;
+  
+  return segs.map((seg, idx) => {
+    if (!seg.words || seg.words.length === 0) return seg;
+    
+    const cleanWords = seg.words.filter((w: any) => !w.isGap);
+    const newWords: any[] = [];
+    
+    for (let i = 0; i < cleanWords.length; i++) {
+      newWords.push(cleanWords[i]);
+      
+      if (i < cleanWords.length - 1) {
+        const w1 = cleanWords[i];
+        const w2 = cleanWords[i + 1];
+        const gap = w2.start - w1.end;
+        if (gap > 0.15) {
+          newWords.push({
+            word: `[Pause ${gap.toFixed(1)}s]`,
+            start: w1.end,
+            end: w2.start,
+            isGap: true,
+            deleted: false
+          });
+        }
+      }
+    }
+    
+    if (idx < segs.length - 1) {
+      const nextSeg = segs[idx + 1];
+      if (nextSeg.words && nextSeg.words.length > 0) {
+        const wLast = cleanWords[cleanWords.length - 1];
+        const nextCleanWords = nextSeg.words.filter((w: any) => !w.isGap);
+        if (wLast && nextCleanWords.length > 0) {
+          const wNextFirst = nextCleanWords[0];
+          const gap = wNextFirst.start - wLast.end;
+          if (gap > 0.15) {
+            newWords.push({
+              word: `[Pause ${gap.toFixed(1)}s]`,
+              start: wLast.end,
+              end: wNextFirst.start,
+              isGap: true,
+              deleted: false
+            });
+          }
+        }
+      }
+    }
+    
+    return {
+      ...seg,
+      words: newWords
+    };
+  });
+};
+
 // Helper hook for robust local storage persistence (SSR safe)
 export default function WhisperXApp() {
   const [file, setFile] = useState<File | null>(null);
@@ -164,6 +220,8 @@ export default function WhisperXApp() {
 
   // Editable subtitle segments
   const [editableSegments, setEditableSegments] = useState<any[]>([]);
+  const [selectedIndexes, setSelectedIndexes] = useState<number[]>([]);
+  const [rippleDeletes, setRippleDeletes] = useState<{start: number, end: number}[]>([]);
 
   const [mediaUrl, setMediaUrl] = useState<string>("");
   const [currentTime, setCurrentTime] = useState(0);
@@ -171,15 +229,18 @@ export default function WhisperXApp() {
   const [videoDimensions, setVideoDimensions] = useState<{width: number, height: number}>({width: 1920, height: 1080});
   const [draggingBoundary, setDraggingBoundary] = useState<DragTarget | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [silenceThreshold, setSilenceThreshold] = useState<number>(1.0);
+  const [safePadding, setSafePadding] = useState<number>(150);
   
   // History for Undo/Redo
-  const [segmentHistory, setSegmentHistory] = useState<{ past: any[][], future: any[][] }>({ past: [], future: [] });
+  type HistoryState = { segments: any[]; rippleDeletes: { start: number; end: number }[] };
+  const [segmentHistory, setSegmentHistory] = useState<{ past: HistoryState[], future: HistoryState[] }>({ past: [], future: [] });
 
   const updateSegments = (newSegments: any[] | ((prev: any[]) => any[])) => {
     setEditableSegments((prevSegments) => {
       const updated = typeof newSegments === 'function' ? newSegments(prevSegments) : newSegments;
       setSegmentHistory(prevHistory => ({
-        past: [...prevHistory.past, prevSegments].slice(-50),
+        past: [...prevHistory.past, { segments: prevSegments, rippleDeletes: [...rippleDeletes] }].slice(-50),
         future: []
       }));
       return updated;
@@ -225,7 +286,7 @@ export default function WhisperXApp() {
           if (savedProject.file) setFile(savedProject.file);
           if (savedProject.status) setStatus(savedProject.status);
           if (savedProject.result) setResult(savedProject.result);
-          if (savedProject.editableSegments) setEditableSegments(savedProject.editableSegments);
+          if (savedProject.editableSegments) setEditableSegments(injectPauseChips(savedProject.editableSegments));
         }
       } catch (err) {
         console.error("Failed to load project from IDB", err);
@@ -502,7 +563,8 @@ export default function WhisperXApp() {
       setResult(data);
       // Initialize the editable segments state (clear history on new transcript)
       setSegmentHistory({ past: [], future: [] });
-      setEditableSegments(data.segments);
+      setRippleDeletes([]);
+      setEditableSegments(injectPauseChips(data.segments));
       
       setProgress(100);
       setStatus("done");
@@ -540,6 +602,7 @@ export default function WhisperXApp() {
     formData.append("style", JSON.stringify(subtitleStyle));
     formData.append("videoWidth", videoDimensions.width.toString());
     formData.append("videoHeight", videoDimensions.height.toString());
+    formData.append("cuts", JSON.stringify(cutZones));
 
     try {
       const response = await fetch("http://localhost:8000/api/burn", {
@@ -597,6 +660,56 @@ export default function WhisperXApp() {
     });
   };
 
+  const handleToggleWordDelete = (segmentIndex: number, wordIndex: number) => {
+    updateSegments((prev) => {
+      const newSegments = [...prev];
+      const segment = { ...newSegments[segmentIndex] };
+      if (segment.words) {
+        const words = [...segment.words];
+        const word = { ...words[wordIndex] };
+        word.deleted = !word.deleted;
+        words[wordIndex] = word;
+        segment.words = words;
+      }
+      newSegments[segmentIndex] = segment;
+      return newSegments;
+    });
+  };
+
+  const handleToggleSegmentSilence = (segmentIndex: number) => {
+    updateSegments((prev) => {
+      const newSegments = [...prev];
+      const segment = { ...newSegments[segmentIndex] };
+      if (segment.words) {
+        const realWords = segment.words.filter((w: any) => !w.isGap);
+        const allSpokenDeleted = realWords.every((w: any) => w.deleted);
+        const shouldDelete = !allSpokenDeleted;
+        
+        segment.words = segment.words.map((w: any) => ({
+          ...w,
+          deleted: shouldDelete
+        }));
+      }
+      newSegments[segmentIndex] = segment;
+      return newSegments;
+    });
+  };
+
+  const handleAutoCutSilences = () => {
+    updateSegments((prev) => {
+      return prev.map((seg) => {
+        if (!seg.words) return seg;
+        const updatedWords = seg.words.map((word: any) => {
+          if (word.isGap && (word.end - word.start) >= silenceThreshold) {
+            return { ...word, deleted: true };
+          }
+          return word;
+        });
+        return { ...seg, words: updatedWords };
+      });
+    });
+  };
+
   const handleMergeSegments = (index1: number, index2: number) => {
     updateSegments((prev) => {
       const minIndex = Math.min(index1, index2);
@@ -620,6 +733,32 @@ export default function WhisperXApp() {
 
   const handleDeleteSegments = (indices: number[]) => {
     updateSegments((prev) => prev.filter((_, i) => !indices.includes(i)));
+  };
+
+  const handleLiftDelete = (indices: number[]) => {
+    updateSegments((prev) => {
+      const newSegments = [...prev];
+      indices.forEach(idx => {
+        if (newSegments[idx]) {
+          newSegments[idx] = { ...newSegments[idx] };
+          if (newSegments[idx].words) {
+            newSegments[idx].words = newSegments[idx].words.map((w: any) => ({ ...w, deleted: true }));
+          }
+        }
+      });
+      return newSegments;
+    });
+  };
+
+  const handleRippleDelete = (indices: number[]) => {
+    const regionsToAdd: {start: number, end: number}[] = [];
+    editableSegments.forEach((seg, i) => {
+      if (indices.includes(i)) {
+        regionsToAdd.push({ start: seg.start, end: seg.end });
+      }
+    });
+    setRippleDeletes(prev => [...prev, ...regionsToAdd]);
+    handleDeleteSegments(indices);
   };
 
   const handleDuplicateSegment = (index: number) => {
@@ -713,9 +852,10 @@ export default function WhisperXApp() {
           setSegmentHistory(prev => {
             if (prev.future.length === 0) return prev;
             const nextState = prev.future[0];
-            setEditableSegments(nextState);
+            setEditableSegments(nextState.segments);
+            setRippleDeletes(nextState.rippleDeletes);
             return {
-              past: [...prev.past, editableSegments],
+              past: [...prev.past, { segments: editableSegments, rippleDeletes: [...rippleDeletes] }],
               future: prev.future.slice(1)
             };
           });
@@ -724,10 +864,11 @@ export default function WhisperXApp() {
           setSegmentHistory(prev => {
             if (prev.past.length === 0) return prev;
             const prevState = prev.past[prev.past.length - 1];
-            setEditableSegments(prevState);
+            setEditableSegments(prevState.segments);
+            setRippleDeletes(prevState.rippleDeletes);
             return {
               past: prev.past.slice(0, -1),
-              future: [editableSegments, ...prev.future]
+              future: [{ segments: editableSegments, rippleDeletes: [...rippleDeletes] }, ...prev.future]
             };
           });
         }
@@ -739,6 +880,80 @@ export default function WhisperXApp() {
       window.removeEventListener('keydown', handleKeyDown, { capture: true });
     };
   }, [editableSegments, togglePlay]);
+
+  const cutZones = useMemo(() => {
+    let rawIntervals: { start: number; end: number; isSegmentStart: boolean; isSegmentEnd: boolean }[] = [];
+    
+    editableSegments.forEach((seg) => {
+      if (!seg.words || seg.words.length === 0) return;
+      
+      const realWords = seg.words.filter((w: any) => !w.isGap);
+      const isFullyDeleted = realWords.length > 0 && realWords.every((w: any) => w.deleted);
+      
+      if (isFullyDeleted) {
+        rawIntervals.push({
+          start: seg.start,
+          end: seg.end,
+          isSegmentStart: true,
+          isSegmentEnd: true
+        });
+      } else {
+        seg.words.forEach((w: any) => {
+          if (w.deleted) {
+            rawIntervals.push({
+              start: w.start,
+              end: w.end,
+              isSegmentStart: false,
+              isSegmentEnd: false
+            });
+          }
+        });
+      }
+    });
+
+    rippleDeletes.forEach(zone => {
+      rawIntervals.push({
+        start: zone.start,
+        end: zone.end,
+        isSegmentStart: true,
+        isSegmentEnd: true
+      });
+    });
+
+    if (rawIntervals.length === 0) return [];
+
+    rawIntervals.sort((a, b) => a.start - b.start);
+
+    let merged: typeof rawIntervals = [];
+    let current = { ...rawIntervals[0] };
+
+    for (let i = 1; i < rawIntervals.length; i++) {
+      const next = rawIntervals[i];
+      if (next.start <= current.end + 0.05) {
+        current.end = Math.max(current.end, next.end);
+        current.isSegmentEnd = current.isSegmentEnd || next.isSegmentEnd;
+        current.isSegmentStart = current.isSegmentStart || next.isSegmentStart;
+      } else {
+        merged.push(current);
+        current = { ...next };
+      }
+    }
+    merged.push(current);
+
+    const pad = safePadding / 1000;
+    const finalZones: { start: number; end: number }[] = [];
+
+    merged.forEach((zone) => {
+      const cutStart = zone.isSegmentStart ? zone.start : zone.start + pad;
+      const cutEnd = zone.isSegmentEnd ? zone.end : zone.end - pad;
+
+      if (cutEnd - cutStart > 0.02) {
+        finalZones.push({ start: cutStart, end: cutEnd });
+      }
+    });
+
+    return finalZones;
+  }, [editableSegments, safePadding]);
 
   // Center the timeline on the playhead whenever the zoom level changes
   useEffect(() => {
@@ -820,19 +1035,6 @@ export default function WhisperXApp() {
     }
   }, [currentTime, mediaDuration, editableSegments]);
 
-  const handleTrackClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    // Prevent triggering if clicking a draggable boundary
-    if ((e.target as HTMLElement).closest('.cursor-col-resize')) return;
-    
-    if (!trackRef.current || !mediaRef.current || mediaDuration <= 0) return;
-    const rect = trackRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const newTime = Math.max(0, Math.min((clickX / rect.width) * mediaDuration, mediaDuration));
-    
-    setCurrentTime(newTime);
-    mediaRef.current.currentTime = newTime;
-  };
-
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (draggingBoundary === null || !trackRef.current || mediaDuration <= 0) return;
@@ -883,7 +1085,7 @@ export default function WhisperXApp() {
       if (draggingBoundary !== null) {
         // We only commit history once the drag ends to avoid filling history with intermediate frames
         setSegmentHistory(prev => ({
-          past: [...prev.past, editableSegments].slice(-50),
+          past: [...prev.past, { segments: editableSegments, rippleDeletes: [...rippleDeletes] }].slice(-50),
           future: []
         }));
         setDraggingBoundary(null);
@@ -901,33 +1103,7 @@ export default function WhisperXApp() {
     };
   }, [draggingBoundary, editableSegments, mediaDuration]);
 
-  // Horizontal mouse wheel scrolling for the timeline
-  useEffect(() => {
-    const handleWheel = (e: WheelEvent) => {
-      if (timelineRef.current) {
-        if (e.ctrlKey || e.metaKey) {
-          e.preventDefault();
-          // Zoom in or out based on scroll direction
-          const zoomDelta = e.deltaY < 0 ? 0.5 : -0.5;
-          setZoomLevel((prev) => Math.max(1, Math.min(10, prev + zoomDelta)));
-        } else if (e.deltaY !== 0) {
-          e.preventDefault();
-          timelineRef.current.scrollLeft += e.deltaY;
-        }
-      }
-    };
 
-    const el = timelineRef.current;
-    if (el) {
-      el.addEventListener('wheel', handleWheel, { passive: false });
-    }
-    
-    return () => {
-      if (el) {
-        el.removeEventListener('wheel', handleWheel);
-      }
-    };
-  }, [status, result, mediaDuration]);
 
   // Convert WhisperX segments to SRT format using editableSegments
   const generateSRT = () => {
@@ -950,6 +1126,7 @@ export default function WhisperXApp() {
     setResult(null);
     setEditableSegments([]);
     setSegmentHistory({ past: [], future: [] });
+    setRippleDeletes([]);
     setMediaUrl("");
   };
 
@@ -1013,11 +1190,23 @@ export default function WhisperXApp() {
           <div className="lg:col-span-4 animate-in fade-in slide-in-from-bottom-4 duration-700 h-full overflow-hidden">
             <SubtitleEditor 
               editableSegments={editableSegments}
+              selectedIndexes={selectedIndexes}
+              setSelectedIndexes={setSelectedIndexes}
+              rippleDeletes={rippleDeletes}
+              handleMergeSegments={handleMergeSegments}
+              handleLiftDelete={handleLiftDelete}
+              handleRippleDelete={handleRippleDelete}
+              silenceThreshold={silenceThreshold}
+              setSilenceThreshold={setSilenceThreshold}
+              safePadding={safePadding}
+              setSafePadding={setSafePadding}
+              handleAutoCutSilences={handleAutoCutSilences}
               currentTime={currentTime}
               handleSegmentChange={handleSegmentChange}
+              handleToggleWordDelete={handleToggleWordDelete}
+              handleToggleSegmentSilence={handleToggleSegmentSilence}
               handleDeleteSegments={handleDeleteSegments}
               handleDuplicateSegment={handleDuplicateSegment}
-              handleMergeSegments={handleMergeSegments}
               handleOffsetSegments={handleOffsetSegments}
               onSeek={(time) => {
                 if (mediaRef.current) {
@@ -1039,6 +1228,7 @@ export default function WhisperXApp() {
               setMediaDuration={setMediaDuration}
               setVideoDimensions={setVideoDimensions}
               editableSegments={editableSegments}
+              cutZones={cutZones}
               currentTime={currentTime}
               subtitleStyle={subtitleStyle}
               handleExportVideo={handleExportVideo}
@@ -1061,10 +1251,15 @@ export default function WhisperXApp() {
             timelineRef={timelineRef}
             isHoveringTimeline={isHoveringTimeline}
             trackRef={trackRef}
-            handleTrackClick={handleTrackClick}
-              editableSegments={editableSegments}
-              setDraggingBoundary={setDraggingBoundary}
-              draggingBoundary={draggingBoundary}
+            editableSegments={editableSegments}
+            selectedIndexes={selectedIndexes}
+            setSelectedIndexes={setSelectedIndexes}
+            handleLiftDelete={handleLiftDelete}
+            handleRippleDelete={handleRippleDelete}
+            rippleDeletes={rippleDeletes}
+            cutZones={cutZones}
+            setDraggingBoundary={setDraggingBoundary}
+            draggingBoundary={draggingBoundary}
               onSeek={(time) => {
                 if (mediaRef.current) {
                   mediaRef.current.currentTime = time;

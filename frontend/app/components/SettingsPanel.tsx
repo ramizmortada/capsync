@@ -482,14 +482,19 @@ export function SettingsPanel({
             <div className="flex justify-between text-sm font-medium">
               <span className="text-neutral-300 flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-primary" />
-                {status === "uploading" ? "Uploading Media..." : 
+                {status === "uploading" ? (result ? "Re-uploading Media..." : "Uploading Media...") : 
                  status === "downloading_model" ? `Downloading Model (${progress}%)` : 
                  status === "burning" ? "Burning Subtitles into Video..." :
-                 transcriptionMessage}
+                 (result ? (transcriptionMessage || "").replace("Transcribing", "Retranscribing") : transcriptionMessage)}
               </span>
-              {status !== "transcribing" && status !== "burning" && (
-                <span className="text-neutral-400 font-mono">{progress}%</span>
-              )}
+              <div className="flex items-center gap-3">
+                {status !== "transcribing" && status !== "burning" && (
+                  <span className="text-neutral-400 font-mono">{progress}%</span>
+                )}
+                {status !== "burning" && (
+                  <Button variant="ghost" size="sm" onClick={cancelTranscription} className="h-6 px-2 text-xs text-neutral-400 hover:text-white border border-neutral-700">Cancel</Button>
+                )}
+              </div>
             </div>
             {status === "transcribing" || status === "burning" ? (
               <div className="w-full h-2 bg-neutral-800 rounded-full overflow-hidden relative">
@@ -503,18 +508,6 @@ export function SettingsPanel({
         )}
 
             <div className="pt-4 flex flex-col gap-3">
-              {(status === "uploading" || status === "transcribing" || status === "downloading_model" || status === "burning") && (
-                <div className="flex items-center gap-3 w-full bg-neutral-800/50 border border-neutral-700 p-3 rounded-lg">
-                  <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
-                  <p className="text-sm font-medium text-blue-400 flex-1">
-                    {status === "burning" ? "Burning Subtitles..." : transcriptionMessage}
-                  </p>
-                  {status !== "burning" && (
-                    <Button variant="ghost" size="sm" onClick={cancelTranscription} className="text-neutral-400 hover:text-white">Cancel</Button>
-                  )}
-                </div>
-              )}
-              
               <div className="flex gap-3">
               {(status === "idle" || status === "error") && (
                 <>
