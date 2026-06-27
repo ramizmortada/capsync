@@ -5,6 +5,9 @@ import { TimelineControls } from "./timeline/TimelineControls";
 import { TimeRuler } from "./timeline/TimeRuler";
 import { TimelineBoundaries } from "./timeline/TimelineBoundaries";
 import { TimelineContextMenu } from "./timeline/TimelineContextMenu";
+import { useAudioWaveform } from "../../hooks/useAudioWaveform";
+import { AudioWaveform } from "./timeline/AudioWaveform";
+import { Type, Film, AudioLines } from "lucide-react";
 
 interface InteractiveTimelineProps {
   isPlaying: boolean;
@@ -12,6 +15,7 @@ interface InteractiveTimelineProps {
   stopPlay: () => void;
   currentTime: number;
   mediaDuration: number;
+  file: File | null;
   zoomLevel: number;
   setZoomLevel: (zoom: number) => void;
   timelineRef: React.RefObject<HTMLDivElement | null>;
@@ -36,6 +40,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   stopPlay,
   currentTime,
   mediaDuration,
+  file,
   zoomLevel,
   setZoomLevel,
   timelineRef,
@@ -62,6 +67,8 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
     type: 'Silence' | 'Word';
   } | null>(null);
   const lastSelectedRef = useRef<number | null>(null);
+
+  const { peaks, isGenerating } = useAudioWaveform(file);
 
   const sortedRippleDeletes = [...(rippleDeletes || [])].sort((a, b) => a.start - b.start);
 
@@ -177,18 +184,34 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
         setZoomLevel={setZoomLevel}
       />
 
-      {/* Scrollable Timeline Container */}
-      <div 
-        ref={timelineRef}
-        onPointerDown={() => {
-          isHoveringTimeline.current = true;
-          clearTimeout((timelineRef as any)._timeout);
-        }}
-        onPointerUp={() => {
-          (timelineRef as any)._timeout = setTimeout(() => isHoveringTimeline.current = false, 1000);
-        }}
-        className="relative h-32 bg-background rounded-xl overflow-x-auto overflow-y-hidden select-none [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-background [&::-webkit-scrollbar-thumb]:bg-muted [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-accent transition-colors"
-      >
+      {/* Scrollable Timeline Container with Headers */}
+      <div className="flex bg-background rounded-xl overflow-hidden h-40">
+        
+        {/* Track Headers (Left Panel) */}
+        <div className="w-12 shrink-0 bg-neutral-900/50 border-r border-neutral-800 flex flex-col relative z-10 pointer-events-none">
+          <div className="absolute top-[28px] w-full flex justify-center text-neutral-500" title="Subtitles">
+            <Type className="w-4 h-4" />
+          </div>
+          <div className="absolute top-[68px] w-full flex justify-center text-neutral-500" title="Video">
+            <Film className="w-4 h-4" />
+          </div>
+          <div className="absolute top-[112px] w-full flex justify-center text-neutral-500" title="Audio">
+            <AudioLines className="w-4 h-4" />
+          </div>
+        </div>
+
+        {/* Scrollable Area */}
+        <div 
+          ref={timelineRef}
+          onPointerDown={() => {
+            isHoveringTimeline.current = true;
+            clearTimeout((timelineRef as any)._timeout);
+          }}
+          onPointerUp={() => {
+            (timelineRef as any)._timeout = setTimeout(() => isHoveringTimeline.current = false, 1000);
+          }}
+          className="relative flex-1 overflow-x-auto overflow-y-hidden select-none [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-background [&::-webkit-scrollbar-thumb]:bg-muted [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-accent transition-colors"
+        >
         {/* Scaled Inner Track */}
         <div 
           ref={trackRef}
@@ -199,12 +222,26 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           {/* Time Ticks */}
           <div className="absolute inset-0 pointer-events-none opacity-20 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGgwLjV2NDBIMHoiIGZpbGw9IiNmZmYiLz48L3N2Zz4=')] bg-repeat-x" />
 
-          {/* Track Labels */}
-          <div className="absolute left-2 top-7 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-widest pointer-events-none z-0">Subtitles</div>
-          <div className="absolute left-2 top-20 text-[9px] font-bold text-muted-foreground/50 uppercase tracking-widest pointer-events-none z-0">Video</div>
-
           {/* Video Track Continuous Background */}
-          <div className="absolute top-18 h-10 bg-emerald-900/10 w-full border-y border-emerald-900/20 pointer-events-none z-0" />
+          <div className="absolute top-[60px] h-8 bg-neutral-800/30 w-full border-y border-neutral-800/50 pointer-events-none z-0 flex items-center px-2 text-[10px] text-neutral-500 font-medium">
+            Video Strip
+          </div>
+
+          {/* Audio Track Continuous Background */}
+          <div className="absolute top-[100px] h-10 bg-emerald-900/10 w-full border-y border-emerald-900/20 pointer-events-none z-0">
+            {isGenerating ? (
+              <div className="absolute inset-0 flex items-center justify-center text-[10px] text-emerald-500/50">
+                Generating waveform...
+              </div>
+            ) : (
+              <AudioWaveform 
+                peaks={peaks}
+                mediaDuration={mediaDuration}
+                timelineDuration={timelineDuration}
+                toTimelineTime={toTimelineTime}
+              />
+            )}
+          </div>
 
           {/* Dynamic Time Ruler */}
           <TimeRuler timelineDuration={timelineDuration} zoomLevel={zoomLevel} />
@@ -245,7 +282,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                     lastSelectedRef.current = index;
                   }
                 }}
-                className={`absolute top-5 h-8 rounded text-[10px] p-1 font-medium transition-colors border ${
+                className={`absolute top-[20px] h-8 rounded text-[10px] p-1 font-medium transition-colors border ${
                   zoomLevel >= 15 
                     ? 'bg-transparent border-transparent z-10 pointer-events-none'
                     : 'overflow-hidden ' + (isSelected
@@ -308,7 +345,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                     onPointerDown={selectItem}
                     onContextMenu={handleContextMenu}
                     onDoubleClick={(e) => { e.stopPropagation(); onSeek(word.start); }}
-                    className={`pointer-events-auto absolute top-5 h-8 flex items-center justify-center transition-colors z-35 cursor-pointer rounded border border-dashed ${isDeleted ? 'bg-red-950/60 text-red-500/60 border-red-900/30 line-through' : selectedIndexes.includes(`gap:${index}:${wIdx}`) ? 'bg-emerald-500/40 border-emerald-400 z-40 text-emerald-100' : 'bg-emerald-950/20 text-emerald-400 border-emerald-900/50 hover:bg-emerald-950/75 hover:border-emerald-800'}`}
+                    className={`pointer-events-auto absolute top-[20px] h-8 flex items-center justify-center transition-colors z-35 cursor-pointer rounded border border-dashed ${isDeleted ? 'bg-red-950/60 text-red-500/60 border-red-900/30 line-through' : selectedIndexes.includes(`gap:${index}:${wIdx}`) ? 'bg-emerald-500/40 border-emerald-400 z-40 text-emerald-100' : 'bg-emerald-950/20 text-emerald-400 border-emerald-900/50 hover:bg-emerald-950/75 hover:border-emerald-800'}`}
                     style={{ left: `${left}%`, width: `${width}%` }}
                   >
                     <span className="truncate w-full text-center text-[9px] opacity-60">⏸️</span>
@@ -322,7 +359,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                   onPointerDown={selectItem}
                   onContextMenu={handleContextMenu}
                   onDoubleClick={(e) => { e.stopPropagation(); onSeek(word.start); }}
-                  className={`pointer-events-auto absolute top-5 h-8 flex items-center justify-center transition-colors z-35 cursor-pointer rounded border ${isDeleted ? 'bg-red-950/70 text-red-400 border-red-900/50 hover:bg-red-900/70 line-through' : selectedIndexes.includes(`word:${index}:${wIdx}`) ? 'bg-emerald-500/40 border-emerald-400 z-40 text-emerald-100' : 'bg-muted/40 border-border hover:border-muted-foreground/50 hover:z-40 text-muted-foreground'}`}
+                  className={`pointer-events-auto absolute top-[20px] h-8 flex items-center justify-center transition-colors z-35 cursor-pointer rounded border ${isDeleted ? 'bg-red-950/70 text-red-400 border-red-900/50 hover:bg-red-900/70 line-through' : selectedIndexes.includes(`word:${index}:${wIdx}`) ? 'bg-emerald-500/40 border-emerald-400 z-40 text-emerald-100' : 'bg-muted/40 border-border hover:border-muted-foreground/50 hover:z-40 text-muted-foreground'}`}
                   style={{ left: `${left}%`, width: `${width}%` }}
                 >
                   <span className="truncate w-full text-center text-[9px]">{word.word}</span>
@@ -342,8 +379,26 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
             return (
               <div 
-                key={`zone-${idx}`}
-                className="absolute top-18 h-10 bg-red-600/35 border-l border-r border-red-500/50 pointer-events-none z-10"
+                key={`zone-v-${idx}`}
+                className="absolute top-[60px] h-8 bg-red-600/35 border-l border-r border-red-500/50 pointer-events-none z-10"
+                style={{ left: `${left}%`, width: `${width}%` }}
+              />
+            );
+          })}
+
+          {/* Render global gap-free cut zones on the Audio track */}
+          {cutZones && cutZones.map((zone, idx) => {
+            const tlStart = toTimelineTime(zone.start);
+            const tlEnd = toTimelineTime(zone.end);
+            const left = (tlStart / timelineDuration) * 100;
+            const width = ((tlEnd - tlStart) / timelineDuration) * 100;
+            
+            if (width <= 0.01) return null;
+
+            return (
+              <div 
+                key={`zone-a-${idx}`}
+                className="absolute top-[100px] h-10 bg-red-600/35 border-l border-r border-red-500/50 pointer-events-none z-10"
                 style={{ left: `${left}%`, width: `${width}%` }}
               />
             );
@@ -375,6 +430,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           </div>
         </div>
       </div>
+    </div>
 
       {contextMenu && (
         <TimelineContextMenu

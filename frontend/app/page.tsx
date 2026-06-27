@@ -659,6 +659,7 @@ export default function WhisperXApp() {
             stopPlay={stopPlay}
             currentTime={currentTime}
             mediaDuration={mediaDuration}
+            file={file}
             zoomLevel={zoomLevel}
             setZoomLevel={setZoomLevel}
             timelineRef={timelineRef}

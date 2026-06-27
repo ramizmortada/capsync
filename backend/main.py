@@ -254,7 +254,6 @@ async def burn_subtitles(
     file: UploadFile = File(...),
     segments: str = Form(...),
     style: str = Form(...),
-    videoWidth: int = Form(...),
     videoHeight: int = Form(...),
     cuts: str = Form(None)
 ):
@@ -371,9 +370,10 @@ async def burn_subtitles(
         if parsed_cuts and kept_ranges:
             filter_complex = []
             concat_inputs = ""
+            audio_source = "0:a"
             for idx, (start, end) in enumerate(kept_ranges):
                 filter_complex.append(f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{idx}]")
-                filter_complex.append(f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{idx}]")
+                filter_complex.append(f"[{audio_source}]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{idx}]")
                 concat_inputs += f"[v{idx}][a{idx}]"
             
             n = len(kept_ranges)
@@ -381,26 +381,24 @@ async def burn_subtitles(
             filter_complex.append(f"[splicedv]ass='{ffmpeg_ass_path}':fontsdir='{ffmpeg_fonts_path}'[outv]")
             
             filter_str = "; ".join(filter_complex)
-            command = [
-                "ffmpeg", "-y", "-i", temp_video_path,
+            
+            command = ["ffmpeg", "-y", "-i", temp_video_path]
+                
+            command.extend([
                 "-filter_complex", filter_str,
                 "-map", "[outv]", "-map", "[outa]",
                 "-c:v", "libx264", "-preset", "fast", "-crf", "18",
                 "-c:a", "aac",
                 output_video_path
-            ]
+            ])
         else:
-            command = [
-                "ffmpeg",
-                "-y",
-                "-i", temp_video_path,
+            command = ["ffmpeg", "-y", "-i", temp_video_path]
+            command.extend([
                 "-vf", f"ass='{ffmpeg_ass_path}':fontsdir='{ffmpeg_fonts_path}'",
-                "-c:v", "libx264",
-                "-preset", "fast",
-                "-crf", "18",
+                "-c:v", "libx264", "-preset", "fast", "-crf", "18",
                 "-c:a", "copy",
                 output_video_path
-            ]
+            ])
         
         print(f"Running FFmpeg: {' '.join(command)}", flush=True)
         process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -417,7 +415,10 @@ async def burn_subtitles(
             try:
                 _shutil.rmtree(d, ignore_errors=True)
             except: pass
-        background_tasks.add_task(cleanup_files, temp_video_path, temp_ass_path, output_video_path)
+            
+        files_to_cleanup = [temp_video_path, temp_ass_path, output_video_path]
+            
+        background_tasks.add_task(cleanup_files, *files_to_cleanup)
         background_tasks.add_task(cleanup_fonts_dir, temp_fonts_dir)
         
         return FileResponse(
@@ -428,6 +429,73 @@ async def burn_subtitles(
         
     except Exception as e:
         print(f"BURN ERROR: {e}", flush=True)
+        return {"error": str(e)}
+
+@app.post("/api/enhance")
+async def enhance_media_audio(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...)
+):
+    try:
+        unique_id = str(uuid.uuid4())
+        ext = os.path.splitext(file.filename)[1].lower()
+        if not ext:
+            ext = ".mp4"
+            
+        temp_input_path = os.path.join(tempfile.gettempdir(), f"input_{unique_id}{ext}")
+        enhanced_wav_path = os.path.join(tempfile.gettempdir(), f"enhanced_{unique_id}.wav")
+        output_media_path = os.path.join(tempfile.gettempdir(), f"output_{unique_id}{ext}")
+        
+        with open(temp_input_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+            
+        # 1. Enhance audio using OpenVINO
+        from audio_enhance import enhance_audio as run_enhance
+        print(f"Enhancing audio for {file.filename}...", flush=True)
+        run_enhance(temp_input_path, enhanced_wav_path)
+        
+        # 2. Re-multiplex or format depending on file type
+        video_extensions = [".mp4", ".mov", ".avi", ".mkv", ".webm"]
+        is_video = ext in video_extensions
+        
+        if is_video:
+            print("Multiplexing enhanced audio back into video...", flush=True)
+            command = [
+                "ffmpeg", "-y", "-i", temp_input_path, "-i", enhanced_wav_path,
+                "-map", "0:v", "-map", "1:a",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                output_media_path
+            ]
+            process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if process.returncode != 0:
+                print(f"FFmpeg failed: {process.stderr}", flush=True)
+                raise Exception(f"FFmpeg processing failed: {process.stderr}")
+        else:
+            # If it's an audio file, just encode it to AAC or original format
+            # Using mp4 container with AAC is often safer for browsers if not wav, but let's just stick to what they uploaded if it's .mp3 etc
+            print("Encoding enhanced audio...", flush=True)
+            command = [
+                "ffmpeg", "-y", "-i", enhanced_wav_path,
+                output_media_path
+            ]
+            process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if process.returncode != 0:
+                print(f"FFmpeg failed: {process.stderr}", flush=True)
+                raise Exception(f"FFmpeg processing failed: {process.stderr}")
+
+        # Schedule cleanup
+        background_tasks.add_task(cleanup_files, temp_input_path, enhanced_wav_path, output_media_path)
+        
+        media_type = "video/mp4" if is_video else "audio/mpeg"
+        
+        return FileResponse(
+            output_media_path,
+            media_type=media_type,
+            filename=f"clean_{file.filename}"
+        )
+    except Exception as e:
+        print(f"ENHANCE ERROR: {e}", flush=True)
         return {"error": str(e)}
 
 if __name__ == "__main__":

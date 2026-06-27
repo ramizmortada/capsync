@@ -1,8 +1,10 @@
-import { Bot, Upload, FileVideo, FileAudio, CheckCircle2, CloudDownload, Loader2 } from "lucide-react";
+import React from "react";
+import { Bot, Upload, FileVideo, FileAudio, CheckCircle2, CloudDownload, Loader2, AudioLines } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
 
 interface SettingsTabProps {
   status: "idle" | "uploading" | "downloading_model" | "transcribing" | "burning" | "done" | "error";
@@ -51,7 +53,43 @@ export const SettingsTab = ({
   clearProject,
   result,
 }: SettingsTabProps) => {
-  
+  const [isEnhancing, setIsEnhancing] = React.useState(false);
+
+  const handleEnhanceAudio = async () => {
+    if (!file) return;
+    setIsEnhancing(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      
+      const response = await fetch("http://localhost:8000/api/enhance", {
+        method: "POST",
+        body: formData
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to enhance audio.");
+      }
+
+      // Check if it returned a JSON error (since FastAPI might return 200 OK with {"error": "..."})
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Unknown backend error");
+      }
+      
+      const blob = await response.blob();
+      const enhancedFile = new File([blob], `clean_${file.name}`, { type: blob.type || file.type });
+      setFile(enhancedFile);
+    } catch (err: any) {
+      console.error(err);
+      alert(`Failed to enhance audio: ${err.message}`);
+    } finally {
+      setIsEnhancing(false);
+    }
+  };
+
   const renderModelOption = (val: string, label: string) => {
     const isDownloaded = downloadedModels[val];
     return (
@@ -131,6 +169,27 @@ export const SettingsTab = ({
               <SelectItem value="3">3 words exactly</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="flex items-center justify-between mt-6 p-4 bg-emerald-950/20 border border-emerald-900/30 rounded-xl">
+          <div className="flex flex-col">
+            <Label className="text-emerald-400 font-medium text-sm flex items-center gap-2">
+              <AudioLines className="w-4 h-4" /> AI Audio Clean-up
+            </Label>
+            <span className="text-xs text-neutral-400 mt-1">Remove background noise and static before transcribing.</span>
+          </div>
+          <Button 
+            onClick={handleEnhanceAudio} 
+            disabled={!file || status === "transcribing" || status === "uploading" || status === "downloading_model" || status === "burning" || isEnhancing}
+            variant="secondary"
+            className="bg-emerald-600/20 text-emerald-300 hover:bg-emerald-600/40 hover:text-emerald-200 border border-emerald-500/20 transition-all shadow-md shrink-0 ml-4"
+          >
+            {isEnhancing ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Enhancing...
+              </span>
+            ) : "Enhance Audio"}
+          </Button>
         </div>
       </div>
 
