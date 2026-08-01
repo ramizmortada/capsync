@@ -254,6 +254,7 @@ async def burn_subtitles(
     file: UploadFile = File(...),
     segments: str = Form(...),
     style: str = Form(...),
+    videoWidth: int = Form(...),
     videoHeight: int = Form(...),
     cuts: str = Form(None)
 ):

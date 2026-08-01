@@ -70,14 +70,17 @@ export function resegmentTranscripts(rawSegments: any[], maxWordsStr: string): a
     finalSegments = JSON.parse(JSON.stringify(rawSegments));
   }
 
-  // Extend timestamps to eliminate gaps between segments
-  if (finalSegments.length > 0) {
-    for (let i = 0; i < finalSegments.length - 1; i++) {
-      if (finalSegments[i].end < finalSegments[i + 1].start) {
-        finalSegments[i].end = finalSegments[i + 1].start;
+  // Ensure segment boundaries precisely match their words
+  finalSegments = finalSegments.map((segment: any) => {
+    if (segment.words && segment.words.length > 0) {
+      const validWords = segment.words.filter((w: any) => 'start' in w && 'end' in w);
+      if (validWords.length > 0) {
+        segment.start = validWords[0].start;
+        segment.end = validWords[validWords.length - 1].end;
       }
     }
-  }
+    return segment;
+  });
 
   return finalSegments;
 }

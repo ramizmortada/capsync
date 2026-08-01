@@ -63,7 +63,7 @@ export const SettingsTab = ({
       const formData = new FormData();
       formData.append("file", file);
       
-      const response = await fetch("http://localhost:8000/api/enhance", {
+      const response = await fetch("http://127.0.0.1:8000/api/enhance", {
         method: "POST",
         body: formData
       });

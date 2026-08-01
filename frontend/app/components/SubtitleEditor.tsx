@@ -358,27 +358,6 @@ export function SubtitleEditor({
                     {editMode === 'cut' && segment.words && segment.words.length > 0 ? (
                       <div className="flex flex-wrap gap-1 py-1">
                         {segment.words.map((word: any, wordIdx: number) => {
-                          if (word.isGap) {
-                            return (
-                              <button
-                                key={wordIdx}
-                                onClick={() => handleToggleWordDelete(index, wordIdx)}
-                                onDoubleClick={(e) => {
-                                  e.stopPropagation();
-                                  onSeek(word.start);
-                                }}
-                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-all border font-semibold ${
-                                  word.deleted
-                                    ? 'line-through bg-red-950/20 text-red-500/60 border-red-900/30 hover:bg-red-950/30'
-                                    : 'bg-emerald-950/10 text-emerald-400 border-emerald-900/30 hover:bg-emerald-950/20'
-                                }`}
-                                title={word.deleted ? "Double-click to seek • Click to restore silence" : "Double-click to seek • Click to cut silence"}
-                              >
-                                ⏸️ {word.word.replace('[Pause ', '').replace(']', '')}
-                              </button>
-                            );
-                          }
-                          
                           return (
                             <button
                               key={wordIdx}

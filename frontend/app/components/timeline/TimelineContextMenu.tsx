@@ -1,10 +1,12 @@
 interface ContextMenuData {
   x: number;
   y: number;
-  segmentIdx: number;
-  wordIdx: number;
-  isDeleted: boolean;
-  type: 'Silence' | 'Word';
+  segmentIdx?: number;
+  wordIdx?: number;
+  isDeleted?: boolean;
+  type: 'Empty Space' | 'Silence' | 'Word';
+  gapStart?: number;
+  gapEnd?: number;
 }
 
 interface TimelineContextMenuProps {
@@ -12,6 +14,7 @@ interface TimelineContextMenuProps {
   setContextMenu: (val: ContextMenuData | null) => void;
   handleToggleWordDelete: (segmentIndex: number, wordIndex: number) => void;
   handleRippleDelete: (indices: (number|string)[]) => void;
+  handleRippleDeleteRange?: (start: number, end: number) => void;
 }
 
 export const TimelineContextMenu = ({
@@ -19,6 +22,7 @@ export const TimelineContextMenu = ({
   setContextMenu,
   handleToggleWordDelete,
   handleRippleDelete,
+  handleRippleDeleteRange,
 }: TimelineContextMenuProps) => {
   return (
     <div 
@@ -29,21 +33,29 @@ export const TimelineContextMenu = ({
       <div className="px-3 py-1.5 text-[10px] font-bold text-neutral-500 uppercase tracking-wider border-b border-neutral-800 mb-1">
         {contextMenu.type} Actions
       </div>
+      
+      {contextMenu.type !== 'Empty Space' && contextMenu.segmentIdx !== undefined && contextMenu.wordIdx !== undefined && (
+        <button 
+          onClick={() => {
+            handleToggleWordDelete(contextMenu.segmentIdx!, contextMenu.wordIdx!);
+            setContextMenu(null);
+          }}
+          className="w-full px-3 py-2 text-left hover:bg-neutral-800 transition-colors flex items-center gap-2 text-red-400 hover:text-red-300 font-semibold"
+        >
+          ❌ {contextMenu.isDeleted ? "Restore" : "Delete (Lift)"}
+        </button>
+      )}
+      
       <button 
         onClick={() => {
-          handleToggleWordDelete(contextMenu.segmentIdx, contextMenu.wordIdx);
-          setContextMenu(null);
-        }}
-        className="w-full px-3 py-2 text-left hover:bg-neutral-800 transition-colors flex items-center gap-2 text-red-400 hover:text-red-300 font-semibold"
-      >
-        ❌ {contextMenu.isDeleted ? "Restore" : "Delete (Lift)"}
-      </button>
-      <button 
-        onClick={() => {
-          const key = contextMenu.type === 'Silence' 
-            ? `gap:${contextMenu.segmentIdx}:${contextMenu.wordIdx}` 
-            : `word:${contextMenu.segmentIdx}:${contextMenu.wordIdx}`;
-          handleRippleDelete([key]);
+          if (contextMenu.type === 'Empty Space' && handleRippleDeleteRange && contextMenu.gapStart !== undefined && contextMenu.gapEnd !== undefined) {
+            handleRippleDeleteRange(contextMenu.gapStart, contextMenu.gapEnd);
+          } else if (contextMenu.segmentIdx !== undefined && contextMenu.wordIdx !== undefined) {
+            const key = contextMenu.type === 'Silence' 
+              ? `gap:${contextMenu.segmentIdx}:${contextMenu.wordIdx}` 
+              : `word:${contextMenu.segmentIdx}:${contextMenu.wordIdx}`;
+            handleRippleDelete([key]);
+          }
           setContextMenu(null);
         }}
         className="w-full px-3 py-2 text-left hover:bg-neutral-800 transition-colors flex items-center gap-2 text-emerald-400 hover:text-emerald-300 font-semibold"

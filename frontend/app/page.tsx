@@ -7,7 +7,7 @@ import { SubtitleEditor } from "./components/SubtitleEditor";
 import { LivePreview } from "./components/LivePreview";
 import { InteractiveTimeline } from "./components/InteractiveTimeline";
 
-import { formatSrtTime, injectPauseChips } from "@/lib/utils";
+import { formatSrtTime } from "@/lib/utils";
 import { SubtitleStyle, StylePreset, DragTarget, DEFAULT_PRESETS } from "./types";
 import { usePresets } from "../hooks/usePresets";
 import { useTranscription } from "../hooks/useTranscription";
@@ -104,6 +104,7 @@ export default function WhisperXApp() {
     handleDeleteSegments,
     handleLiftDelete,
     handleRippleDelete,
+    handleRippleDeleteRange,
     handleDuplicateSegment,
     handleOffsetSegments,
     handleResegment,
@@ -132,7 +133,7 @@ export default function WhisperXApp() {
   // Fetch downloaded models status
   const checkModelsStatus = async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/models/status");
+      const res = await fetch("http://127.0.0.1:8000/api/models/status");
       if (res.ok) {
         const data = await res.json();
         setDownloadedModels(data);
@@ -264,7 +265,7 @@ export default function WhisperXApp() {
           if (savedProject.file) setFile(savedProject.file);
           if (savedProject.status) setStatus(savedProject.status);
           if (savedProject.result) setResult(savedProject.result);
-          if (savedProject.editableSegments) setEditableSegments(injectPauseChips(savedProject.editableSegments));
+          if (savedProject.editableSegments) setEditableSegments(savedProject.editableSegments);
         }
       } catch (err) {
         console.error("Failed to load project from IDB", err);
@@ -670,6 +671,7 @@ export default function WhisperXApp() {
             setSelectedIndexes={setSelectedIndexes}
             handleLiftDelete={handleLiftDelete}
             handleRippleDelete={handleRippleDelete}
+            handleRippleDeleteRange={handleRippleDeleteRange}
             rippleDeletes={rippleDeletes}
             cutZones={cutZones}
             setDraggingBoundary={setDraggingBoundary}

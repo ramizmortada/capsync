@@ -102,6 +102,20 @@ def generate_ass(segments, style, video_width, video_height):
     max_width_pct = float(style.get("maxWidth", 90))
     margin_l = margin_r = int(video_width * ((100 - max_width_pct) / 2) / 100)
 
+    if h_align == "left":
+        pos_x = margin_l
+    elif h_align == "right":
+        pos_x = video_width - margin_r
+    else:
+        pos_x = video_width / 2.0
+
+    if v_align == "top":
+        pos_y = margin_v
+    elif v_align == "middle":
+        pos_y = video_height / 2.0
+    else:
+        pos_y = video_height - margin_v
+
     animation_style = style.get("animationStyle", "color")
     animation_in = style.get("animationIn", "none")
     animation_out = style.get("animationOut", "none")
@@ -142,13 +156,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             for i in range(1, steps + 1):
                 dx = (float(style.get("shadowOffsetX", 0)) / steps) * i
                 dy = (float(style.get("shadowOffsetY", 8)) / steps) * i
-                shadow_tags = f"{{\\1c&H{shadow_bgr}&\\3c&H{shadow_bgr}&\\xshad{dx:.1f}\\yshad{dy:.1f}}}"
+                shadow_tags = f"{{\\1c&H{shadow_bgr}&\\3c&H{shadow_bgr}&\\xshad{dx:.1f}\\yshad{dy:.1f}\\pos({pos_x:g},{pos_y:g})}}"
                 events.append(f"Dialogue: 0,{start},{end},Default,,0,0,0,,{shadow_tags}{text}")
                 
         # Main text layer
         actual_layer = layer if not shadow_3d_enabled else max(layer, 1)
-        events.append(f"Dialogue: {actual_layer},{start},{end},Default,,0,0,0,,{text}")
+        pos_str = f"{{\\pos({pos_x:g},{pos_y:g})}}"
+        events.append(f"Dialogue: {actual_layer},{start},{end},Default,,0,0,0,,{pos_str}{text}")
     
+    # Pre-process segments and words to prevent any timestamp overlap
+    for i in range(len(segments) - 1):
+        if segments[i].get("end", 0) >= segments[i+1].get("start", 0):
+            segments[i]["end"] = max(segments[i].get("start", 0), segments[i+1].get("start", 0) - 0.01)
+            
+    for segment in segments:
+        words = segment.get("words", [])
+        for i in range(len(words) - 1):
+            if words[i].get("end", 0) >= words[i+1].get("start", 0):
+                words[i]["end"] = max(words[i].get("start", 0), words[i+1].get("start", 0) - 0.01)
+
     for segment in segments:
         words = segment.get("words", [])
         seg_start = segment.get("start", 0)

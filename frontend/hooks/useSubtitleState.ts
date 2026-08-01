@@ -53,7 +53,46 @@ export function useSubtitleState({
   const handleSegmentChange = (index: number, newText: string) => {
     updateSegments((prev) => {
       const newSegments = [...prev];
-      newSegments[index] = { ...newSegments[index], text: newText };
+      const segment = { ...newSegments[index], text: newText };
+      
+      if (segment.words) {
+        const newWordsList = newText.trim().split(/\s+/).filter(Boolean);
+        const updatedWords = [...segment.words];
+        
+        let newIdx = 0;
+        for (let i = 0; i < updatedWords.length; i++) {
+          if (!updatedWords[i].isGap) {
+            if (newIdx < newWordsList.length) {
+              updatedWords[i] = { ...updatedWords[i], word: newWordsList[newIdx] };
+              newIdx++;
+            } else {
+              updatedWords[i] = { ...updatedWords[i], word: "" };
+            }
+          }
+        }
+        
+        if (newIdx < newWordsList.length) {
+          const lastValidWord = updatedWords.slice().reverse().find((w) => !w.isGap);
+          const start = lastValidWord ? lastValidWord.end : segment.start;
+          const end = segment.end;
+          
+          while (newIdx < newWordsList.length) {
+            updatedWords.push({
+              word: newWordsList[newIdx],
+              start: start,
+              end: end,
+              score: 1.0,
+              isGap: false,
+              deleted: false
+            });
+            newIdx++;
+          }
+        }
+        
+        segment.words = updatedWords.filter((w: any) => w.isGap || w.word !== "");
+      }
+      
+      newSegments[index] = segment;
       return newSegments;
     });
   };
@@ -95,16 +134,25 @@ export function useSubtitleState({
 
   const handleAutoCutSilences = () => {
     updateSegments((prev) => {
-      return prev.map((seg) => {
-        if (!seg.words) return seg;
-        const updatedWords = seg.words.map((word: any) => {
-          if (word.isGap && word.end - word.start >= silenceThreshold) {
-            return { ...word, deleted: true };
-          }
-          return word;
-        });
-        return { ...seg, words: updatedWords };
-      });
+      const deletes: { start: number; end: number }[] = [];
+      
+      // Check space before the first segment
+      if (prev.length > 0 && prev[0].start >= silenceThreshold) {
+        deletes.push({ start: 0, end: prev[0].start });
+      }
+
+      // Check spaces between segments
+      for (let i = 0; i < prev.length - 1; i++) {
+        const gap = prev[i + 1].start - prev[i].end;
+        if (gap >= silenceThreshold) {
+          deletes.push({ start: prev[i].end, end: prev[i + 1].start });
+        }
+      }
+
+      if (deletes.length > 0) {
+        setRippleDeletes((prevDeletes) => [...prevDeletes, ...deletes]);
+      }
+      return prev;
     });
   };
 
@@ -194,6 +242,10 @@ export function useSubtitleState({
     }
   };
 
+  const handleRippleDeleteRange = (start: number, end: number) => {
+    setRippleDeletes((prev) => [...prev, { start, end }]);
+  };
+
   const handleDuplicateSegment = (index: number) => {
     updateSegments((prev) => {
       const newSegments = [...prev];
@@ -268,6 +320,7 @@ export function useSubtitleState({
     handleDeleteSegments,
     handleLiftDelete,
     handleRippleDelete,
+    handleRippleDeleteRange,
     handleDuplicateSegment,
     handleOffsetSegments,
   };

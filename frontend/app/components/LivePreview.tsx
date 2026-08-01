@@ -54,7 +54,7 @@ export function LivePreview({
           }
         }
 
-        if (skipTo !== -1) {
+        if (skipTo !== -1 && !mediaRef.current.paused) {
           mediaRef.current.currentTime = skipTo;
           setLocalTime(skipTo);
           setCurrentTime(skipTo);

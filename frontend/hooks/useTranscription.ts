@@ -1,5 +1,4 @@
 import { useState, useRef } from "react";
-import { injectPauseChips } from "@/lib/utils";
 
 export function useTranscription({
   file,
@@ -70,7 +69,7 @@ export function useTranscription({
         setProgress(40);
       }
 
-      const response = await fetch("http://localhost:8000/api/transcribe", {
+      const response = await fetch("http://127.0.0.1:8000/api/transcribe", {
         method: "POST",
         body: formData,
         signal: abortControllerRef.current.signal,
@@ -89,7 +88,7 @@ export function useTranscription({
       setResult(data);
       setSegmentHistory({ past: [], future: [] });
       setRippleDeletes([]);
-      setEditableSegments(injectPauseChips(data.segments));
+      setEditableSegments(data.segments);
       
       setProgress(100);
       setStatus("done");
@@ -130,7 +129,7 @@ export function useTranscription({
     formData.append("cuts", JSON.stringify(cutZones));
 
     try {
-      const response = await fetch("http://localhost:8000/api/burn", {
+      const response = await fetch("http://127.0.0.1:8000/api/burn", {
         method: "POST",
         body: formData,
       });

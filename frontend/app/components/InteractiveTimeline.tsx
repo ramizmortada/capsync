@@ -5,9 +5,7 @@ import { TimelineControls } from "./timeline/TimelineControls";
 import { TimeRuler } from "./timeline/TimeRuler";
 import { TimelineBoundaries } from "./timeline/TimelineBoundaries";
 import { TimelineContextMenu } from "./timeline/TimelineContextMenu";
-import { useAudioWaveform } from "../../hooks/useAudioWaveform";
-import { AudioWaveform } from "./timeline/AudioWaveform";
-import { Type, Film, AudioLines } from "lucide-react";
+import { Type } from "lucide-react";
 
 interface InteractiveTimelineProps {
   isPlaying: boolean;
@@ -28,6 +26,7 @@ interface InteractiveTimelineProps {
   setSelectedIndexes: React.Dispatch<React.SetStateAction<(number|string)[]>>;
   handleLiftDelete: (indices: (number|string)[]) => void;
   handleRippleDelete: (indices: (number|string)[]) => void;
+  handleRippleDeleteRange: (start: number, end: number) => void;
   setDraggingBoundary: (val: DragTarget | null) => void;
   draggingBoundary: DragTarget | null;
   onSeek: (time: number) => void;
@@ -52,6 +51,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   selectedIndexes,
   setSelectedIndexes,
   handleRippleDelete,
+  handleRippleDeleteRange,
   setDraggingBoundary,
   draggingBoundary,
   onSeek,
@@ -64,11 +64,13 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
     segmentIdx: number;
     wordIdx: number;
     isDeleted: boolean;
-    type: 'Silence' | 'Word';
+    type: 'Empty Space' | 'Silence' | 'Word';
+    gapStart?: number;
+    gapEnd?: number;
   } | null>(null);
   const lastSelectedRef = useRef<number | null>(null);
 
-  const { peaks, isGenerating } = useAudioWaveform(file);
+
 
   const sortedRippleDeletes = [...(rippleDeletes || [])].sort((a, b) => a.start - b.start);
 
@@ -131,6 +133,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   }, [isDraggingPlayhead, timelineDuration, mediaDuration, trackRef, onSeek, sortedRippleDeletes]);
 
   const handleTrackClick = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
     if (e.shiftKey || e.ctrlKey || e.metaKey) return;
     
     setSelectedIndexes([]);
@@ -145,6 +148,53 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
     const targetTimelineTime = percentage * timelineDuration;
     onSeek(toMediaTime(targetTimelineTime));
   };
+
+  const handleTrackContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (!trackRef.current || timelineDuration <= 0) return;
+    
+    // Ignore clicks on items that already have pointer events or own handlers
+    if ((e.target as HTMLElement).closest('.pointer-events-auto') || (e.target as HTMLElement).closest('.group')) return;
+
+    const rect = trackRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const percentage = clickX / rect.width;
+    const targetTimelineTime = percentage * timelineDuration;
+    const mediaTime = toMediaTime(targetTimelineTime);
+
+    // Find boundaries of this empty space
+    let prevSeg = null;
+    let nextSeg = null;
+    let isInsideSegment = false;
+    
+    for (const seg of editableSegments) {
+      if (mediaTime >= seg.start && mediaTime <= seg.end) {
+        isInsideSegment = true;
+        break;
+      }
+      if (seg.end <= mediaTime) prevSeg = seg;
+      if (seg.start >= mediaTime && !nextSeg) nextSeg = seg;
+    }
+
+    if (isInsideSegment) return;
+
+    const gapStart = prevSeg ? prevSeg.end : 0;
+    const gapEnd = nextSeg ? nextSeg.start : mediaDuration;
+
+    if (gapEnd - gapStart > 0.01) {
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        type: 'Empty Space',
+        segmentIdx: -1,
+        wordIdx: -1,
+        isDeleted: false,
+        gapStart,
+        gapEnd,
+      });
+    }
+  };
+
 
   useEffect(() => {
     const el = timelineRef.current;
@@ -185,18 +235,12 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       />
 
       {/* Scrollable Timeline Container with Headers */}
-      <div className="flex bg-background rounded-xl overflow-hidden h-40">
+      <div className="flex bg-background rounded-xl overflow-hidden h-[72px]">
         
         {/* Track Headers (Left Panel) */}
         <div className="w-12 shrink-0 bg-neutral-900/50 border-r border-neutral-800 flex flex-col relative z-10 pointer-events-none">
           <div className="absolute top-[28px] w-full flex justify-center text-neutral-500" title="Subtitles">
             <Type className="w-4 h-4" />
-          </div>
-          <div className="absolute top-[68px] w-full flex justify-center text-neutral-500" title="Video">
-            <Film className="w-4 h-4" />
-          </div>
-          <div className="absolute top-[112px] w-full flex justify-center text-neutral-500" title="Audio">
-            <AudioLines className="w-4 h-4" />
           </div>
         </div>
 
@@ -218,30 +262,12 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           className="relative h-full cursor-default min-w-full"
           style={{ width: `${zoomLevel * 100}%` }}
           onPointerDown={handleTrackClick}
+          onContextMenu={handleTrackContextMenu}
         >
           {/* Time Ticks */}
           <div className="absolute inset-0 pointer-events-none opacity-20 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGgwLjV2NDBIMHoiIGZpbGw9IiNmZmYiLz48L3N2Zz4=')] bg-repeat-x" />
 
-          {/* Video Track Continuous Background */}
-          <div className="absolute top-[60px] h-8 bg-neutral-800/30 w-full border-y border-neutral-800/50 pointer-events-none z-0 flex items-center px-2 text-[10px] text-neutral-500 font-medium">
-            Video Strip
-          </div>
 
-          {/* Audio Track Continuous Background */}
-          <div className="absolute top-[100px] h-10 bg-emerald-900/10 w-full border-y border-emerald-900/20 pointer-events-none z-0">
-            {isGenerating ? (
-              <div className="absolute inset-0 flex items-center justify-center text-[10px] text-emerald-500/50">
-                Generating waveform...
-              </div>
-            ) : (
-              <AudioWaveform 
-                peaks={peaks}
-                mediaDuration={mediaDuration}
-                timelineDuration={timelineDuration}
-                toTimelineTime={toTimelineTime}
-              />
-            )}
-          </div>
 
           {/* Dynamic Time Ruler */}
           <TimeRuler timelineDuration={timelineDuration} zoomLevel={zoomLevel} />
@@ -334,24 +360,9 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                   segmentIdx: index,
                   wordIdx: wIdx,
                   isDeleted: word.deleted,
-                  type: word.isGap ? 'Silence' : 'Word'
+                  type: 'Word'
                 });
               };
-
-              if (word.isGap) {
-                return (
-                  <div 
-                    key={`track-gap-${index}-${wIdx}`} 
-                    onPointerDown={selectItem}
-                    onContextMenu={handleContextMenu}
-                    onDoubleClick={(e) => { e.stopPropagation(); onSeek(word.start); }}
-                    className={`pointer-events-auto absolute top-[20px] h-8 flex items-center justify-center transition-colors z-35 cursor-pointer rounded border border-dashed ${isDeleted ? 'bg-red-950/60 text-red-500/60 border-red-900/30 line-through' : selectedIndexes.includes(`gap:${index}:${wIdx}`) ? 'bg-emerald-500/40 border-emerald-400 z-40 text-emerald-100' : 'bg-emerald-950/20 text-emerald-400 border-emerald-900/50 hover:bg-emerald-950/75 hover:border-emerald-800'}`}
-                    style={{ left: `${left}%`, width: `${width}%` }}
-                  >
-                    <span className="truncate w-full text-center text-[9px] opacity-60">⏸️</span>
-                  </div>
-                );
-              }
 
               return (
                 <div 
@@ -368,41 +379,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
             });
           })}
 
-          {/* Render global gap-free cut zones on the Video track */}
-          {cutZones && cutZones.map((zone, idx) => {
-            const tlStart = toTimelineTime(zone.start);
-            const tlEnd = toTimelineTime(zone.end);
-            const left = (tlStart / timelineDuration) * 100;
-            const width = ((tlEnd - tlStart) / timelineDuration) * 100;
-            
-            if (width <= 0.01) return null;
 
-            return (
-              <div 
-                key={`zone-v-${idx}`}
-                className="absolute top-[60px] h-8 bg-red-600/35 border-l border-r border-red-500/50 pointer-events-none z-10"
-                style={{ left: `${left}%`, width: `${width}%` }}
-              />
-            );
-          })}
-
-          {/* Render global gap-free cut zones on the Audio track */}
-          {cutZones && cutZones.map((zone, idx) => {
-            const tlStart = toTimelineTime(zone.start);
-            const tlEnd = toTimelineTime(zone.end);
-            const left = (tlStart / timelineDuration) * 100;
-            const width = ((tlEnd - tlStart) / timelineDuration) * 100;
-            
-            if (width <= 0.01) return null;
-
-            return (
-              <div 
-                key={`zone-a-${idx}`}
-                className="absolute top-[100px] h-10 bg-red-600/35 border-l border-r border-red-500/50 pointer-events-none z-10"
-                style={{ left: `${left}%`, width: `${width}%` }}
-              />
-            );
-          })}
 
           {/* Draggable Boundaries */}
           <TimelineBoundaries
@@ -438,6 +415,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           setContextMenu={setContextMenu}
           handleToggleWordDelete={handleToggleWordDelete}
           handleRippleDelete={handleRippleDelete}
+          handleRippleDeleteRange={handleRippleDeleteRange}
         />
       )}
     </Card>
