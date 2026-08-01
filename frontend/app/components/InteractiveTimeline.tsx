@@ -1,10 +1,10 @@
 import { Card } from "@/components/ui/card";
 import { memo, useState, useEffect, useRef } from "react";
-import type { DragTarget } from "../page";
+import { SubtitleStyle, DragTarget } from "../types";
 import { TimelineControls } from "./timeline/TimelineControls";
 import { TimeRuler } from "./timeline/TimeRuler";
 import { TimelineBoundaries } from "./timeline/TimelineBoundaries";
-import { TimelineContextMenu } from "./timeline/TimelineContextMenu";
+import { TimelineContextMenu, ContextMenuData } from "./timeline/TimelineContextMenu";
 import { Type } from "lucide-react";
 
 interface InteractiveTimelineProps {
@@ -58,16 +58,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   handleToggleWordDelete,
 }: InteractiveTimelineProps) {
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
-  const [contextMenu, setContextMenu] = useState<{
-    x: number;
-    y: number;
-    segmentIdx: number;
-    wordIdx: number;
-    isDeleted: boolean;
-    type: 'Empty Space' | 'Silence' | 'Word';
-    gapStart?: number;
-    gapEnd?: number;
-  } | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
   const lastSelectedRef = useRef<number | null>(null);
 
 

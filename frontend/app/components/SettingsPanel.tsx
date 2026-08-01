@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Trash2 } from "lucide-react";
+import { Trash2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -41,6 +41,7 @@ interface SettingsPanelProps {
   onDeletePreset: (presetId: string) => void;
   onApplyPreset: (presetId: string) => void;
   onUpdatePreset: (presetId: string) => void;
+  onGoToGrid?: () => void;
 }
 
 export function SettingsPanel({
@@ -73,6 +74,7 @@ export function SettingsPanel({
   onDeletePreset,
   onApplyPreset,
   onUpdatePreset,
+  onGoToGrid,
 }: SettingsPanelProps) {
   
   const [activeTab, setActiveTab] = useState("settings");
@@ -176,6 +178,18 @@ export function SettingsPanel({
               clearProject={clearProject}
               result={result}
             />
+
+            {/* Find Viral Clips Button */}
+            {status === "done" && onGoToGrid && (
+              <div className="pt-2">
+                <Button 
+                  onClick={onGoToGrid} 
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-10 shadow-lg border border-blue-500"
+                >
+                  <Sparkles className="w-4 h-4 mr-2" /> Find Viral Clips
+                </Button>
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="style" className="m-0">

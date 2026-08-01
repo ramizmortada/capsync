@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Inter, JetBrains_Mono } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@/lib/utils";
+import { NavBar } from "@/components/NavBar";
 
 const jetbrainsMonoHeading = JetBrains_Mono({subsets:['latin'],variable:'--font-heading'});
 
@@ -29,8 +30,13 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@300;400;500;600;700;800;900&family=Oswald:wght@300;400;500;600;700;800;900&family=Poppins:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
       </head>
-      <body suppressHydrationWarning>
-        <ThemeProvider>{children}</ThemeProvider>
+      <body suppressHydrationWarning className="flex flex-row min-h-screen">
+        <ThemeProvider>
+          <NavBar />
+          <main className="flex-1 flex flex-col h-screen overflow-hidden">
+            {children}
+          </main>
+        </ThemeProvider>
       </body>
     </html>
   )

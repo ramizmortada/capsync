@@ -1,4 +1,4 @@
-interface ContextMenuData {
+export interface ContextMenuData {
   x: number;
   y: number;
   segmentIdx?: number;
