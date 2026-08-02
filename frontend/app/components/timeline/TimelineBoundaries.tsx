@@ -23,6 +23,7 @@ interface TimelineBoundariesProps {
   timelineDuration: number;
   draggingBoundary: DragTarget | null;
   setDraggingBoundary: (val: DragTarget | null) => void;
+  cursorMode: 'select' | 'cut';
 }
 
 export const TimelineBoundaries = ({
@@ -32,6 +33,7 @@ export const TimelineBoundaries = ({
   timelineDuration,
   draggingBoundary,
   setDraggingBoundary,
+  cursorMode,
 }: TimelineBoundariesProps) => {
   if (zoomLevel < 3) return null;
 
@@ -41,7 +43,7 @@ export const TimelineBoundaries = ({
       {editableSegments.length > 0 && (
         <div
           onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('start'); }}
-          className="absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group"
+          className={`absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group ${cursorMode === 'cut' ? 'pointer-events-none' : ''}`}
           style={{ left: `${(toTimelineTime(editableSegments[0].start) / timelineDuration) * 100}%`, ...getCursorStyle('right') }}
         >
           <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'start' ? 'bg-emerald-400 w-1' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
@@ -65,7 +67,7 @@ export const TimelineBoundaries = ({
               elements.push(
                 <div 
                   key={`cluster-${index}-${wIdx}`} 
-                  className="absolute top-0 bottom-0 w-8 -ml-4 z-50 flex justify-center items-center group" 
+                  className={`absolute top-0 bottom-0 w-8 -ml-4 z-50 flex justify-center items-center group ${cursorMode === 'cut' ? 'pointer-events-none' : ''}`} 
                   style={{ left: `${leftPercent}%`, ...getCursorStyle('both') }}
                   onMouseDown={(e) => { 
                     e.preventDefault(); 
@@ -87,7 +89,7 @@ export const TimelineBoundaries = ({
             elements.push(
               <div 
                 key={`parent-cluster-${index}`} 
-                className="absolute top-0 bottom-0 w-8 -ml-4 z-50 flex justify-center items-center group" 
+                className={`absolute top-0 bottom-0 w-8 -ml-4 z-50 flex justify-center items-center group ${cursorMode === 'cut' ? 'pointer-events-none' : ''}`} 
                 style={{ left: `${leftPercent}%`, ...getCursorStyle('both') }}
                 onMouseDown={(e) => { 
                   e.preventDefault(); 
@@ -103,7 +105,7 @@ export const TimelineBoundaries = ({
             elements.push(
               <div 
                 key={`parent-end-${index}`} 
-                className="absolute top-0 bottom-0 w-8 -ml-4 z-50 flex justify-center items-center group" 
+                className={`absolute top-0 bottom-0 w-8 -ml-4 z-50 flex justify-center items-center group ${cursorMode === 'cut' ? 'pointer-events-none' : ''}`} 
                 style={{ left: `${leftPercent}%`, ...getCursorStyle('left') }}
                 onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('end'); }}
               >
@@ -120,7 +122,7 @@ export const TimelineBoundaries = ({
             const isDraggingThisBoth = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'both' && 'index' in draggingBoundary && draggingBoundary.index === index;
             
             elements.push(
-              <div key={`cluster-${index}`} className="absolute top-0 bottom-0 w-16 -ml-8 z-30 flex" style={{ left: `${leftPercent}%` }}>
+              <div key={`cluster-${index}`} className={`absolute top-0 bottom-0 w-16 -ml-8 z-30 flex ${cursorMode === 'cut' ? 'pointer-events-none' : ''}`} style={{ left: `${leftPercent}%` }}>
                 <div 
                   className="flex-1 group flex justify-end" 
                   style={getCursorStyle('left')}
@@ -151,7 +153,7 @@ export const TimelineBoundaries = ({
             elements.push(
               <div 
                 key={`end-${index}`} 
-                className="absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group" 
+                className={`absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group ${cursorMode === 'cut' ? 'pointer-events-none' : ''}`} 
                 style={{ left: `${leftPercent1}%`, ...getCursorStyle('left') }}
                 onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'end', index }); }}
               >
@@ -162,7 +164,7 @@ export const TimelineBoundaries = ({
             elements.push(
               <div 
                 key={`start-${index + 1}`} 
-                className="absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group" 
+                className={`absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group ${cursorMode === 'cut' ? 'pointer-events-none' : ''}`} 
                 style={{ left: `${leftPercent2}%`, ...getCursorStyle('right') }}
                 onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'start', index: index + 1 }); }}
               >
@@ -175,7 +177,7 @@ export const TimelineBoundaries = ({
           elements.push(
             <div 
               key={`end-${index}`} 
-              className="absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group" 
+              className={`absolute top-0 bottom-0 w-8 -ml-4 z-30 flex justify-center items-center group ${cursorMode === 'cut' ? 'pointer-events-none' : ''}`} 
               style={{ left: `${leftPercent}%`, ...getCursorStyle('left') }}
               onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('end'); }}
             >

@@ -186,6 +186,8 @@ export default function WhisperXApp() {
     modelSize,
     maxWords,
     language,
+    videoCanvas,
+    videoSegments,
   });
 
   // Timeline dragging hook

@@ -256,7 +256,9 @@ async def burn_subtitles(
     style: str = Form(...),
     videoWidth: int = Form(...),
     videoHeight: int = Form(...),
-    cuts: str = Form(None)
+    cuts: str = Form(None),
+    videoCanvas: str = Form(None),
+    videoSegments: str = Form(None)
 ):
     try:
         print(f"Received burn request for {file.filename} ({videoWidth}x{videoHeight})", flush=True)
@@ -264,6 +266,12 @@ async def burn_subtitles(
         parsed_segments = json.loads(segments)
         parsed_style = json.loads(style)
         parsed_cuts = json.loads(cuts) if cuts else []
+        parsed_canvas = json.loads(videoCanvas) if videoCanvas else {"type": "auto"}
+        parsed_video_segments = json.loads(videoSegments) if videoSegments else []
+        
+        canvas_w = parsed_canvas.get("width", videoWidth) if parsed_canvas.get("type") != "auto" else videoWidth
+        canvas_h = parsed_canvas.get("height", videoHeight) if parsed_canvas.get("type") != "auto" else videoHeight
+        bg_color = parsed_canvas.get("backgroundColor", "#000000").lstrip("#")
         
         # 1. Save uploaded video to temp
         unique_id = str(uuid.uuid4())
@@ -337,10 +345,14 @@ async def burn_subtitles(
                     seg["end"] = seg["words"][-1]["end"]
                 clean_segments.append(seg)
             parsed_segments = clean_segments
-            kept_ranges = []
+            
+            total_duration = get_video_duration(temp_video_path)
+            if total_duration <= 0.0:
+                total_duration = max([seg["end"] for seg in parsed_segments] + [0.0])
+            kept_ranges = [(0.0, total_duration)]
 
         # 3. Generate ASS content using cleaned/shifted segments
-        ass_content = generate_ass(parsed_segments, parsed_style, videoWidth, videoHeight)
+        ass_content = generate_ass(parsed_segments, parsed_style, canvas_w, canvas_h)
         
         # 4. Save ASS file
         temp_ass_path_fwd = temp_ass_path.replace("\\", "/")
@@ -368,38 +380,51 @@ async def burn_subtitles(
         ffmpeg_fonts_path = temp_fonts_dir.replace("\\", "/").replace(":", "\\:")
         
         # 6. Build and execute splicing command or direct burn command
-        if parsed_cuts and kept_ranges:
-            filter_complex = []
-            concat_inputs = ""
-            audio_source = "0:a"
-            for idx, (start, end) in enumerate(kept_ranges):
-                filter_complex.append(f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[v{idx}]")
-                filter_complex.append(f"[{audio_source}]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{idx}]")
-                concat_inputs += f"[v{idx}][a{idx}]"
+        def get_transform_for_time(t, segments):
+            for seg in segments:
+                if seg.get("deleted"): continue
+                if seg.get("sourceStart", 0) <= t + 0.01 and t - 0.01 <= seg.get("sourceEnd", 999999):
+                    return seg.get("transform", {"x": 0, "y": 0, "scale": 1})
+            return {"x": 0, "y": 0, "scale": 1}
+
+        filter_complex = []
+        concat_inputs = ""
+        audio_source = "0:a"
+        
+        for idx, (start, end) in enumerate(kept_ranges):
+            mid_t = (start + end) / 2
+            transform = get_transform_for_time(mid_t, parsed_video_segments)
+            scale_val = transform.get("scale", 1.0)
+            x_pct = transform.get("x", 0.0) / 100.0
+            y_pct = transform.get("y", 0.0) / 100.0
             
-            n = len(kept_ranges)
-            filter_complex.append(f"{concat_inputs}concat=n={n}:v=1:a=1[splicedv][outa]")
-            filter_complex.append(f"[splicedv]ass='{ffmpeg_ass_path}':fontsdir='{ffmpeg_fonts_path}'[outv]")
+            filter_complex.append(f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[vtrim{idx}]")
+            filter_complex.append(f"[{audio_source}]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{idx}]")
             
-            filter_str = "; ".join(filter_complex)
+            filter_complex.append(f"[vtrim{idx}]scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=decrease,scale=iw*{scale_val}:ih*{scale_val}[vscale{idx}]")
             
-            command = ["ffmpeg", "-y", "-i", temp_video_path]
-                
-            command.extend([
-                "-filter_complex", filter_str,
-                "-map", "[outv]", "-map", "[outa]",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-                "-c:a", "aac",
-                output_video_path
-            ])
-        else:
-            command = ["ffmpeg", "-y", "-i", temp_video_path]
-            command.extend([
-                "-vf", f"ass='{ffmpeg_ass_path}':fontsdir='{ffmpeg_fonts_path}'",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "18",
-                "-c:a", "copy",
-                output_video_path
-            ])
+            filter_complex.append(f"color=c=0x{bg_color}:s={canvas_w}x{canvas_h}:d={(end-start):.3f}[bg{idx}]")
+            
+            overlay_x = f"(main_w-overlay_w)/2+{canvas_w}*{x_pct}"
+            overlay_y = f"(main_h-overlay_h)/2+{canvas_h}*{y_pct}"
+            filter_complex.append(f"[bg{idx}][vscale{idx}]overlay=x='{overlay_x}':y='{overlay_y}':eval=init[v{idx}]")
+            
+            concat_inputs += f"[v{idx}][a{idx}]"
+            
+        n = len(kept_ranges)
+        filter_complex.append(f"{concat_inputs}concat=n={n}:v=1:a=1[splicedv][outa]")
+        filter_complex.append(f"[splicedv]ass='{ffmpeg_ass_path}':fontsdir='{ffmpeg_fonts_path}'[outv]")
+        
+        filter_str = "; ".join(filter_complex)
+        
+        command = ["ffmpeg", "-y", "-i", temp_video_path]
+        command.extend([
+            "-filter_complex", filter_str,
+            "-map", "[outv]", "-map", "[outa]",
+            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-c:a", "aac",
+            output_video_path
+        ])
         
         print(f"Running FFmpeg: {' '.join(command)}", flush=True)
         process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)

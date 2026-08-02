@@ -272,11 +272,13 @@ export function LivePreview({
             }}
           >
             <div 
-              className={`absolute left-0 right-0 px-8 flex ${
+              className={`absolute left-0 right-0 flex ${
                 subtitleStyle.alignment === 'left' ? 'justify-start' : 
                 subtitleStyle.alignment === 'right' ? 'justify-end' : 'justify-center'
               }`}
               style={{
+                paddingLeft: `${(100 - (subtitleStyle.maxWidth ?? 90)) / 2}%`,
+                paddingRight: `${(100 - (subtitleStyle.maxWidth ?? 90)) / 2}%`,
                 top: subtitleStyle.alignmentVertical === 'top' 
                   ? `${subtitleStyle.positionY ?? 10}%` 
                   : subtitleStyle.alignmentVertical === 'middle'
@@ -389,7 +391,6 @@ export function LivePreview({
                   padding: subtitleStyle.backgroundEnabled ? `${pxPadY}px ${pxPadX}px` : '0',
                   borderRadius: subtitleStyle.backgroundEnabled ? `${pxRadius}px` : '0',
                   display: 'inline-block',
-                  maxWidth: `${subtitleStyle.maxWidth ?? 90}%`,
                   opacity: segmentOpacity,
                   transform: `scale(${segmentScale})`,
                 };

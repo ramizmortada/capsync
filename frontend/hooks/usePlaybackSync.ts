@@ -78,13 +78,28 @@ export function usePlaybackSync({
       }
       
       if (isPlayingRef.current) {
+        if (mediaRef.current.seeking) {
+          // Wait for the browser to finish the async seek operation
+          animationFrameId = requestAnimationFrame(smoothSync);
+          return;
+        }
+
         let newTime = mediaRef.current.currentTime;
         
         // Skip over cut zones instantly
         const activeSkipZone = playbackSkipZonesRef.current.find(z => newTime >= z.start && newTime < z.end);
         if (activeSkipZone) {
-          newTime = activeSkipZone.end;
+          // Add a tiny 10ms epsilon to guarantee we land AFTER the zone boundary,
+          // preventing floating point inaccuracies from re-triggering the cut zone.
+          newTime = activeSkipZone.end + 0.01;
           mediaRef.current.currentTime = newTime;
+          
+          // Sync UI immediately
+          masterTimeRef.current = newTime;
+          setMasterTime(newTime);
+          
+          animationFrameId = requestAnimationFrame(smoothSync);
+          return;
         }
 
         // Check if we reached the end of the playable media

@@ -303,19 +303,22 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
         e.preventDefault();
         const zoomDelta = e.deltaY < 0 ? 0.5 : -0.5;
         
-        // Anchor zoom to the current center of the view
-        const currentCenter = el.scrollLeft + el.clientWidth / 2;
+        // Anchor zoom to the exact cursor position
+        const rect = el.getBoundingClientRect();
+        const cursorX = e.clientX - rect.left;
+        
+        const anchorOffset = el.scrollLeft + cursorX;
         const currentTrackWidth = trackRef.current ? trackRef.current.scrollWidth : 1;
-        const centerPercentage = currentCenter / currentTrackWidth;
+        const anchorPercentage = anchorOffset / currentTrackWidth;
         
         const newZoom = Math.max(1, Math.min(50, zoomLevel + zoomDelta));
         setZoomLevel(newZoom);
         
-        // Wait for render to update track width, then re-center
+        // Wait for render to update track width, then re-center on cursor
         requestAnimationFrame(() => {
           if (trackRef.current) {
             const newTrackWidth = trackRef.current.scrollWidth;
-            el.scrollLeft = centerPercentage * newTrackWidth - el.clientWidth / 2;
+            el.scrollLeft = anchorPercentage * newTrackWidth - cursorX;
           }
         });
       } else if (e.deltaY !== 0) {
@@ -366,12 +369,12 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           onPointerUp={() => {
             (timelineRef as any)._timeout = setTimeout(() => isHoveringTimeline.current = false, 1000);
           }}
-          className="relative flex-1 overflow-x-auto overflow-y-hidden select-none [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-background [&::-webkit-scrollbar-thumb]:bg-muted [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-accent transition-colors"
+          className="relative flex-1 flex overflow-x-auto overflow-y-hidden select-none [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-background [&::-webkit-scrollbar-thumb]:bg-muted [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-accent transition-colors"
         >
         {/* Scaled Inner Track */}
         <div 
           ref={trackRef}
-          className="relative h-full cursor-default min-w-full"
+          className="relative h-full cursor-default min-w-full shrink-0"
           style={{ width: `${zoomLevel * 100}%` }}
           onPointerDown={handleTrackClick}
           onContextMenu={handleTrackContextMenu}
@@ -625,6 +628,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
             timelineDuration={timelineDuration}
             draggingBoundary={draggingBoundary}
             setDraggingBoundary={setDraggingBoundary}
+            cursorMode={cursorMode}
           />
 
           {/* Playhead */}
@@ -643,10 +647,13 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
             </div>
           </div>
         </div>
+        
+        {/* Empty space at the end of the timeline */}
+        <div className="shrink-0 w-[50vw] h-full pointer-events-none" />
       </div>
     </div>
-
-      {contextMenu && (
+    
+    {contextMenu && (
         <TimelineContextMenu
           contextMenu={contextMenu}
           setContextMenu={setContextMenu}

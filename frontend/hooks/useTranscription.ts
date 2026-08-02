@@ -19,6 +19,8 @@ export function useTranscription({
   modelSize,
   maxWords,
   language,
+  videoCanvas,
+  videoSegments,
 }: {
   file: File | null;
   status: string;
@@ -38,6 +40,8 @@ export function useTranscription({
   modelSize: string;
   maxWords: string;
   language: string;
+  videoCanvas: any;
+  videoSegments: any[];
 }) {
   const [transcriptionMessage, setTranscriptionMessage] = useState<string>("Processing media...");
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -127,6 +131,8 @@ export function useTranscription({
     formData.append("videoWidth", videoDimensions.width.toString());
     formData.append("videoHeight", videoDimensions.height.toString());
     formData.append("cuts", JSON.stringify(cutZones));
+    formData.append("videoCanvas", JSON.stringify(videoCanvas));
+    formData.append("videoSegments", JSON.stringify(videoSegments));
 
     try {
       const response = await fetch("http://127.0.0.1:8000/api/burn", {
