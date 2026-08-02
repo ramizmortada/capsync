@@ -57,7 +57,7 @@ export function usePlaybackSync({
     playbackSkipZonesRef.current = merged;
   }, [rippleDeletes, videoSegments]);
 
-  // Center timeline on playhead initially
+  // Center timeline on playhead initially or when media loads
   useEffect(() => {
     if (timelineRef.current && trackRef.current && mediaRef.current && mediaDuration > 0) {
       const trackWidth = trackRef.current.scrollWidth;
@@ -65,7 +65,7 @@ export function usePlaybackSync({
       const container = timelineRef.current;
       container.scrollLeft = playheadX - container.clientWidth / 2;
     }
-  }, [zoomLevel, mediaDuration, timelineRef, trackRef, mediaRef]);
+  }, [mediaDuration, timelineRef, trackRef, mediaRef]);
 
   // Smooth Sync Loop
   useEffect(() => {
@@ -104,7 +104,7 @@ export function usePlaybackSync({
       // Update scroll position based on mapped timeline time
       // Since toTimelineTime isn't passed down, we approximate scrolling via source percentage.
       // The timeline visual layout handles exact positioning via playheadX.
-      if (timelineRef.current && trackRef.current && !isHoveringTimeline.current && draggingBoundary === null) {
+      if (isPlayingRef.current && timelineRef.current && trackRef.current && !isHoveringTimeline.current && draggingBoundary === null) {
         const trackWidth = trackRef.current.scrollWidth;
         const timelineDur = Math.max(mediaDuration, 0.1); // Fallback approximation for scroll proportion
         const playheadX = (masterTimeRef.current / timelineDur) * trackWidth;

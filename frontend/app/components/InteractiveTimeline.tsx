@@ -302,7 +302,22 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         const zoomDelta = e.deltaY < 0 ? 0.5 : -0.5;
-        setZoomLevel(Math.max(1, Math.min(50, zoomLevel + zoomDelta)));
+        
+        // Anchor zoom to the current center of the view
+        const currentCenter = el.scrollLeft + el.clientWidth / 2;
+        const currentTrackWidth = trackRef.current ? trackRef.current.scrollWidth : 1;
+        const centerPercentage = currentCenter / currentTrackWidth;
+        
+        const newZoom = Math.max(1, Math.min(50, zoomLevel + zoomDelta));
+        setZoomLevel(newZoom);
+        
+        // Wait for render to update track width, then re-center
+        requestAnimationFrame(() => {
+          if (trackRef.current) {
+            const newTrackWidth = trackRef.current.scrollWidth;
+            el.scrollLeft = centerPercentage * newTrackWidth - el.clientWidth / 2;
+          }
+        });
       } else if (e.deltaY !== 0) {
         e.preventDefault();
         el.scrollLeft += e.deltaY;

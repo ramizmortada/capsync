@@ -491,7 +491,7 @@ export function LivePreview({
                   }
 
                   return (
-                    <span key={i} style={wordStyle}>
+                    <span key={`${activeSegment.start}-${i}`} style={wordStyle}>
                       {word.word}{' '}
                     </span>
                   );
