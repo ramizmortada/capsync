@@ -1,0 +1,146 @@
+import { useState, useEffect } from 'react';
+import { get, set, del } from 'idb-keyval';
+
+interface UseProjectPersistenceProps {
+  file: File | null;
+  setFile: (file: File | null) => void;
+  status: any;
+  setStatus: (status: any) => void;
+  result: any;
+  setResult: (result: any) => void;
+  editableSegments: any[];
+  setEditableSegments: (segments: any[]) => void;
+  rippleDeletes: any[];
+  setRippleDeletes: (deletes: any[]) => void;
+  videoSegments: any[];
+  setVideoSegments: (segments: any[]) => void;
+  videoCanvas: any;
+  setVideoCanvas: (canvas: any) => void;
+  subtitleStyle: any;
+  setSubtitleStyle: (style: any) => void;
+  setModelSize: (size: string) => void;
+  setLanguage: (lang: string) => void;
+  setMaxWords: (words: string) => void;
+  mediaRef: React.RefObject<HTMLMediaElement | null>;
+}
+
+export function useProjectPersistence({
+  file,
+  setFile,
+  status,
+  setStatus,
+  result,
+  setResult,
+  editableSegments,
+  setEditableSegments,
+  rippleDeletes,
+  setRippleDeletes,
+  videoSegments,
+  setVideoSegments,
+  videoCanvas,
+  setVideoCanvas,
+  subtitleStyle,
+  setSubtitleStyle,
+  setModelSize,
+  setLanguage,
+  setMaxWords,
+  mediaRef
+}: UseProjectPersistenceProps) {
+  const [isProjectLoaded, setIsProjectLoaded] = useState(false);
+  const [isStyleLoaded, setIsStyleLoaded] = useState(false);
+
+  // Load project from IndexedDB
+  useEffect(() => {
+    async function loadProject() {
+      try {
+        const savedProject = await get('capsync_project');
+        if (savedProject) {
+          if (savedProject.file) setFile(savedProject.file);
+          if (savedProject.status) setStatus(savedProject.status);
+          if (savedProject.result) setResult(savedProject.result);
+          if (savedProject.editableSegments) setEditableSegments(savedProject.editableSegments);
+          if (savedProject.rippleDeletes) setRippleDeletes(savedProject.rippleDeletes);
+          if (savedProject.videoSegments) setVideoSegments(savedProject.videoSegments);
+          if (savedProject.videoCanvas) setVideoCanvas(savedProject.videoCanvas);
+        }
+      } catch (err) {
+        console.error("Failed to load project from IDB", err);
+      } finally {
+        setIsProjectLoaded(true);
+      }
+    }
+    loadProject();
+  }, [setFile, setStatus, setResult, setEditableSegments, setRippleDeletes, setVideoSegments, setVideoCanvas]);
+
+  // Load subtitle style from localStorage
+  useEffect(() => {
+    const savedStyle = localStorage.getItem("capsync_subtitle_style");
+    if (savedStyle) {
+      try {
+        const parsed = JSON.parse(savedStyle);
+        setSubtitleStyle((prev: any) => ({ ...prev, ...parsed }));
+      } catch (err) {
+        console.error("Failed to load subtitle style from localStorage", err);
+      }
+    }
+    setIsStyleLoaded(true);
+  }, [setSubtitleStyle]);
+
+  // Load from capsync_pending_clip
+  useEffect(() => {
+    const pendingClip = localStorage.getItem('capsync_pending_clip');
+    if (pendingClip) {
+      try {
+        const { rippleDeletes: pendingRippleDeletes, seekTime } = JSON.parse(pendingClip);
+        setRippleDeletes(pendingRippleDeletes);
+        
+        // Seek to the clip start
+        if (mediaRef.current && seekTime !== undefined) {
+           setTimeout(() => {
+             if (mediaRef.current) mediaRef.current.currentTime = seekTime;
+           }, 500);
+        }
+      } catch (e) {
+        console.error('Failed to load pending clip', e);
+      }
+      localStorage.removeItem('capsync_pending_clip');
+    }
+  }, [setRippleDeletes, mediaRef]);
+
+  // Save project to IndexedDB
+  useEffect(() => {
+    if (isProjectLoaded) {
+      if (file === null && status === 'idle') {
+        del('capsync_project').catch(console.error);
+      } else {
+        set('capsync_project', { 
+          file, 
+          status, 
+          result, 
+          editableSegments, 
+          rippleDeletes, 
+          videoSegments, 
+          videoCanvas 
+        }).catch(console.error);
+      }
+    }
+  }, [isProjectLoaded, file, status, result, editableSegments, rippleDeletes, videoSegments, videoCanvas]);
+
+  // Save subtitle style to localStorage
+  useEffect(() => {
+    if (isStyleLoaded) {
+      localStorage.setItem("capsync_subtitle_style", JSON.stringify(subtitleStyle));
+    }
+  }, [isStyleLoaded, subtitleStyle]);
+
+  // Load settings from local storage
+  useEffect(() => {
+    const savedModel = localStorage.getItem("whisperx_model");
+    const savedLang = localStorage.getItem("whisperx_lang");
+    const savedWords = localStorage.getItem("whisperx_words");
+    
+    if (savedModel) setModelSize(savedModel);
+    if (savedLang !== null) setLanguage(savedLang);
+    if (savedWords) setMaxWords(savedWords);
+  }, [setModelSize, setLanguage, setMaxWords]);
+}

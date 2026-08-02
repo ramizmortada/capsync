@@ -1,5 +1,5 @@
 import { Card } from "@/components/ui/card";
-import { memo, useState, useEffect, useRef } from "react";
+import { memo, useState, useEffect, useRef, useMemo } from "react";
 import { SubtitleStyle, DragTarget } from "../types";
 import { TimelineControls } from "./timeline/TimelineControls";
 import { TimeRuler } from "./timeline/TimeRuler";
@@ -30,7 +30,7 @@ interface InteractiveTimelineProps {
   handleRippleDeleteRange: (start: number, end: number) => void;
   setDraggingBoundary: (val: DragTarget | null) => void;
   draggingBoundary: DragTarget | null;
-  onSeek: (time: number) => void;
+  onSeek: (mediaTime: number, timelineTime: number) => void;
   handleToggleWordDelete: (segmentIndex: number, wordIndex: number) => void;
   videoSegments: VideoSegment[];
   setVideoSegments: React.Dispatch<React.SetStateAction<VideoSegment[]>>;
@@ -38,8 +38,8 @@ interface InteractiveTimelineProps {
   setSelectedVideoIndexes: React.Dispatch<React.SetStateAction<string[]>>;
   cursorMode: 'select' | 'cut';
   handleVideoCut: (time: number) => void;
-  updateVideoSegments: (newVideoSegments: VideoSegment[] | ((prev: VideoSegment[]) => VideoSegment[])) => void;
   setEditableSegments: React.Dispatch<React.SetStateAction<any[]>>;
+  setSegmentHistory: React.Dispatch<React.SetStateAction<{ past: any[], future: any[] }>>;
 }
 
 export const InteractiveTimeline = memo(function InteractiveTimeline({
@@ -71,17 +71,33 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   setSelectedVideoIndexes,
   cursorMode,
   handleVideoCut,
-  updateVideoSegments,
   setEditableSegments,
+  setSegmentHistory,
 }: InteractiveTimelineProps) {
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
+  const [hoverX, setHoverX] = useState<number | null>(null);
   const [draggingVideoBoundary, setDraggingVideoBoundary] = useState<{ id: string; type: 'start' | 'end' | 'body', offsetStart?: number, initialTimelineStart?: number, initialTimelineEnd?: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
   const lastSelectedRef = useRef<number | null>(null);
 
 
 
-  const sortedRippleDeletes = [...(rippleDeletes || [])].sort((a, b) => a.start - b.start);
+  const mergedRippleDeletes = useMemo(() => {
+    if (!rippleDeletes || rippleDeletes.length === 0) return [];
+    const sorted = [...rippleDeletes].sort((a, b) => a.start - b.start);
+    const merged = [{ ...sorted[0] }];
+    for (let i = 1; i < sorted.length; i++) {
+      const last = merged[merged.length - 1];
+      const current = sorted[i];
+      // Merge if overlapping or adjacent (within a small tolerance)
+      if (current.start <= last.end + 0.001) {
+        last.end = Math.max(last.end, current.end);
+      } else {
+        merged.push({ ...current });
+      }
+    }
+    return merged;
+  }, [rippleDeletes]);
 
   useEffect(() => {
     const handleWindowClick = () => {
@@ -95,7 +111,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
   const toTimelineTime = (mediaTime: number) => {
     let timelineTime = mediaTime;
-    for (const zone of sortedRippleDeletes) {
+    for (const zone of mergedRippleDeletes) {
       if (mediaTime >= zone.end) {
         timelineTime -= (zone.end - zone.start);
       } else if (mediaTime > zone.start) {
@@ -107,7 +123,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
   const toMediaTime = (timelineTime: number) => {
     let mediaTime = timelineTime;
-    for (const zone of sortedRippleDeletes) {
+    for (const zone of mergedRippleDeletes) {
       if (mediaTime >= zone.start) {
         mediaTime += (zone.end - zone.start);
       }
@@ -126,7 +142,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       clickX = Math.max(0, Math.min(clickX, trackRect.width));
       const percentage = clickX / trackRect.width;
       const targetTimelineTime = percentage * timelineDuration;
-      onSeek(toMediaTime(targetTimelineTime));
+      onSeek(toMediaTime(targetTimelineTime), targetTimelineTime);
     };
 
     const handleUp = () => {
@@ -139,7 +155,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [isDraggingPlayhead, timelineDuration, mediaDuration, trackRef, onSeek, sortedRippleDeletes]);
+  }, [isDraggingPlayhead, timelineDuration, mediaDuration, trackRef, onSeek, mergedRippleDeletes]);
 
   // Video Dragging logic
   useEffect(() => {
@@ -200,8 +216,6 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
     const handleUp = () => {
       setDraggingVideoBoundary(null);
-      // Trigger a dummy update to push the final dragged state to the undo history stack
-      updateVideoSegments(prev => [...prev]);
     };
 
     window.addEventListener('pointermove', handleMove);
@@ -210,7 +224,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
     };
-  }, [draggingVideoBoundary, timelineDuration, mediaDuration, trackRef, sortedRippleDeletes, setVideoSegments, updateVideoSegments]);
+  }, [draggingVideoBoundary, timelineDuration, mediaDuration, trackRef, mergedRippleDeletes, setVideoSegments]);
 
   const handleTrackClick = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
@@ -226,7 +240,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
     const clickX = e.clientX - rect.left;
     const percentage = clickX / rect.width;
     const targetTimelineTime = percentage * timelineDuration;
-    onSeek(toMediaTime(targetTimelineTime));
+    onSeek(toMediaTime(targetTimelineTime), targetTimelineTime);
   };
 
   const handleTrackContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -308,14 +322,14 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
         isPlaying={isPlaying}
         togglePlay={togglePlay}
         stopPlay={stopPlay}
-        currentTime={currentTime}
-        mediaDuration={mediaDuration}
+        currentTime={toTimelineTime(currentTime)}
+        mediaDuration={timelineDuration}
         zoomLevel={zoomLevel}
         setZoomLevel={setZoomLevel}
       />
 
       {/* Scrollable Timeline Container with Headers */}
-      <div className={`flex bg-background rounded-xl overflow-hidden h-[120px] ${cursorMode === 'cut' ? '[&_*]:cursor-crosshair' : ''}`}>
+      <div className={`flex bg-background rounded-xl overflow-hidden h-[120px] ${cursorMode === 'cut' ? 'cursor-none [&_*]:cursor-none' : ''}`}>
         
         {/* Track Headers (Left Panel) */}
         <div className="w-12 shrink-0 bg-neutral-900/50 border-r border-neutral-800 flex flex-col relative z-10 pointer-events-none">
@@ -346,11 +360,36 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           style={{ width: `${zoomLevel * 100}%` }}
           onPointerDown={handleTrackClick}
           onContextMenu={handleTrackContextMenu}
+          onPointerMove={(e) => {
+            if (cursorMode !== 'cut') {
+              if (hoverX !== null) setHoverX(null);
+              return;
+            }
+            if (!trackRef.current) return;
+            const rect = trackRef.current.getBoundingClientRect();
+            let x = e.clientX - rect.left;
+            if (timelineDuration > 0) {
+              const playheadX = (toTimelineTime(currentTime) / timelineDuration) * rect.width;
+              if (Math.abs(x - playheadX) < 15) {
+                x = playheadX;
+              }
+            }
+            setHoverX(x);
+          }}
+          onPointerLeave={() => {
+            if (hoverX !== null) setHoverX(null);
+          }}
         >
           {/* Time Ticks */}
           <div className="absolute inset-0 pointer-events-none opacity-20 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGgwLjV2NDBIMHoiIGZpbGw9IiNmZmYiLz48L3N2Zz4=')] bg-repeat-x" />
 
-
+          {/* Thin red line for cut mode cursor */}
+          {cursorMode === 'cut' && hoverX !== null && (
+            <div 
+              className="absolute top-0 bottom-0 w-[1px] bg-red-500 z-50 pointer-events-none"
+              style={{ left: `${hoverX}px` }}
+            />
+          )}
 
           {/* Dynamic Time Ruler */}
           <TimeRuler timelineDuration={timelineDuration} zoomLevel={zoomLevel} />
@@ -381,7 +420,13 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                   e.stopPropagation();
                   if (cursorMode === 'cut') {
                     const rect = trackRef.current!.getBoundingClientRect();
-                    const clickX = e.clientX - rect.left;
+                    let clickX = e.clientX - rect.left;
+                    if (timelineDuration > 0) {
+                      const playheadX = (toTimelineTime(currentTime) / timelineDuration) * rect.width;
+                      if (Math.abs(clickX - playheadX) < 15) {
+                        clickX = playheadX;
+                      }
+                    }
                     const percentage = clickX / rect.width;
                     const targetTimelineTime = percentage * timelineDuration;
                     handleVideoCut(toMediaTime(targetTimelineTime));
@@ -391,9 +436,16 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                     } else {
                       setSelectedVideoIndexes([segment.id]);
                     }
+                    // Clear subtitle selection when selecting video segments
+                    setSelectedIndexes([]);
+                    lastSelectedRef.current = null;
                     
                     // Enable body dragging if it's not deleted
                     if (!segment.deleted) {
+                      setSegmentHistory((prevHistory) => ({
+                        past: [...prevHistory.past, { segments: [...editableSegments], rippleDeletes: [...rippleDeletes], videoSegments: [...videoSegments] }].slice(-50),
+                        future: [],
+                      }));
                       const rect = trackRef.current!.getBoundingClientRect();
                       const clickX = e.clientX - rect.left;
                       const percentage = clickX / rect.width;
@@ -413,14 +465,22 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                       className="absolute top-0 bottom-0 left-0 w-2 cursor-w-resize z-30 hover:bg-white/20 transition-colors"
                       onPointerDown={(e) => {
                         e.stopPropagation();
-                        setDraggingVideoBoundary({ id: segment.id, type: 'start' });
+                        setSegmentHistory((prevHistory) => ({
+                          past: [...prevHistory.past, { segments: [...editableSegments], rippleDeletes: [...rippleDeletes], videoSegments: [...videoSegments] }].slice(-50),
+                          future: [],
+                        }));
+                        setDraggingVideoBoundary({ id: segment.id, type: 'start', initialTimelineStart: segment.timelineStart, initialTimelineEnd: segment.timelineEnd });
                       }}
                     />
                     <div 
                       className="absolute top-0 bottom-0 right-0 w-2 cursor-e-resize z-30 hover:bg-white/20 transition-colors"
                       onPointerDown={(e) => {
                         e.stopPropagation();
-                        setDraggingVideoBoundary({ id: segment.id, type: 'end' });
+                        setSegmentHistory((prevHistory) => ({
+                          past: [...prevHistory.past, { segments: [...editableSegments], rippleDeletes: [...rippleDeletes], videoSegments: [...videoSegments] }].slice(-50),
+                          future: [],
+                        }));
+                        setDraggingVideoBoundary({ id: segment.id, type: 'end', initialTimelineStart: segment.timelineStart, initialTimelineEnd: segment.timelineEnd });
                       }}
                     />
                   </>
@@ -447,6 +507,8 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                 onPointerDown={(e) => {
                   if (zoomLevel >= 15) return; // Parent is intangible when zoomed in
                   e.stopPropagation();
+                  // Clear video selection when selecting subtitle segments
+                  setSelectedVideoIndexes([]);
                   if (e.shiftKey) {
                     if (lastSelectedRef.current !== null) {
                       const start = Math.min(lastSelectedRef.current, index);
@@ -499,6 +561,8 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
               const selectItem = (e: React.MouseEvent | React.PointerEvent) => {
                 e.stopPropagation(); 
+                // Clear video selection when selecting subtitle words
+                setSelectedVideoIndexes([]);
                 const key = word.isGap ? `gap:${index}:${wIdx}` : `word:${index}:${wIdx}`;
                 if (e.shiftKey || e.ctrlKey || e.metaKey) {
                   setSelectedIndexes(prev => prev.includes(key) ? prev.filter(i => i !== key) : [...prev, key]);
@@ -526,7 +590,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                   key={`track-word-${index}-${wIdx}`} 
                   onPointerDown={selectItem}
                   onContextMenu={handleContextMenu}
-                  onDoubleClick={(e) => { e.stopPropagation(); onSeek(word.start); }}
+                  onDoubleClick={(e) => { e.stopPropagation(); onSeek(word.start, toTimelineTime(word.start)); }}
                   className={`pointer-events-auto absolute top-[20px] h-8 flex items-center justify-center transition-colors z-35 cursor-pointer rounded border ${isDeleted ? 'bg-red-950/70 text-red-400 border-red-900/50 hover:bg-red-900/70 line-through' : selectedIndexes.includes(`word:${index}:${wIdx}`) ? 'bg-emerald-500/40 border-emerald-400 z-40 text-emerald-100' : 'bg-muted/40 border-border hover:border-muted-foreground/50 hover:z-40 text-muted-foreground'}`}
                   style={{ left: `${left}%`, width: `${width}%` }}
                 >
@@ -550,9 +614,10 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
           {/* Playhead */}
           <div 
-            className="absolute top-0 bottom-0 w-8 -ml-4 z-20 flex justify-center cursor-grab active:cursor-grabbing group"
+            className={`absolute top-0 bottom-0 w-8 -ml-4 z-20 flex justify-center group ${cursorMode === 'cut' ? 'pointer-events-none' : 'cursor-grab active:cursor-grabbing'}`}
             style={{ left: `${(toTimelineTime(currentTime) / timelineDuration) * 100}%` }}
             onPointerDown={(e) => {
+              if (cursorMode === 'cut') return;
               e.preventDefault();
               e.stopPropagation();
               setIsDraggingPlayhead(true);

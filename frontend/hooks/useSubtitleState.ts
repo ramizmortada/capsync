@@ -9,6 +9,11 @@ export interface VideoSegment {
   timelineStart: number;
   timelineEnd: number;
   deleted: boolean;
+  transform?: {
+    x: number;
+    y: number;
+    scale: number;
+  };
 }
 
 type HistoryState = { 

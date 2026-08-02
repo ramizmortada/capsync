@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { get, set, del } from "idb-keyval";
+import { del } from "idb-keyval";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { SubtitleEditor } from "../components/SubtitleEditor";
 import { LivePreview } from "../components/LivePreview";
@@ -14,6 +14,9 @@ import { usePresets } from "../../hooks/usePresets";
 import { useTranscription } from "../../hooks/useTranscription";
 import { useSubtitleState } from "../../hooks/useSubtitleState";
 import { useTimelineDragging } from "../../hooks/useTimelineDragging";
+import { useCutZones } from "../../hooks/useCutZones";
+import { usePlaybackSync } from "../../hooks/usePlaybackSync";
+import { useProjectPersistence } from "../../hooks/useProjectPersistence";
 
 export type { SubtitleStyle, StylePreset, DragTarget };
 export { DEFAULT_PRESETS };
@@ -66,7 +69,6 @@ export default function WhisperXApp() {
   const [masterTime, setMasterTime] = useState(0);
   const masterTimeRef = useRef(0);
   const isPlayingRef = useRef(false);
-  const lastRealTimeRef = useRef(0);
   const [mediaDuration, setMediaDuration] = useState<number>(0);
   const [videoDimensions, setVideoDimensions] = useState<{width: number, height: number}>({width: 1920, height: 1080});
   const [draggingBoundary, setDraggingBoundary] = useState<DragTarget | null>(null);
@@ -80,8 +82,6 @@ export default function WhisperXApp() {
   const mediaRef = useRef<HTMLMediaElement>(null);
   const isHoveringTimeline = useRef(false);
 
-  const [isProjectLoaded, setIsProjectLoaded] = useState(false);
-  const [isStyleLoaded, setIsStyleLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
   // Subtitle management hook
@@ -122,8 +122,9 @@ export default function WhisperXApp() {
     handleVideoCut,
     handleVideoDelete,
     handleVideoRippleDelete,
-    updateVideoSegments,
   } = subtitleState;
+
+  const [videoCanvas, setVideoCanvas] = useState<any>({ type: 'auto' });
 
   // Preset management hook
   const {
@@ -158,90 +159,7 @@ export default function WhisperXApp() {
     }
   };
 
-  const cutZones = useMemo(() => {
-    let rawIntervals: { start: number; end: number; isSegmentStart: boolean; isSegmentEnd: boolean }[] = [];
-    
-    editableSegments.forEach((seg) => {
-      if (!seg.words || seg.words.length === 0) return;
-      
-      const realWords = seg.words.filter((w: any) => !w.isGap);
-      const isFullyDeleted = realWords.length > 0 && realWords.every((w: any) => w.deleted);
-      
-      if (isFullyDeleted) {
-        rawIntervals.push({
-          start: seg.start,
-          end: seg.end,
-          isSegmentStart: true,
-          isSegmentEnd: true
-        });
-      } else {
-        seg.words.forEach((w: any) => {
-          if (w.deleted) {
-            rawIntervals.push({
-              start: w.start,
-              end: w.end,
-              isSegmentStart: false,
-              isSegmentEnd: false
-            });
-          }
-        });
-      }
-    });
-
-    rippleDeletes.forEach(zone => {
-      rawIntervals.push({
-        start: zone.start,
-        end: zone.end,
-        isSegmentStart: true,
-        isSegmentEnd: true
-      });
-    });
-
-    videoSegments.forEach(seg => {
-      if (seg.deleted) {
-        rawIntervals.push({
-          start: seg.timelineStart,
-          end: seg.timelineEnd,
-          isSegmentStart: true,
-          isSegmentEnd: true
-        });
-      }
-    });
-
-    if (rawIntervals.length === 0) return [];
-
-    rawIntervals.sort((a, b) => a.start - b.start);
-
-    let merged: typeof rawIntervals = [];
-    let current = { ...rawIntervals[0] };
-
-    for (let i = 1; i < rawIntervals.length; i++) {
-      const next = rawIntervals[i];
-      if (next.start <= current.end + 0.05) {
-        current.end = Math.max(current.end, next.end);
-        current.isSegmentEnd = current.isSegmentEnd || next.isSegmentEnd;
-        current.isSegmentStart = current.isSegmentStart || next.isSegmentStart;
-      } else {
-        merged.push(current);
-        current = { ...next };
-      }
-    }
-    merged.push(current);
-
-    const pad = safePadding / 1000;
-    const finalZones: { start: number; end: number }[] = [];
-
-    merged.forEach((zone) => {
-      const cutStart = zone.isSegmentStart ? zone.start : zone.start + pad;
-      const cutEnd = zone.isSegmentEnd ? zone.end : zone.end - pad;
-
-      if (cutEnd - cutStart > 0.02) {
-        finalZones.push({ start: cutStart, end: cutEnd });
-      }
-    });
-
-    return finalZones;
-  }, [editableSegments, safePadding, rippleDeletes, videoSegments]);
+  const cutZones = useCutZones(editableSegments, rippleDeletes, videoSegments, safePadding);
 
   // Transcription hook
   const {
@@ -282,97 +200,45 @@ export default function WhisperXApp() {
     setSegmentHistory,
   });
 
-  // Load project from IndexedDB
-  useEffect(() => {
-    async function loadProject() {
-      try {
-        const savedProject = await get('capsync_project');
-        if (savedProject) {
-          if (savedProject.file) setFile(savedProject.file);
-          if (savedProject.status) setStatus(savedProject.status);
-          if (savedProject.result) setResult(savedProject.result);
-          if (savedProject.editableSegments) setEditableSegments(savedProject.editableSegments);
-        }
-      } catch (err) {
-        console.error("Failed to load project from IDB", err);
-      } finally {
-        setIsProjectLoaded(true);
-      }
-    }
-    loadProject();
-  }, [setEditableSegments]);
+  useProjectPersistence({
+    file,
+    setFile,
+    status,
+    setStatus,
+    result,
+    setResult,
+    editableSegments,
+    setEditableSegments,
+    rippleDeletes,
+    setRippleDeletes,
+    videoSegments,
+    setVideoSegments,
+    videoCanvas,
+    setVideoCanvas,
+    subtitleStyle,
+    setSubtitleStyle,
+    setModelSize,
+    setLanguage,
+    setMaxWords,
+    mediaRef,
+  });
 
-  // Load subtitle style from localStorage
-  useEffect(() => {
-    const savedStyle = localStorage.getItem("capsync_subtitle_style");
-    if (savedStyle) {
-      try {
-        const parsed = JSON.parse(savedStyle);
-        setSubtitleStyle(prev => ({ ...prev, ...parsed }));
-      } catch (err) {
-        console.error("Failed to load subtitle style from localStorage", err);
-      }
-    }
-    setIsStyleLoaded(true);
-  }, []);
-
-  // Load from capsync_pending_clip
-  useEffect(() => {
-    const pendingClip = localStorage.getItem('capsync_pending_clip');
-    if (pendingClip) {
-      try {
-        const { rippleDeletes: pendingRippleDeletes, seekTime } = JSON.parse(pendingClip);
-        setRippleDeletes(pendingRippleDeletes);
-        
-        // Seek to the clip start
-        if (mediaRef.current && seekTime !== undefined) {
-           // We might need to wait for metadata to load, so we set a timeout or use onLoadedMetadata
-           setTimeout(() => {
-             if (mediaRef.current) mediaRef.current.currentTime = seekTime;
-           }, 500);
-        }
-      } catch (e) {
-        console.error('Failed to load pending clip', e);
-      }
-      localStorage.removeItem('capsync_pending_clip');
-    }
-  }, [setRippleDeletes]);
-
-  // Save project to IndexedDB
-  useEffect(() => {
-    if (isProjectLoaded) {
-      if (file === null && status === 'idle') {
-        del('capsync_project').catch(console.error);
-      } else {
-        set('capsync_project', { file, status, result, editableSegments }).catch(console.error);
-      }
-    }
-  }, [isProjectLoaded, file, status, result, editableSegments]);
-
-  // Save subtitle style to localStorage
-  useEffect(() => {
-    if (isStyleLoaded) {
-      localStorage.setItem("capsync_subtitle_style", JSON.stringify(subtitleStyle));
-    }
-  }, [isStyleLoaded, subtitleStyle]);
-
-  // Load settings from local storage
-  useEffect(() => {
-    const savedModel = localStorage.getItem("whisperx_model");
-    const savedLang = localStorage.getItem("whisperx_lang");
-    const savedWords = localStorage.getItem("whisperx_words");
-    
-    if (savedModel) setModelSize(savedModel);
-    if (savedLang !== null) setLanguage(savedLang);
-    if (savedWords) setMaxWords(savedWords);
-  }, []);
-
-  // Save settings to local storage
-  useEffect(() => {
-    localStorage.setItem("whisperx_model", modelSize);
-    localStorage.setItem("whisperx_lang", language);
-    localStorage.setItem("whisperx_words", maxWords);
-  }, [modelSize, language, maxWords]);
+  const { getValidSeekTime } = usePlaybackSync({
+    mediaRef,
+    timelineRef,
+    trackRef,
+    mediaDuration,
+    videoSegments,
+    rippleDeletes,
+    editableSegments,
+    masterTimeRef,
+    setMasterTime,
+    masterTime,
+    isPlayingRef,
+    isHoveringTimeline,
+    draggingBoundary,
+    zoomLevel,
+  });
 
   // Generate local object URL for instant media playback
   useEffect(() => {
@@ -449,98 +315,166 @@ export default function WhisperXApp() {
   };
 
   const togglePlay = () => {
-    if (!mediaRef.current) return;
-    if (!isPlayingRef.current) {
-      isPlayingRef.current = true;
-      setIsPlaying(true);
-      lastRealTimeRef.current = performance.now();
-      
-      const newTime = masterTimeRef.current;
-      const activeClip = videoSegments.find(s => !s.deleted && newTime >= s.timelineStart && newTime < s.timelineEnd);
-      
-      if (activeClip) {
-        mediaRef.current.currentTime = activeClip.sourceStart + (newTime - activeClip.timelineStart);
-        mediaRef.current.play().catch(e => console.error(e));
-        playRequestedRef.current = true; // tell rAF to wait
+    if (mediaRef.current) {
+      if (mediaRef.current.paused) {
+        if (masterTime >= mediaDuration - 0.1) {
+          const validTime = getValidSeekTime(0);
+          mediaRef.current.currentTime = validTime;
+          masterTimeRef.current = validTime;
+          setMasterTime(validTime);
+        }
+        mediaRef.current.play().catch(e => {
+          if (e.name !== 'AbortError') console.error(e);
+        });
+        setIsPlaying(true);
+        isPlayingRef.current = true;
+      } else {
+        mediaRef.current.pause();
+        setIsPlaying(false);
+        isPlayingRef.current = false;
       }
-      // If in a gap, rAF loop will handle advancing the clock
-    } else {
-      isPlayingRef.current = false;
-      setIsPlaying(false);
-      mediaRef.current.pause();
-      playRequestedRef.current = false;
     }
   };
 
   const stopPlay = () => {
-    if (!mediaRef.current) return;
-    isPlayingRef.current = false;
-    setIsPlaying(false);
-    mediaRef.current.pause();
-    masterTimeRef.current = 0;
-    setMasterTime(0);
+    if (mediaRef.current) {
+      mediaRef.current.pause();
+      const validTime = getValidSeekTime(0);
+      mediaRef.current.currentTime = validTime;
+      masterTimeRef.current = validTime;
+      setMasterTime(validTime);
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+    }
   };
 
-  // Keyboard shortcuts effect
+  // Listen to media element events to sync state (mostly for external pauses)
+  useEffect(() => {
+    const video = mediaRef.current;
+    if (!video) return;
+
+    const handlePlay = () => {
+      setIsPlaying(true);
+      isPlayingRef.current = true;
+    };
+    const handlePause = () => {
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+    };
+
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    
+    return () => {
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+    };
+  }, []);
+
+  // Keyboard controls
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement;
-      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
-      
-      if (e.code === 'Space' && !isInput) {
+      if ((e.target as HTMLElement).tagName === 'INPUT' || (e.target as HTMLElement).tagName === 'TEXTAREA') return;
+
+      if (e.code === 'Space') {
         e.preventDefault();
         togglePlay();
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !isInput) {
+      } else if (e.code === 'Backspace' || e.code === 'Delete') {
         e.preventDefault();
-        if (e.shiftKey) {
-          // Redo
-          setSegmentHistory((prev: any) => {
-            if (prev.future.length === 0) return prev;
-            const nextState = prev.future[0];
-            setEditableSegments(nextState.segments);
-            setRippleDeletes(nextState.rippleDeletes);
-            if (nextState.videoSegments) setVideoSegments(nextState.videoSegments);
-            return {
-              past: [...prev.past, { segments: editableSegments, rippleDeletes: [...rippleDeletes], videoSegments: [...videoSegments] }],
-              future: prev.future.slice(1)
-            };
+        e.stopPropagation();
+        
+        if (selectedIndexes.length > 0) {
+          setSegmentHistory({
+            past: [{
+              segments: JSON.parse(JSON.stringify(editableSegments)),
+              rippleDeletes: JSON.parse(JSON.stringify(rippleDeletes)),
+              videoSegments: JSON.parse(JSON.stringify(videoSegments))
+            }],
+            future: []
           });
-        } else {
-          // Undo
-          setSegmentHistory((prev: any) => {
-            if (prev.past.length === 0) return prev;
-            const prevState = prev.past[prev.past.length - 1];
-            setEditableSegments(prevState.segments);
-            setRippleDeletes(prevState.rippleDeletes);
-            if (prevState.videoSegments) setVideoSegments(prevState.videoSegments);
-            return {
-              past: prev.past.slice(0, -1),
-              future: [{ segments: editableSegments, rippleDeletes: [...rippleDeletes], videoSegments: [...videoSegments] }, ...prev.future]
-            };
-          });
+          const hasShift = e.shiftKey;
+          setEditableSegments(prev => prev.map((seg, sIdx) => {
+            const newSeg = { ...seg, words: seg.words.map((w: any) => ({ ...w })) };
+            newSeg.words.forEach((w: any, wIdx: number) => {
+              if (selectedIndexes.includes(`word:${sIdx}:${wIdx}`)) {
+                w.deleted = true;
+              }
+            });
+            return newSeg;
+          }));
+          
+          if (hasShift) {
+            handleRippleDelete(selectedIndexes);
+          }
         }
-      }
-      if (!isInput) {
-        if (e.key.toLowerCase() === 'c') {
-          e.preventDefault();
-          setCursorMode('cut');
-        } else if (e.key.toLowerCase() === 'v') {
-          e.preventDefault();
-          setCursorMode('select');
-        } else if (e.key.toLowerCase() === 'd') {
-          if (selectedVideoIndexes.length > 0) {
-            e.preventDefault();
-            handleVideoDelete(selectedVideoIndexes);
-            setSelectedVideoIndexes([]);
-          }
-        } else if (e.key.toLowerCase() === 'x') {
-          if (selectedVideoIndexes.length > 0) {
-            e.preventDefault();
+        
+        if (selectedVideoIndexes.length > 0) {
+          if (e.shiftKey) {
             handleVideoRippleDelete(selectedVideoIndexes);
-            setSelectedVideoIndexes([]);
+          } else {
+            handleVideoDelete(selectedVideoIndexes);
           }
+        }
+      } else if (e.code === 'KeyC') {
+        e.preventDefault();
+        setCursorMode('cut');
+      } else if (e.code === 'KeyV') {
+        e.preventDefault();
+        setCursorMode('select');
+      } else if (e.code === 'KeyD') {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (selectedIndexes.length > 0) {
+          setSegmentHistory({
+            past: [{
+              segments: JSON.parse(JSON.stringify(editableSegments)),
+              rippleDeletes: JSON.parse(JSON.stringify(rippleDeletes)),
+              videoSegments: JSON.parse(JSON.stringify(videoSegments))
+            }],
+            future: []
+          });
+          setEditableSegments(prev => prev.map((seg, sIdx) => {
+            const newSeg = { ...seg, words: seg.words.map((w: any) => ({ ...w })) };
+            newSeg.words.forEach((w: any, wIdx: number) => {
+              if (selectedIndexes.includes(`word:${sIdx}:${wIdx}`)) {
+                w.deleted = true;
+              }
+            });
+            return newSeg;
+          }));
+        }
+        
+        if (selectedVideoIndexes.length > 0) {
+          handleVideoDelete(selectedVideoIndexes);
+        }
+      } else if (e.code === 'KeyX') {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (selectedIndexes.length > 0) {
+          setSegmentHistory({
+            past: [{
+              segments: JSON.parse(JSON.stringify(editableSegments)),
+              rippleDeletes: JSON.parse(JSON.stringify(rippleDeletes)),
+              videoSegments: JSON.parse(JSON.stringify(videoSegments))
+            }],
+            future: []
+          });
+          setEditableSegments(prev => prev.map((seg, sIdx) => {
+            const newSeg = { ...seg, words: seg.words.map((w: any) => ({ ...w })) };
+            newSeg.words.forEach((w: any, wIdx: number) => {
+              if (selectedIndexes.includes(`word:${sIdx}:${wIdx}`)) {
+                w.deleted = true;
+              }
+            });
+            return newSeg;
+          }));
+          handleRippleDelete(selectedIndexes);
+        }
+        
+        if (selectedVideoIndexes.length > 0) {
+          handleVideoRippleDelete(selectedVideoIndexes);
         }
       }
     };
@@ -549,114 +483,7 @@ export default function WhisperXApp() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown, { capture: true });
     };
-  }, [editableSegments, togglePlay, setEditableSegments, setRippleDeletes, setSegmentHistory, rippleDeletes, setCursorMode, selectedVideoIndexes, handleVideoDelete, handleVideoRippleDelete, setSelectedVideoIndexes, videoSegments, setVideoSegments]);
-
-  // Center timeline on playhead
-  useEffect(() => {
-    if (timelineRef.current && trackRef.current && mediaRef.current && mediaDuration > 0) {
-      const trackWidth = trackRef.current.scrollWidth;
-      const playheadX = (mediaRef.current.currentTime / mediaDuration) * trackWidth;
-      const container = timelineRef.current;
-      container.scrollLeft = playheadX - container.clientWidth / 2;
-    }
-  }, [zoomLevel, mediaDuration]);
-
-  // Smooth Auto-scroll timeline and Master Clock syncing
-  const playRequestedRef = useRef(false); // prevents rAF from spamming play()
-
-  useEffect(() => {
-    let animationFrameId: number;
-
-    const smoothSync = (timestamp: number) => {
-      if (!mediaRef.current || mediaDuration <= 0) {
-        animationFrameId = requestAnimationFrame(smoothSync);
-        return;
-      }
-      
-      if (!lastRealTimeRef.current) lastRealTimeRef.current = timestamp;
-      
-      const delta = (timestamp - lastRealTimeRef.current) / 1000;
-      lastRealTimeRef.current = timestamp;
-      
-      if (isPlayingRef.current) {
-        let newTime = masterTimeRef.current;
-        
-        // Find active video clip at current master time
-        const activeClip = videoSegments.find(s => !s.deleted && newTime >= s.timelineStart && newTime < s.timelineEnd);
-        
-        if (activeClip) {
-          if (mediaRef.current.seeking) {
-            // Video is mid-seek, don't touch anything
-          } else if (playRequestedRef.current) {
-            // We sent a play() command and are waiting for it to take effect
-            if (!mediaRef.current.paused) {
-              // Video has started playing! Clear the flag and let normal sync take over
-              playRequestedRef.current = false;
-            }
-            // Either way, don't update masterTime yet
-          } else if (!mediaRef.current.paused) {
-            // Video is actively playing - the normal steady state.
-            // Read the video's actual currentTime and derive masterTime from it.
-            newTime = activeClip.timelineStart + (mediaRef.current.currentTime - activeClip.sourceStart);
-            masterTimeRef.current = newTime;
-            setMasterTime(newTime);
-          }
-        } else {
-          // We are in an empty gap (no video clip here)
-          if (!mediaRef.current.paused) {
-            mediaRef.current.pause();
-          }
-          playRequestedRef.current = false;
-          
-          // Advance master clock using wall-clock time
-          newTime += delta;
-          masterTimeRef.current = newTime;
-          setMasterTime(newTime);
-          
-          // Check if we've now entered a video clip after advancing
-          const nextClip = videoSegments.find(s => !s.deleted && newTime >= s.timelineStart && newTime < s.timelineEnd);
-          if (nextClip) {
-            // We just crossed from gap into a clip - seek and play
-            const sourcePos = nextClip.sourceStart + (newTime - nextClip.timelineStart);
-            mediaRef.current.currentTime = sourcePos;
-            mediaRef.current.play().catch(e => console.error(e));
-            playRequestedRef.current = true;
-          }
-        }
-      }
-
-      // Update scroll position
-      if (timelineRef.current && trackRef.current && !isHoveringTimeline.current && draggingBoundary === null) {
-        const trackWidth = trackRef.current.scrollWidth;
-        const timelineDur = Math.max(mediaDuration, ...videoSegments.map(s => s.timelineEnd), 0.1);
-        const playheadX = (masterTimeRef.current / timelineDur) * trackWidth;
-        const container = timelineRef.current;
-        const clientWidth = container.clientWidth;
-        container.scrollLeft = playheadX - clientWidth / 2;
-      }
-
-      animationFrameId = requestAnimationFrame(smoothSync);
-    };
-
-    animationFrameId = requestAnimationFrame(smoothSync);
-
-    return () => {
-      if (animationFrameId) cancelAnimationFrame(animationFrameId);
-    };
-  }, [mediaDuration, draggingBoundary, videoSegments]);
-
-  // Auto-scroll subtitle editor list
-  useEffect(() => {
-    if (!mediaRef.current || mediaRef.current.paused || mediaDuration <= 0) return;
-
-    const activeIndex = editableSegments.findIndex((s: any) => masterTime >= s.start && masterTime < s.end);
-    if (activeIndex !== -1) {
-      const activeElement = document.getElementById(`subtitle-segment-${activeIndex}`);
-      if (activeElement) {
-        activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }
-  }, [masterTime, mediaDuration, editableSegments]);
+  }, [editableSegments, togglePlay, setEditableSegments, setRippleDeletes, setSegmentHistory, rippleDeletes, setCursorMode, selectedVideoIndexes, handleVideoDelete, handleVideoRippleDelete, setSelectedVideoIndexes, videoSegments, setVideoSegments, selectedIndexes, handleRippleDelete]);
 
   // Convert WhisperX segments to SRT format
   const generateSRT = () => {
@@ -752,18 +579,25 @@ export default function WhisperXApp() {
               handleAutoCutSilences={handleAutoCutSilences}
               currentTime={masterTime}
               handleSegmentChange={handleSegmentChange}
-              handleToggleWordDelete={handleToggleWordDelete}
               handleToggleSegmentSilence={handleToggleSegmentSilence}
               handleDeleteSegments={handleDeleteSegments}
               handleDuplicateSegment={handleDuplicateSegment}
               handleOffsetSegments={handleOffsetSegments}
-              onSeek={(time) => {
+              onSeek={(mediaTime) => {
+                const validTime = getValidSeekTime(mediaTime);
                 if (mediaRef.current) {
-                  mediaRef.current.currentTime = time;
+                  mediaRef.current.currentTime = validTime;
                 }
+                masterTimeRef.current = validTime;
+                setMasterTime(validTime);
               }}
               clearProject={clearProject}
               downloadSRT={downloadSRT}
+              videoCanvas={videoCanvas}
+              setVideoCanvas={setVideoCanvas}
+              videoSegments={videoSegments}
+              setVideoSegments={setVideoSegments}
+              selectedVideoIndexes={selectedVideoIndexes}
             />
           </div>
 
@@ -790,6 +624,8 @@ export default function WhisperXApp() {
               handleExportVideo={handleExportVideo}
               status={status}
               togglePlay={togglePlay}
+              videoCanvas={videoCanvas}
+              setVideoSegments={setVideoSegments}
             />
           </div>
         </div>
@@ -818,10 +654,13 @@ export default function WhisperXApp() {
             setDraggingBoundary={setDraggingBoundary}
             draggingBoundary={draggingBoundary}
             handleToggleWordDelete={handleToggleWordDelete}
-            onSeek={(time) => {
+            onSeek={(mediaTime) => {
+              const validTime = getValidSeekTime(mediaTime);
               if (mediaRef.current) {
-                mediaRef.current.currentTime = time;
+                mediaRef.current.currentTime = validTime;
               }
+              masterTimeRef.current = validTime;
+              setMasterTime(validTime);
             }}
             videoSegments={videoSegments}
             setVideoSegments={setVideoSegments}
@@ -829,8 +668,8 @@ export default function WhisperXApp() {
             setSelectedVideoIndexes={setSelectedVideoIndexes}
             cursorMode={cursorMode}
             handleVideoCut={handleVideoCut}
-            updateVideoSegments={updateVideoSegments}
             setEditableSegments={setEditableSegments}
+            setSegmentHistory={setSegmentHistory}
           />
         </div>
       </div>

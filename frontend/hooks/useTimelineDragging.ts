@@ -27,10 +27,24 @@ export function useTimelineDragging({
       const rect = trackRef.current.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
       
-      const sortedRippleDeletes = [...(rippleDeletes || [])].sort((a, b) => a.start - b.start);
+      const mergedRippleDeletes = (() => {
+        if (!rippleDeletes || rippleDeletes.length === 0) return [];
+        const sorted = [...rippleDeletes].sort((a, b) => a.start - b.start);
+        const merged = [{ ...sorted[0] }];
+        for (let i = 1; i < sorted.length; i++) {
+          const last = merged[merged.length - 1];
+          const current = sorted[i];
+          if (current.start <= last.end + 0.001) {
+            last.end = Math.max(last.end, current.end);
+          } else {
+            merged.push({ ...current });
+          }
+        }
+        return merged;
+      })();
       const toTimelineTime = (mediaTime: number) => {
         let timelineTime = mediaTime;
-        for (const zone of sortedRippleDeletes) {
+        for (const zone of mergedRippleDeletes) {
           if (mediaTime >= zone.end) {
             timelineTime -= (zone.end - zone.start);
           } else if (mediaTime > zone.start) {
@@ -42,7 +56,7 @@ export function useTimelineDragging({
 
       const toMediaTime = (timelineTime: number) => {
         let mediaTime = timelineTime;
-        for (const zone of sortedRippleDeletes) {
+        for (const zone of mergedRippleDeletes) {
           if (mediaTime >= zone.start) {
             mediaTime += (zone.end - zone.start);
           }

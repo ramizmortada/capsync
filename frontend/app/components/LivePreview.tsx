@@ -17,6 +17,8 @@ interface LivePreviewProps {
   handleExportVideo?: () => void;
   status?: string;
   togglePlay?: () => void;
+  videoCanvas?: any;
+  setVideoSegments?: any;
 }
 
 export function LivePreview({
@@ -34,6 +36,8 @@ export function LivePreview({
   handleExportVideo,
   status,
   togglePlay,
+  videoCanvas,
+  setVideoSegments,
 }: LivePreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -41,6 +45,10 @@ export function LivePreview({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [localTime, setLocalTime] = useState(currentTime);
   const [showBounds, setShowBounds] = useState(false);
+  
+  const isDraggingRef = useRef(false);
+  const dragStartPosRef = useRef({ x: 0, y: 0 });
+  const dragStartTransformRef = useRef({ x: 0, y: 0 });
 
   // Sync back to parent when paused/seeking or when master clock ticks
   useEffect(() => {
@@ -85,25 +93,79 @@ export function LivePreview({
   };
 
   // Calculate actual video render dimensions inside the object-fit: contain container
-  const videoRatio = localVideoDim.width / localVideoDim.height;
+  const renderDim = (videoCanvas && videoCanvas.type !== 'auto' && videoCanvas.width && videoCanvas.height) ? videoCanvas : localVideoDim;
+  const renderRatio = renderDim.width / renderDim.height;
   let renderWidth = containerSize.width;
   let renderHeight = containerSize.height;
   
   if (containerSize.height > 0 && containerSize.width > 0) {
     const containerRatio = containerSize.width / containerSize.height;
-    if (containerRatio > videoRatio) {
-      // Container is wider than video
+    if (containerRatio > renderRatio) {
+      // Container is wider than canvas
       renderHeight = containerSize.height;
-      renderWidth = renderHeight * videoRatio;
+      renderWidth = renderHeight * renderRatio;
     } else {
-      // Container is taller than video
+      // Container is taller than canvas
       renderWidth = containerSize.width;
-      renderHeight = renderWidth / videoRatio;
+      renderHeight = renderWidth / renderRatio;
     }
   }
 
   // Determine if we are currently in a video gap
-  const isGap = !videoSegments || !videoSegments.some(s => !s.deleted && localTime >= s.timelineStart && localTime < s.timelineEnd);
+  const activeClip = videoSegments?.find(s => !s.deleted && localTime >= s.sourceStart && localTime < s.sourceEnd);
+  const isGap = !videoSegments || !activeClip;
+  
+  const activeTransform = activeClip?.transform || { x: 0, y: 0, scale: 1 };
+  const scaleOnScreen = renderWidth / renderDim.width;
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (!activeClip || !setVideoSegments) return;
+    
+    // Only handle left click drag
+    if (e.button !== 0) return;
+    
+    // Check if we clicked on a button or something else, but here we only have video and subtitles.
+    // If it's a drag, we prevent click from toggling play.
+    isDraggingRef.current = false; // Will set true on move
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+    dragStartTransformRef.current = { x: activeTransform.x, y: activeTransform.y };
+    
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const dx = moveEvent.clientX - dragStartPosRef.current.x;
+      const dy = moveEvent.clientY - dragStartPosRef.current.y;
+      
+      // If moved more than 3 pixels, consider it a drag
+      if (!isDraggingRef.current && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+        isDraggingRef.current = true;
+      }
+      
+      if (isDraggingRef.current) {
+        // Convert screen pixel movement to percentage of the video container dimensions
+        const dxPercentage = (dx / renderWidth) * 100;
+        const dyPercentage = (dy / renderHeight) * 100;
+        
+        setVideoSegments((prev: any[]) => prev.map((s: any) => 
+          s.id === activeClip.id 
+            ? { ...s, transform: { ...activeTransform, x: dragStartTransformRef.current.x + dxPercentage, y: dragStartTransformRef.current.y + dyPercentage } } 
+            : s
+        ));
+      }
+    };
+    
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      
+      // If we didn't drag, it was a click, so we should toggle play
+      if (!isDraggingRef.current && togglePlay) {
+        togglePlay();
+      }
+      setTimeout(() => { isDraggingRef.current = false; }, 0);
+    };
+    
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
 
   return (
     <div className="h-full rounded-xl overflow-hidden bg-card border border-border shadow-2xl flex flex-col">
@@ -135,7 +197,14 @@ export function LivePreview({
         </div>
       </div>
       
-      <div ref={containerRef} className="bg-black flex-1 flex flex-col relative min-h-[300px]">
+      <div 
+        ref={containerRef} 
+        className="flex-1 flex flex-col relative min-h-[300px] overflow-hidden items-center justify-center bg-neutral-950"
+        style={{
+          backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 0)',
+          backgroundSize: '24px 24px',
+        }}
+      >
         {/* Toggle Bounds Button */}
         <Button
           variant="ghost"
@@ -147,16 +216,25 @@ export function LivePreview({
           <BoxSelect className="w-4 h-4" />
         </Button>
 
-        {/* Media Element */}
+        {/* Media Element bounds (Canvas) */}
         <div 
-          onClick={handleVideoClick}
-          className="flex-1 relative flex items-center justify-center cursor-pointer"
+          onPointerDown={handlePointerDown}
+          className="relative flex items-center justify-center cursor-pointer overflow-hidden"
+          style={{
+            width: renderWidth,
+            height: renderHeight,
+            backgroundColor: videoCanvas?.type !== 'auto' ? videoCanvas?.backgroundColor : 'transparent'
+          }}
         >
           {file?.type.startsWith('video') ? (
             <video 
               ref={mediaRef as React.RefObject<HTMLVideoElement>}
               src={mediaUrl || undefined} 
-              className={`absolute inset-0 w-full h-full object-contain pointer-events-none transition-opacity duration-150 ${isGap ? 'opacity-0' : 'opacity-100'}`}
+              className={`absolute inset-0 w-full h-full bg-transparent object-contain pointer-events-none transition-opacity duration-150 ${isGap ? 'opacity-0' : 'opacity-100'}`}
+              style={{
+                transform: `translate(${activeTransform.x}%, ${activeTransform.y}%) scale(${activeTransform.scale})`,
+                transition: 'transform 0.1s ease-out'
+              }}
               onLoadedMetadata={(e) => {
                 setMediaDuration(e.currentTarget.duration);
                 const dims = {
