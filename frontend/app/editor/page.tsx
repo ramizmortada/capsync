@@ -81,6 +81,7 @@ export default function WhisperXApp() {
   const trackRef = useRef<HTMLDivElement>(null);
   const mediaRef = useRef<HTMLMediaElement>(null);
   const isHoveringTimeline = useRef(false);
+  const hasInitializedVideoRef = useRef(false);
 
   const [isPlaying, setIsPlaying] = useState(false);
 
@@ -122,6 +123,9 @@ export default function WhisperXApp() {
     handleVideoCut,
     handleVideoDelete,
     handleVideoRippleDelete,
+    undo,
+    redo,
+    handleClearTrack,
   } = subtitleState;
 
   const [videoCanvas, setVideoCanvas] = useState<any>({ type: 'auto' });
@@ -257,9 +261,9 @@ export default function WhisperXApp() {
     checkModelsStatus();
   }, []);
 
-  // Initialize video segments when media duration is known
+  // Initialize video segments when media duration is known (only once per media load)
   useEffect(() => {
-    if (mediaDuration > 0 && videoSegments.length === 0) {
+    if (mediaDuration > 0 && videoSegments.length === 0 && !hasInitializedVideoRef.current) {
       setVideoSegments([{
         id: Math.random().toString(36).substr(2, 9),
         sourceStart: 0,
@@ -268,6 +272,9 @@ export default function WhisperXApp() {
         timelineEnd: mediaDuration,
         deleted: false
       }]);
+      hasInitializedVideoRef.current = true;
+    } else if (mediaDuration === 0) {
+      hasInitializedVideoRef.current = false;
     }
   }, [mediaDuration, videoSegments.length, setVideoSegments]);
 
@@ -428,23 +435,7 @@ export default function WhisperXApp() {
         e.stopPropagation();
         
         if (selectedIndexes.length > 0) {
-          setSegmentHistory({
-            past: [{
-              segments: JSON.parse(JSON.stringify(editableSegments)),
-              rippleDeletes: JSON.parse(JSON.stringify(rippleDeletes)),
-              videoSegments: JSON.parse(JSON.stringify(videoSegments))
-            }],
-            future: []
-          });
-          setEditableSegments(prev => prev.map((seg, sIdx) => {
-            const newSeg = { ...seg, words: seg.words.map((w: any) => ({ ...w })) };
-            newSeg.words.forEach((w: any, wIdx: number) => {
-              if (selectedIndexes.includes(`word:${sIdx}:${wIdx}`)) {
-                w.deleted = true;
-              }
-            });
-            return newSeg;
-          }));
+          handleLiftDelete(selectedIndexes);
         }
         
         if (selectedVideoIndexes.length > 0) {
@@ -455,29 +446,24 @@ export default function WhisperXApp() {
         e.stopPropagation();
         
         if (selectedIndexes.length > 0) {
-          setSegmentHistory({
-            past: [{
-              segments: JSON.parse(JSON.stringify(editableSegments)),
-              rippleDeletes: JSON.parse(JSON.stringify(rippleDeletes)),
-              videoSegments: JSON.parse(JSON.stringify(videoSegments))
-            }],
-            future: []
-          });
-          setEditableSegments(prev => prev.map((seg, sIdx) => {
-            const newSeg = { ...seg, words: seg.words.map((w: any) => ({ ...w })) };
-            newSeg.words.forEach((w: any, wIdx: number) => {
-              if (selectedIndexes.includes(`word:${sIdx}:${wIdx}`)) {
-                w.deleted = true;
-              }
-            });
-            return newSeg;
-          }));
           handleRippleDelete(selectedIndexes);
         }
         
         if (selectedVideoIndexes.length > 0) {
           handleVideoRippleDelete(selectedVideoIndexes);
         }
+      } else if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      } else if (e.code === 'KeyY' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        e.stopPropagation();
+        redo();
       }
     };
 
@@ -485,7 +471,7 @@ export default function WhisperXApp() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown, { capture: true });
     };
-  }, [editableSegments, togglePlay, setEditableSegments, setRippleDeletes, setSegmentHistory, rippleDeletes, setCursorMode, selectedVideoIndexes, handleVideoDelete, handleVideoRippleDelete, setSelectedVideoIndexes, videoSegments, setVideoSegments, selectedIndexes, handleRippleDelete]);
+  }, [editableSegments, togglePlay, setEditableSegments, setRippleDeletes, setSegmentHistory, rippleDeletes, setCursorMode, selectedVideoIndexes, handleVideoDelete, handleVideoRippleDelete, setSelectedVideoIndexes, videoSegments, setVideoSegments, selectedIndexes, handleRippleDelete, handleLiftDelete, undo, redo]);
 
   // Convert WhisperX segments to SRT format
   const generateSRT = () => {
@@ -509,7 +495,10 @@ export default function WhisperXApp() {
     setEditableSegments([]);
     setSegmentHistory({ past: [], future: [] });
     setRippleDeletes([]);
+    setVideoSegments([]);
+    setSelectedVideoIndexes([]);
     setMediaUrl("");
+    setMediaDuration(0);
   };
 
   const downloadSRT = () => {
@@ -672,6 +661,13 @@ export default function WhisperXApp() {
             handleVideoCut={handleVideoCut}
             setEditableSegments={setEditableSegments}
             setSegmentHistory={setSegmentHistory}
+            handleClearTrack={(trackType) => {
+              if (trackType === 'video') {
+                clearProject();
+              } else {
+                handleClearTrack(trackType);
+              }
+            }}
           />
         </div>
       </div>

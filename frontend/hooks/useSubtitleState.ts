@@ -255,29 +255,69 @@ export function useSubtitleState({
         if (editableSegments[sIdx] && editableSegments[sIdx].words && editableSegments[sIdx].words[wIdx]) {
           const word = editableSegments[sIdx].words[wIdx];
           regionsToAdd.push({ start: word.start, end: word.end });
-          // Note: we can toggle it deleted immediately
-          updateSegments((prev) => {
-            const newSegments = [...prev];
-            const segment = { ...newSegments[sIdx] };
-            if (segment.words) {
-              const words = [...segment.words];
-              words[wIdx] = { ...words[wIdx], deleted: true };
-              segment.words = words;
-            }
-            newSegments[sIdx] = segment;
-            return newSegments;
-          });
         }
       }
     });
-    setRippleDeletes((prev) => [...prev, ...regionsToAdd]);
+
+    const newRippleDeletes = [...rippleDeletes, ...regionsToAdd];
+    let newSegments = [...editableSegments];
+    
+    indices.forEach((idx) => {
+      if (typeof idx === "string" && (idx.startsWith("gap:") || idx.startsWith("word:"))) {
+        const [, sIdx, wIdx] = idx.split(":").map(Number);
+        if (newSegments[sIdx] && newSegments[sIdx].words) {
+          const segment = { ...newSegments[sIdx] };
+          const words = [...segment.words!];
+          words[wIdx] = { ...words[wIdx], deleted: true };
+          segment.words = words;
+          newSegments[sIdx] = segment;
+        }
+      }
+    });
+
     if (segmentIndicesToDelete.length > 0) {
-      handleDeleteSegments(segmentIndicesToDelete);
+      newSegments = newSegments.filter((_, i) => !segmentIndicesToDelete.includes(i));
     }
+
+    setSegmentHistory((prevHistory) => ({
+      past: [...prevHistory.past, { segments: editableSegments, rippleDeletes, videoSegments }].slice(-50),
+      future: [],
+    }));
+    
+    setEditableSegments(newSegments);
+    setRippleDeletes(newRippleDeletes);
   };
 
   const handleRippleDeleteRange = (start: number, end: number) => {
+    setSegmentHistory((prevHistory) => ({
+      past: [...prevHistory.past, { segments: editableSegments, rippleDeletes, videoSegments }].slice(-50),
+      future: [],
+    }));
     setRippleDeletes((prev) => [...prev, { start, end }]);
+  };
+
+  const undo = () => {
+    if (segmentHistory.past.length === 0) return;
+    const previous = segmentHistory.past[segmentHistory.past.length - 1];
+    const newPast = segmentHistory.past.slice(0, segmentHistory.past.length - 1);
+    const newFuture = [{ segments: editableSegments, rippleDeletes, videoSegments }, ...segmentHistory.future];
+    
+    setEditableSegments(previous.segments);
+    setRippleDeletes(previous.rippleDeletes);
+    setVideoSegments(previous.videoSegments);
+    setSegmentHistory({ past: newPast, future: newFuture });
+  };
+
+  const redo = () => {
+    if (segmentHistory.future.length === 0) return;
+    const next = segmentHistory.future[0];
+    const newFuture = segmentHistory.future.slice(1);
+    const newPast = [...segmentHistory.past, { segments: editableSegments, rippleDeletes, videoSegments }];
+    
+    setEditableSegments(next.segments);
+    setRippleDeletes(next.rippleDeletes);
+    setVideoSegments(next.videoSegments);
+    setSegmentHistory({ past: newPast, future: newFuture });
   };
 
   const handleDuplicateSegment = (index: number) => {
@@ -374,6 +414,14 @@ export function useSubtitleState({
     }
   };
 
+  const handleClearTrack = (trackType: 'subtitle' | 'video') => {
+    if (trackType === 'subtitle') {
+      updateSegments([]);
+    } else {
+      updateVideoSegments([]);
+    }
+  };
+
   return {
     editableSegments,
     setEditableSegments,
@@ -387,6 +435,8 @@ export function useSubtitleState({
     setCursorMode,
     rippleDeletes,
     setRippleDeletes,
+    undo,
+    redo,
     segmentHistory,
     setSegmentHistory,
     updateSegments,
@@ -406,5 +456,6 @@ export function useSubtitleState({
     handleVideoCut,
     handleVideoDelete,
     handleVideoRippleDelete,
+    handleClearTrack,
   };
 }

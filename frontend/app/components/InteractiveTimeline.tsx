@@ -1,5 +1,5 @@
 import { Card } from "@/components/ui/card";
-import { memo, useState, useEffect, useRef, useMemo } from "react";
+import { memo, useState, useEffect, useRef, useMemo, useLayoutEffect } from "react";
 import { SubtitleStyle, DragTarget } from "../types";
 import { TimelineControls } from "./timeline/TimelineControls";
 import { TimeRuler } from "./timeline/TimeRuler";
@@ -28,6 +28,7 @@ interface InteractiveTimelineProps {
   handleLiftDelete: (indices: (number|string)[]) => void;
   handleRippleDelete: (indices: (number|string)[]) => void;
   handleRippleDeleteRange: (start: number, end: number) => void;
+  handleClearTrack: (trackType: 'subtitle' | 'video') => void;
   setDraggingBoundary: (val: DragTarget | null) => void;
   draggingBoundary: DragTarget | null;
   onSeek: (mediaTime: number, timelineTime: number) => void;
@@ -61,6 +62,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   setSelectedIndexes,
   handleRippleDelete,
   handleRippleDeleteRange,
+  handleClearTrack,
   setDraggingBoundary,
   draggingBoundary,
   onSeek,
@@ -78,6 +80,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   const [hoverX, setHoverX] = useState<number | null>(null);
   const [draggingVideoBoundary, setDraggingVideoBoundary] = useState<{ id: string; type: 'start' | 'end' | 'body', offsetStart?: number, initialTimelineStart?: number, initialTimelineEnd?: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
+  const zoomAnchorRef = useRef({ percentage: 0, cursorX: 0, targetZoom: 0 });
   const lastSelectedRef = useRef<number | null>(null);
 
 
@@ -312,15 +315,15 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
         const anchorPercentage = anchorOffset / currentTrackWidth;
         
         const newZoom = Math.max(1, Math.min(50, zoomLevel + zoomDelta));
-        setZoomLevel(newZoom);
         
-        // Wait for render to update track width, then re-center on cursor
-        requestAnimationFrame(() => {
-          if (trackRef.current) {
-            const newTrackWidth = trackRef.current.scrollWidth;
-            el.scrollLeft = anchorPercentage * newTrackWidth - cursorX;
-          }
-        });
+        // Save the anchor for the useLayoutEffect to apply after DOM update
+        zoomAnchorRef.current = {
+          percentage: anchorPercentage,
+          cursorX,
+          targetZoom: newZoom
+        };
+        
+        setZoomLevel(newZoom);
       } else if (e.deltaY !== 0) {
         e.preventDefault();
         el.scrollLeft += e.deltaY;
@@ -333,6 +336,15 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       el.removeEventListener('wheel', handleWheel);
     };
   }, [timelineRef, zoomLevel, setZoomLevel, isHoveringTimeline]);
+
+  // Synchronously update scroll position after zoom changes the DOM
+  useLayoutEffect(() => {
+    if (zoomAnchorRef.current.targetZoom === zoomLevel && timelineRef.current && trackRef.current) {
+      const { percentage, cursorX } = zoomAnchorRef.current;
+      const newTrackWidth = trackRef.current.scrollWidth;
+      timelineRef.current.scrollLeft = percentage * newTrackWidth - cursorX;
+    }
+  }, [zoomLevel]);
 
   return (
     <Card className="bg-card border-border shadow-2xl p-2">
@@ -350,11 +362,25 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       <div className={`flex bg-background rounded-xl overflow-hidden h-[120px] ${cursorMode === 'cut' ? 'cursor-none [&_*]:cursor-none' : ''}`}>
         
         {/* Track Headers (Left Panel) */}
-        <div className="w-12 shrink-0 bg-neutral-900/50 border-r border-neutral-800 flex flex-col relative z-10 pointer-events-none">
-          <div className="absolute top-[28px] w-full flex justify-center text-neutral-500" title="Subtitles">
+        <div className="w-12 shrink-0 bg-neutral-900/50 border-r border-neutral-800 flex flex-col relative z-10 select-none">
+          <div 
+            className="absolute top-[28px] w-full flex justify-center text-neutral-500 hover:text-neutral-300 cursor-context-menu" 
+            title="Subtitles (Right click to clear)"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextMenu({ x: e.clientX, y: e.clientY, type: 'Subtitle Track' });
+            }}
+          >
             <Type className="w-4 h-4" />
           </div>
-          <div className="absolute top-[72px] w-full flex justify-center text-neutral-500" title="Video">
+          <div 
+            className="absolute top-[72px] w-full flex justify-center text-neutral-500 hover:text-neutral-300 cursor-context-menu" 
+            title="Video (Right click to clear)"
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setContextMenu({ x: e.clientX, y: e.clientY, type: 'Video Track' });
+            }}
+          >
             <Film className="w-4 h-4" />
           </div>
         </div>
@@ -660,6 +686,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           handleToggleWordDelete={handleToggleWordDelete}
           handleRippleDelete={handleRippleDelete}
           handleRippleDeleteRange={handleRippleDeleteRange}
+          handleClearTrack={handleClearTrack}
         />
       )}
     </Card>

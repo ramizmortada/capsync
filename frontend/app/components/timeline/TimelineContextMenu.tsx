@@ -4,7 +4,7 @@ export interface ContextMenuData {
   segmentIdx?: number;
   wordIdx?: number;
   isDeleted?: boolean;
-  type: 'Empty Space' | 'Silence' | 'Word';
+  type: 'Empty Space' | 'Silence' | 'Word' | 'Subtitle Track' | 'Video Track';
   gapStart?: number;
   gapEnd?: number;
 }
@@ -15,6 +15,7 @@ interface TimelineContextMenuProps {
   handleToggleWordDelete: (segmentIndex: number, wordIndex: number) => void;
   handleRippleDelete: (indices: (number|string)[]) => void;
   handleRippleDeleteRange?: (start: number, end: number) => void;
+  handleClearTrack?: (trackType: 'subtitle' | 'video') => void;
 }
 
 export const TimelineContextMenu = ({
@@ -23,6 +24,7 @@ export const TimelineContextMenu = ({
   handleToggleWordDelete,
   handleRippleDelete,
   handleRippleDeleteRange,
+  handleClearTrack,
 }: TimelineContextMenuProps) => {
   return (
     <div 
@@ -34,34 +36,50 @@ export const TimelineContextMenu = ({
         {contextMenu.type} Actions
       </div>
       
-      {contextMenu.type !== 'Empty Space' && contextMenu.segmentIdx !== undefined && contextMenu.wordIdx !== undefined && (
+      {contextMenu.type === 'Subtitle Track' || contextMenu.type === 'Video Track' ? (
         <button 
           onClick={() => {
-            handleToggleWordDelete(contextMenu.segmentIdx!, contextMenu.wordIdx!);
+            if (handleClearTrack) {
+              handleClearTrack(contextMenu.type === 'Subtitle Track' ? 'subtitle' : 'video');
+            }
             setContextMenu(null);
           }}
           className="w-full px-3 py-2 text-left hover:bg-neutral-800 transition-colors flex items-center gap-2 text-red-400 hover:text-red-300 font-semibold"
         >
-          ❌ {contextMenu.isDeleted ? "Restore" : "Delete (Lift)"}
+          ❌ Clear Entire Track
         </button>
+      ) : (
+        <>
+          {contextMenu.type !== 'Empty Space' && contextMenu.segmentIdx !== undefined && contextMenu.wordIdx !== undefined && (
+            <button 
+              onClick={() => {
+                handleToggleWordDelete(contextMenu.segmentIdx!, contextMenu.wordIdx!);
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-2 text-left hover:bg-neutral-800 transition-colors flex items-center gap-2 text-red-400 hover:text-red-300 font-semibold"
+            >
+              ❌ {contextMenu.isDeleted ? "Restore" : "Delete (Lift)"}
+            </button>
+          )}
+          
+          <button 
+            onClick={() => {
+              if (contextMenu.type === 'Empty Space' && handleRippleDeleteRange && contextMenu.gapStart !== undefined && contextMenu.gapEnd !== undefined) {
+                handleRippleDeleteRange(contextMenu.gapStart, contextMenu.gapEnd);
+              } else if (contextMenu.segmentIdx !== undefined && contextMenu.wordIdx !== undefined) {
+                const key = contextMenu.type === 'Silence' 
+                  ? `gap:${contextMenu.segmentIdx}:${contextMenu.wordIdx}` 
+                  : `word:${contextMenu.segmentIdx}:${contextMenu.wordIdx}`;
+                handleRippleDelete([key]);
+              }
+              setContextMenu(null);
+            }}
+            className="w-full px-3 py-2 text-left hover:bg-neutral-800 transition-colors flex items-center gap-2 text-red-400 hover:text-red-300 font-semibold border-t border-neutral-800/50"
+          >
+            🗑️ Ripple Delete {contextMenu.type === 'Empty Space' ? 'Gap' : ''}
+          </button>
+        </>
       )}
-      
-      <button 
-        onClick={() => {
-          if (contextMenu.type === 'Empty Space' && handleRippleDeleteRange && contextMenu.gapStart !== undefined && contextMenu.gapEnd !== undefined) {
-            handleRippleDeleteRange(contextMenu.gapStart, contextMenu.gapEnd);
-          } else if (contextMenu.segmentIdx !== undefined && contextMenu.wordIdx !== undefined) {
-            const key = contextMenu.type === 'Silence' 
-              ? `gap:${contextMenu.segmentIdx}:${contextMenu.wordIdx}` 
-              : `word:${contextMenu.segmentIdx}:${contextMenu.wordIdx}`;
-            handleRippleDelete([key]);
-          }
-          setContextMenu(null);
-        }}
-        className="w-full px-3 py-2 text-left hover:bg-neutral-800 transition-colors flex items-center gap-2 text-emerald-400 hover:text-emerald-300 font-semibold"
-      >
-        ✂️ Ripple Delete
-      </button>
     </div>
   );
 };
