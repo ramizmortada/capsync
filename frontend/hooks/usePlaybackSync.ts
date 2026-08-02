@@ -121,7 +121,9 @@ export function usePlaybackSync({
 
       if (isPlayingRef.current && timelineRef.current && trackRef.current && !isHoveringTimeline.current && draggingBoundary === null) {
         const trackWidth = trackRef.current.scrollWidth;
-        const maxTimelineEnd = timelineMapRef.current.reduce((max, s) => Math.max(max, s.timelineEnd), mediaDuration > 0 ? mediaDuration : 0.1);
+        const maxTimelineEnd = timelineMapRef.current.length > 0
+          ? timelineMapRef.current.reduce((max, s) => Math.max(max, s.timelineEnd), 0)
+          : (mediaDuration > 0 ? mediaDuration : 0.1);
         const timelineDur = Math.max(maxTimelineEnd, 0.1);
         const playheadX = (masterTimeRef.current / timelineDur) * trackWidth;
         const container = timelineRef.current;
