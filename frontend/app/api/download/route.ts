@@ -37,9 +37,7 @@ export async function POST(req: Request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
-      const ytdlp = new YtDlp({
-        ffmpegPath: path.resolve(process.cwd(), 'ffmpeg.exe'),
-      });
+      const ytdlp = new YtDlp({});
 
       try {
         // Use a safe temporary directory
@@ -50,12 +48,16 @@ export async function POST(req: Request) {
         const normStart = normalizeTimestamp(startTime);
         const normEnd = normalizeTimestamp(endTime);
 
-        if ((normStart || normEnd) && (normStart !== normEnd)) {
-          const sectionStart = normStart || '00:00:00';
-          const sectionEnd = normEnd || 'inf';
-          if (!(sectionStart === '00:00:00' && sectionEnd === '00:00:00')) {
-            dl = dl.addArgs('--download-sections', `*${sectionStart}-${sectionEnd}`);
-          }
+        let ffmpegArgs = [];
+        if (normStart && normStart !== '00:00:00') {
+          ffmpegArgs.push(`-ss ${normStart}`);
+        }
+        if (normEnd && normEnd !== '00:00:00') {
+          ffmpegArgs.push(`-to ${normEnd}`);
+        }
+        
+        if (ffmpegArgs.length > 0) {
+          dl = dl.addArgs('--postprocessor-args', `ffmpeg:${ffmpegArgs.join(' ')}`);
         }
         
         if (isAudio) {

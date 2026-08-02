@@ -120,9 +120,9 @@ def transcribe(
         print(f"File saved to temp: {temp_path}", flush=True)
 
         current_transcription_status = "Loading AI model..."
-        print("Downloading WhisperX model manually from mirror...", flush=True)
+        print("Checking/loading WhisperX model from local directory...", flush=True)
         local_model_path = download_hf_model(model_name)
-        print(f"Loading model from local path: {local_model_path}", flush=True)
+        print(f"Loading model into memory from: {local_model_path}", flush=True)
         model = whisperx.load_model(local_model_path, device, compute_type=compute_type)
         print("Model loaded successfully!", flush=True)
 

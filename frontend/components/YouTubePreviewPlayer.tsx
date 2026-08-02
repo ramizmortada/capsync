@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useId } from 'react';
-import { Play, Pause, Clock, Type } from 'lucide-react';
+import { Play, Pause, Clock, Type, Wand2, Loader2 } from 'lucide-react';
 import { TimeValue } from './TimeSegmentPicker';
 
 interface YouTubePreviewPlayerProps {
@@ -17,6 +17,7 @@ declare global {
   interface Window {
     YT: any;
     onYouTubeIframeAPIReady: any;
+    activeYouTubePlayerId?: string;
   }
 }
 
@@ -43,6 +44,8 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
   const [duration, setDuration] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
   const [showCaptions, setShowCaptions] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcriptData, setTranscriptData] = useState<any>(null);
 
   const isVertical = videoAspectRatio < 1;
   const iframeWidthPercent = isVertical ? videoAspectRatio * (9 / 16) * 100 : 100;
@@ -86,6 +89,10 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
           onReady: (event: any) => {
             if (isMounted) {
               setDuration(event.target.getDuration() || 0);
+              // Set as active if none exists
+              if (!window.activeYouTubePlayerId) {
+                window.activeYouTubePlayerId = uniqueId;
+              }
               // Hide captions by default initially
               if (typeof event.target.setOption === 'function') {
                 event.target.setOption('captions', 'track', {});
@@ -95,15 +102,18 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
             }
           },
           onStateChange: (event: any) => {
-            if (isMounted && window.YT) {
-              if (event.data === window.YT.PlayerState.PLAYING) {
-                setIsPlaying(true);
-                window.dispatchEvent(new CustomEvent('stopOtherPlayers', { detail: { id: uniqueId } }));
-              } else if (
-                event.data === window.YT.PlayerState.PAUSED ||
-                event.data === window.YT.PlayerState.ENDED
-              ) {
-                setIsPlaying(false);
+            if (event.data === window.YT.PlayerState.PLAYING) {
+              setIsPlaying(true);
+              window.activeYouTubePlayerId = uniqueId;
+              window.dispatchEvent(new CustomEvent('stopOtherPlayers', { detail: { id: uniqueId } }));
+            } else if (event.data === window.YT.PlayerState.PAUSED) {
+              setIsPlaying(false);
+            } else if (event.data === window.YT.PlayerState.ENDED) {
+              setIsPlaying(false);
+              // Prevent the "More Videos" grid from showing by instantly seeking to start and pausing
+              if (playerRef.current) {
+                playerRef.current.seekTo(clipRange?.start || loopRange?.start || 0, true);
+                playerRef.current.pauseVideo();
               }
             }
           },
@@ -190,17 +200,19 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
       setShowCaptions(show);
       if (playerRef.current) {
         if (show) {
-          if (typeof playerRef.current.loadModule === 'function') playerRef.current.loadModule("captions");
-          if (typeof playerRef.current.setOption === 'function') {
-            try {
-              const tracks = playerRef.current.getOption('captions', 'tracklist');
-              if (tracks && tracks.length > 0) {
-                playerRef.current.setOption("captions", "track", tracks[0]);
-              } else {
-                playerRef.current.setOption("captions", "track", {languageCode: "en"});
-                playerRef.current.setOption("captions", "track", {languageCode: "a.en"});
-              }
-            } catch(err) {}
+          if (!transcriptData) {
+            if (typeof playerRef.current.loadModule === 'function') playerRef.current.loadModule("captions");
+            if (typeof playerRef.current.setOption === 'function') {
+              try {
+                const tracks = playerRef.current.getOption('captions', 'tracklist');
+                if (tracks && tracks.length > 0) {
+                  playerRef.current.setOption("captions", "track", tracks[0]);
+                } else {
+                  playerRef.current.setOption("captions", "track", {languageCode: "en"});
+                  playerRef.current.setOption("captions", "track", {languageCode: "a.en"});
+                }
+              } catch(err) {}
+            }
           }
         } else {
           if (typeof playerRef.current.setOption === 'function') {
@@ -213,11 +225,14 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
     };
     window.addEventListener('toggleGlobalCaptions', handleGlobalCaptions);
     return () => window.removeEventListener('toggleGlobalCaptions', handleGlobalCaptions);
-  }, []);
+  }, [transcriptData]);
 
   // Global keyboard shortcuts for video seeking
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if this is not the active player
+      if (window.activeYouTubePlayerId && window.activeYouTubePlayerId !== uniqueId) return;
+
       // Ignore if user is typing in a text input or textarea
       const active = document.activeElement as HTMLInputElement;
       if (
@@ -289,6 +304,7 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
   const togglePlayPause = () => {
     if (!playerRef.current) return;
     try {
+      window.activeYouTubePlayerId = uniqueId;
       if (isPlaying) {
         if (playerRef.current && typeof playerRef.current.pauseVideo === 'function') playerRef.current.pauseVideo();
         setIsPlaying(false);
@@ -315,6 +331,40 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
     const newState = !showCaptions;
     setShowCaptions(newState);
     window.dispatchEvent(new CustomEvent('toggleGlobalCaptions', { detail: { showCaptions: newState } }));
+  };
+
+  const handleTranscribeClip = async () => {
+    if (!clipRange || !clipRange.start || !clipRange.end) {
+      alert("Please set a valid clip range first.");
+      return;
+    }
+    
+    setIsTranscribing(true);
+    setShowCaptions(true); // Automatically show them when done
+    try {
+      const res = await fetch('/api/clip-transcribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: `https://www.youtube.com/watch?v=${videoId}`,
+          startTime: clipRange.start,
+          endTime: clipRange.end
+        })
+      });
+
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      
+      const data = await res.json();
+      setTranscriptData(data);
+    } catch (e) {
+      console.error("Transcription failed:", e);
+      alert("Transcription failed. See console for details.");
+      setShowCaptions(false);
+    } finally {
+      setIsTranscribing(false);
+    }
   };
 
   const secondsToTimeValue = (secs: number): TimeValue => {
@@ -351,7 +401,11 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
   };
 
   return (
-    <div className="flex flex-col gap-2.5 w-full">
+    <div 
+      className="flex flex-col gap-2.5 w-full"
+      onMouseEnter={() => { window.activeYouTubePlayerId = uniqueId; }}
+      onClick={() => { window.activeYouTubePlayerId = uniqueId; }}
+    >
       {/* Video Container with CSS cropping to hide top title bar and bottom YouTube overlays */}
       <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black border border-zinc-800 shadow-md group">
         <div 
@@ -361,21 +415,58 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
             isVertical
               ? {
                   width: `${iframeWidthPercent}%`,
-                  height: '130%',
+                  height: '100%',
                   left: '50%',
-                  top: '-15%',
+                  top: '0',
                   transform: 'translateX(-50%)',
                 }
               : {
                   width: '100%',
-                  height: '140%',
+                  height: '100%',
                   left: '0',
-                  top: '-10%',
-                  transform: 'scale(1.05)',
+                  top: '0',
                 }
           }
         />
+        
+        {/* Custom AI Subtitle Overlay */}
+        {showCaptions && transcriptData && transcriptData.segments && (
+          <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-end pb-8 z-20 overflow-hidden">
+            {transcriptData.segments.map((seg: any, i: number) => {
+              // The AI transcript is based on the cropped audio which starts at 0s.
+              // We must offset the absolute YouTube time by the clip start time.
+              const relativeTime = currentTime - (clipRange?.start || 0);
 
+              const isActiveSegment = relativeTime >= seg.start && relativeTime <= seg.end;
+              if (!isActiveSegment) return null;
+
+              return (
+                <div key={i} className="flex flex-wrap justify-center items-center gap-x-1.5 px-4 text-center">
+                  {seg.words?.map((w: any, idx: number) => {
+                    const isActiveWord = relativeTime >= w.start && relativeTime <= w.end;
+                    const isPastWord = relativeTime > w.end;
+                    
+                    // Signature Editor Style: Yellow highlight for active, white for past, transparent white for future
+                    let colorClass = "text-white/60";
+                    if (isActiveWord) colorClass = "text-amber-400 font-bold scale-110 drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]";
+                    else if (isPastWord) colorClass = "text-white drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]";
+
+                    return (
+                      <span 
+                        key={idx} 
+                        className={`text-xl sm:text-2xl font-black uppercase transition-all duration-150 ${colorClass}`}
+                        style={{ WebkitTextStroke: isActiveWord || isPastWord ? '1px rgba(0,0,0,0.5)' : 'none' }}
+                      >
+                        {w.word}
+                      </span>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        
         {/* Invisible Click-to-toggle overlay */}
         <button
           type="button"
@@ -450,14 +541,27 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
 
           {/* Quick Timestamp Capture Buttons & CC */}
           <div className="flex items-center gap-1.5 ml-auto">
-            <button
-              type="button"
-              onClick={toggleCaptions}
-              className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/60 transition-colors"
-              title="Toggle Captions"
-            >
-              <Type className={`w-3 h-3 ${showCaptions ? 'text-amber-400' : 'text-zinc-400'}`} />
-            </button>
+            {!transcriptData ? (
+              <button
+                type="button"
+                onClick={handleTranscribeClip}
+                disabled={isTranscribing}
+                className="px-2 py-1 rounded-lg bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/30 text-[10px] font-semibold text-amber-400 flex items-center gap-1 transition-colors disabled:opacity-50"
+                title="Transcribe Clip via AI"
+              >
+                {isTranscribing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                <span>AI Captions</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={toggleCaptions}
+                className="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700/60 transition-colors"
+                title="Toggle Captions"
+              >
+                <Type className={`w-3 h-3 ${showCaptions ? 'text-amber-400' : 'text-zinc-400'}`} />
+              </button>
+            )}
             <button
               type="button"
               onClick={handleSetStart}

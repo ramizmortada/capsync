@@ -29,13 +29,11 @@ const formatSecondsToHHMMSS = (totalSeconds: number): string => {
 
 export interface DownloaderProps {
   onDownloadComplete?: (file: File, action: 'download' | 'download_and_edit') => void;
-  initialUrl?: string;
-  initialInfo?: any;
+  url: string;
+  info: any;
   initialStartTime?: number;
   initialEndTime?: number;
   clipTitle?: string;
-  compact?: boolean;
-  onInfoFetched?: (url: string, info: any) => void;
   children?: React.ReactNode;
 }
 
@@ -48,17 +46,13 @@ const secondsToTimeValue = (totalSeconds: number): TimeValue => {
 
 export default function Downloader({ 
   onDownloadComplete,
-  initialUrl = '',
-  initialInfo = null,
+  url,
+  info,
   initialStartTime,
   initialEndTime,
   clipTitle,
-  compact = false,
-  onInfoFetched,
   children
 }: DownloaderProps) {
-  const [url, setUrl] = useState(initialUrl);
-  const [info, setInfo] = useState<any>(initialInfo);
   const [loading, setLoading] = useState(false);
   const [isAudio, setIsAudio] = useState(false);
   const [quality, setQuality] = useState('1080');
@@ -71,7 +65,7 @@ export default function Downloader({
   // Time segment values
   const [startValue, setStartValue] = useState<TimeValue>(initialStartTime !== undefined ? secondsToTimeValue(initialStartTime) : { hours: '00', minutes: '00', seconds: '00' });
   const [endValue, setEndValue] = useState<TimeValue>(initialEndTime !== undefined ? secondsToTimeValue(initialEndTime) : { hours: '00', minutes: '00', seconds: '00' });
-  const [isLoopingClip, setIsLoopingClip] = useState(compact);
+  const [isLoopingClip, setIsLoopingClip] = useState(false);
 
   // Calculate clipping state and validation
   const startSeconds = timeValueToSeconds(startValue);
@@ -153,47 +147,7 @@ export default function Downloader({
     setEndValue(val);
   };
 
-  useEffect(() => {
-    // Rehydrate state on mount if available
-    if (initialInfo) return; // Skip if we have initial props
-    
-    const savedUrl = localStorage.getItem('ytUrl');
-    const savedInfo = localStorage.getItem('ytInfo');
-    if (savedUrl) setUrl(savedUrl);
-    if (savedInfo) {
-      try {
-        const parsed = JSON.parse(savedInfo);
-        setInfo(parsed);
-        if (onInfoFetched && savedUrl) onInfoFetched(savedUrl, parsed);
-      } catch (e) {
-        // ignore
-      }
-    }
-  }, []);
 
-  const fetchInfo = async () => {
-    if (!url) return;
-    setLoading(true);
-    try {
-      const res = await fetch('/api/info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
-      });
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      
-      setInfo(data);
-      if (onInfoFetched) onInfoFetched(url, data);
-      // Save successfully fetched data to local storage
-      localStorage.setItem('ytUrl', url);
-      localStorage.setItem('ytInfo', JSON.stringify(data));
-    } catch (err) {
-      alert('Failed to fetch info. Check URL or verify yt-dlp works.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleCancel = () => {
     if (abortController) {
@@ -304,30 +258,6 @@ export default function Downloader({
 
   return (
     <div className={`w-full transition-all duration-300 ${info ? 'max-w-4xl' : 'max-w-lg'} mx-auto flex flex-col gap-3 max-h-full justify-center min-h-0`}>
-      {/* Search Section */}
-      {!compact && (
-        <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="relative flex items-center shrink-0">
-          <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none">
-            <Search className="w-4 h-4 text-zinc-500" />
-          </div>
-          <Input 
-            placeholder="Paste YouTube URL here..." 
-            value={url} 
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUrl(e.target.value)}
-            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === 'Enter' && fetchInfo()}
-            className="h-11 text-sm pl-10 pr-16 rounded-full bg-zinc-900 border-zinc-800 text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-0 focus-visible:ring-offset-0 focus:outline-none focus:border-zinc-500 transition-all shadow-sm"
-          />
-          <Button 
-            onClick={fetchInfo} 
-            disabled={loading || !url} 
-            size="icon"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-white text-black hover:bg-zinc-200 transition-none flex items-center justify-center shadow-md disabled:opacity-50"
-          >
-            {loading ? <Loader2 className="animate-spin w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
-          </Button>
-        </motion.div>
-      )}
-
       {/* Video Card Section */}
       <AnimatePresence>
         {info && (
