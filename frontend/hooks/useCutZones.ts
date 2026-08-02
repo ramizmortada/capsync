@@ -45,7 +45,7 @@ export function useCutZones(
       });
     });
 
-    videoSegments.forEach(seg => {
+    (videoSegments || []).forEach(seg => {
       if (seg.deleted) {
         rawIntervals.push({
           start: seg.timelineStart,

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface UsePlaybackSyncProps {
   mediaRef: React.RefObject<HTMLMediaElement | null>;
@@ -6,7 +6,6 @@ interface UsePlaybackSyncProps {
   trackRef: React.RefObject<HTMLDivElement | null>;
   mediaDuration: number;
   videoSegments: any[];
-  rippleDeletes: any[];
   editableSegments: any[];
   masterTimeRef: React.MutableRefObject<number>;
   setMasterTime: React.Dispatch<React.SetStateAction<number>>;
@@ -23,7 +22,6 @@ export function usePlaybackSync({
   trackRef,
   mediaDuration,
   videoSegments,
-  rippleDeletes,
   editableSegments,
   masterTimeRef,
   setMasterTime,
@@ -34,40 +32,35 @@ export function usePlaybackSync({
   zoomLevel
 }: UsePlaybackSyncProps) {
   const lastRealTimeRef = useRef(0);
-  const playRequestedRef = useRef(false);
-  const playbackSkipZonesRef = useRef<{start: number, end: number}[]>([]);
 
-  // Calculate skip zones in source time
+  const timelineMapRef = useRef<any[]>([]);
+
   useEffect(() => {
-    const zones: {start: number, end: number}[] = [];
-    rippleDeletes.forEach(z => zones.push({ ...z }));
-    videoSegments.forEach(s => {
-      // s.deleted implies the video segment is deleted in source time
-      if (s.deleted) zones.push({ start: s.sourceStart, end: s.sourceEnd });
-    });
-    zones.sort((a, b) => a.start - b.start);
-    const merged: {start: number, end: number}[] = [];
-    for (const z of zones) {
-      if (merged.length > 0 && z.start <= merged[merged.length - 1].end + 0.01) {
-        merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, z.end);
-      } else {
-        merged.push({ ...z });
-      }
+    let map = [...videoSegments].filter(s => !s.deleted).sort((a, b) => a.timelineStart - b.timelineStart);
+    if (map.length === 0 && mediaDuration > 0) {
+      map = [{
+        timelineStart: 0,
+        timelineEnd: mediaDuration,
+        sourceStart: 0,
+        sourceEnd: mediaDuration,
+      }];
     }
-    playbackSkipZonesRef.current = merged;
-  }, [rippleDeletes, videoSegments]);
+    timelineMapRef.current = map;
+  }, [videoSegments, mediaDuration]);
 
-  // Center timeline on playhead initially or when media loads
+  // Initial centering
   useEffect(() => {
     if (timelineRef.current && trackRef.current && mediaRef.current && mediaDuration > 0) {
       const trackWidth = trackRef.current.scrollWidth;
-      const playheadX = (mediaRef.current.currentTime / mediaDuration) * trackWidth;
+      const timelineDur = Math.max(mediaDuration, 0.1);
+      const playheadX = (masterTimeRef.current / timelineDur) * trackWidth;
       const container = timelineRef.current;
       container.scrollLeft = playheadX - container.clientWidth / 2;
     }
   }, [mediaDuration, timelineRef, trackRef, mediaRef]);
 
-  // Smooth Sync Loop
+  const [currentSourceTime, setCurrentSourceTime] = useState(0);
+
   useEffect(() => {
     let animationFrameId: number;
 
@@ -77,51 +70,59 @@ export function usePlaybackSync({
         return;
       }
       
+      setCurrentSourceTime(mediaRef.current.currentTime);
+      
       if (isPlayingRef.current) {
         if (mediaRef.current.seeking) {
-          // Wait for the browser to finish the async seek operation
           animationFrameId = requestAnimationFrame(smoothSync);
           return;
         }
 
-        let newTime = mediaRef.current.currentTime;
+        let currentMaster = masterTimeRef.current;
+        const timelineMap = timelineMapRef.current;
         
-        // Skip over cut zones instantly
-        const activeSkipZone = playbackSkipZonesRef.current.find(z => newTime >= z.start && newTime < z.end);
-        if (activeSkipZone) {
-          // Add a tiny 10ms epsilon to guarantee we land AFTER the zone boundary,
-          // preventing floating point inaccuracies from re-triggering the cut zone.
-          newTime = activeSkipZone.end + 0.01;
-          mediaRef.current.currentTime = newTime;
-          
-          // Sync UI immediately
-          masterTimeRef.current = newTime;
-          setMasterTime(newTime);
-          
-          animationFrameId = requestAnimationFrame(smoothSync);
-          return;
-        }
+        const activeSegment = timelineMap.find(s => 
+          currentMaster >= s.timelineStart && currentMaster < s.timelineEnd
+        );
 
-        // Check if we reached the end of the playable media
-        if (newTime >= mediaDuration) {
-          if (!mediaRef.current.paused) {
-            mediaRef.current.pause();
+        if (activeSegment) {
+          const expectedSourceTime = activeSegment.sourceStart + (currentMaster - activeSegment.timelineStart);
+          
+          if (Math.abs(mediaRef.current.currentTime - expectedSourceTime) > 0.15) {
+            mediaRef.current.currentTime = expectedSourceTime;
+          } else {
+            currentMaster = activeSegment.timelineStart + (mediaRef.current.currentTime - activeSegment.sourceStart);
           }
-          playRequestedRef.current = false;
-          isPlayingRef.current = false;
+
+          if (currentMaster >= activeSegment.timelineEnd - 0.01 || mediaRef.current.currentTime >= activeSegment.sourceEnd - 0.01) {
+             const nextSegment = timelineMap.find(s => s.timelineStart >= activeSegment.timelineEnd);
+             if (nextSegment) {
+               currentMaster = nextSegment.timelineStart + 0.01;
+               mediaRef.current.currentTime = nextSegment.sourceStart + 0.01;
+             } else {
+               mediaRef.current.pause();
+               isPlayingRef.current = false;
+             }
+          }
+        } else {
+          const nextSegment = timelineMap.find(s => s.timelineStart > currentMaster);
+          if (nextSegment) {
+            currentMaster = nextSegment.timelineStart + 0.01;
+            mediaRef.current.currentTime = nextSegment.sourceStart + 0.01;
+          } else {
+             mediaRef.current.pause();
+             isPlayingRef.current = false;
+          }
         }
-        
-        // Always sync master time to current time
-        masterTimeRef.current = newTime;
-        setMasterTime(newTime);
+
+        masterTimeRef.current = currentMaster;
+        setMasterTime(currentMaster);
       }
 
-      // Update scroll position based on mapped timeline time
-      // Since toTimelineTime isn't passed down, we approximate scrolling via source percentage.
-      // The timeline visual layout handles exact positioning via playheadX.
       if (isPlayingRef.current && timelineRef.current && trackRef.current && !isHoveringTimeline.current && draggingBoundary === null) {
         const trackWidth = trackRef.current.scrollWidth;
-        const timelineDur = Math.max(mediaDuration, 0.1); // Fallback approximation for scroll proportion
+        const maxTimelineEnd = timelineMapRef.current.reduce((max, s) => Math.max(max, s.timelineEnd), mediaDuration > 0 ? mediaDuration : 0.1);
+        const timelineDur = Math.max(maxTimelineEnd, 0.1);
         const playheadX = (masterTimeRef.current / timelineDur) * trackWidth;
         const container = timelineRef.current;
         const clientWidth = container.clientWidth;
@@ -138,26 +139,32 @@ export function usePlaybackSync({
     };
   }, [mediaDuration, draggingBoundary, isPlayingRef, isHoveringTimeline, masterTimeRef, mediaRef, setMasterTime, timelineRef, trackRef]);
 
-  // Auto-scroll subtitle editor list
   useEffect(() => {
     if (!mediaRef.current || mediaRef.current.paused || mediaDuration <= 0) return;
 
-    const activeIndex = editableSegments.findIndex((s: any) => masterTime >= s.start && masterTime < s.end);
+    const activeIndex = editableSegments.findIndex((s: any) => currentSourceTime >= s.start && currentSourceTime < s.end);
     if (activeIndex !== -1) {
       const activeElement = document.getElementById(`subtitle-segment-${activeIndex}`);
       if (activeElement) {
         activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }
-  }, [masterTime, mediaDuration, editableSegments, mediaRef]);
+  }, [currentSourceTime, mediaDuration, editableSegments, mediaRef]);
 
-  const getValidSeekTime = (time: number) => {
-    const activeSkipZone = playbackSkipZonesRef.current.find(z => time >= z.start && time < z.end);
-    if (activeSkipZone) {
-      return activeSkipZone.end;
+  const handleTimelineSeek = (time: number) => {
+    let validTime = time;
+
+    masterTimeRef.current = validTime;
+    setMasterTime(validTime);
+
+    const timelineMap = timelineMapRef.current;
+    const activeSeg = timelineMap.find(s => validTime >= s.timelineStart && validTime < s.timelineEnd);
+    
+    if (activeSeg && mediaRef.current) {
+      mediaRef.current.currentTime = activeSeg.sourceStart + (validTime - activeSeg.timelineStart);
+      setCurrentSourceTime(mediaRef.current.currentTime);
     }
-    return time;
   };
 
-  return { getValidSeekTime };
+  return { handleTimelineSeek, currentSourceTime };
 }

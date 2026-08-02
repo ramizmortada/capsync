@@ -113,28 +113,43 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   }, []);
 
   const toTimelineTime = (mediaTime: number) => {
-    let timelineTime = mediaTime;
-    for (const zone of mergedRippleDeletes) {
-      if (mediaTime >= zone.end) {
-        timelineTime -= (zone.end - zone.start);
-      } else if (mediaTime > zone.start) {
-        timelineTime -= (mediaTime - zone.start);
-      }
+    const activeSeg = videoSegments.find(s => mediaTime >= s.sourceStart && mediaTime <= s.sourceEnd && !s.deleted);
+    if (activeSeg) {
+      return activeSeg.timelineStart + (mediaTime - activeSeg.sourceStart);
     }
-    return Math.max(0, timelineTime);
+    // If it falls outside active segments (e.g. trimmed), we can try to guess or just return a default
+    // We can find the closest segment
+    const closest = [...videoSegments].filter(s => !s.deleted).sort((a, b) => Math.abs(a.sourceStart - mediaTime) - Math.abs(b.sourceStart - mediaTime))[0];
+    if (closest) {
+       if (mediaTime < closest.sourceStart) return closest.timelineStart;
+       if (mediaTime > closest.sourceEnd) return closest.timelineEnd;
+    }
+    return mediaTime;
   };
 
   const toMediaTime = (timelineTime: number) => {
-    let mediaTime = timelineTime;
-    for (const zone of mergedRippleDeletes) {
-      if (mediaTime >= zone.start) {
-        mediaTime += (zone.end - zone.start);
-      }
+    const activeSeg = videoSegments.find(s => timelineTime >= s.timelineStart && timelineTime <= s.timelineEnd && !s.deleted);
+    if (activeSeg) {
+      return activeSeg.sourceStart + (timelineTime - activeSeg.timelineStart);
     }
-    return Math.min(mediaTime, mediaDuration);
+    
+    // Gap on timeline
+    const closest = [...videoSegments].filter(s => !s.deleted).sort((a, b) => Math.abs(a.timelineStart - timelineTime) - Math.abs(b.timelineStart - timelineTime))[0];
+    if (closest) {
+      if (timelineTime < closest.timelineStart) return closest.sourceStart;
+      if (timelineTime > closest.timelineEnd) return closest.sourceEnd;
+    }
+    return timelineTime;
   };
 
-  const timelineDuration = Math.max(toTimelineTime(mediaDuration), 0.1);
+  // Check if a source-time range overlaps any active (non-deleted) video segment
+  const isInActiveVideoRange = (start: number, end: number) => {
+    return videoSegments.some(s => !s.deleted && start < s.sourceEnd && end > s.sourceStart);
+  };
+
+  let calculatedTimelineDur = videoSegments.reduce((max, s) => s.deleted ? max : Math.max(max, s.timelineEnd), 0);
+  if (calculatedTimelineDur === 0 && mediaDuration > 0) calculatedTimelineDur = mediaDuration;
+  const timelineDuration = Math.max(calculatedTimelineDur, 0.1);
 
   useEffect(() => {
     if (!isDraggingPlayhead || !trackRef.current) return;
@@ -170,24 +185,83 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       clickX = Math.max(0, Math.min(clickX, trackRect.width));
       const percentage = clickX / trackRect.width;
       const targetTimelineTime = percentage * timelineDuration;
-      const newTime = toMediaTime(targetTimelineTime);
 
       setVideoSegments(prev => prev.map(s => {
         if (s.id === draggingVideoBoundary.id) {
+          const SNAP_THRESHOLD = 0.2; // 0.2 seconds
+
           if (draggingVideoBoundary.type === 'start') {
-            const newTimelineStart = Math.max(0, Math.min(newTime, s.timelineEnd - 0.1));
+            let newTimelineStart = Math.max(0, Math.min(targetTimelineTime, s.timelineEnd - 0.1));
+            
+            // Snap to 0
+            if (Math.abs(newTimelineStart - 0) < SNAP_THRESHOLD) newTimelineStart = 0;
+            
+            // Snap to other segments
+            for (const other of prev) {
+              if (other.id === s.id) continue;
+              if (Math.abs(newTimelineStart - other.timelineEnd) < SNAP_THRESHOLD) newTimelineStart = other.timelineEnd;
+              else if (Math.abs(newTimelineStart - other.timelineStart) < SNAP_THRESHOLD) newTimelineStart = other.timelineStart;
+            }
+
             const delta = newTimelineStart - s.timelineStart;
             return { ...s, timelineStart: newTimelineStart, sourceStart: s.sourceStart + delta };
           } else if (draggingVideoBoundary.type === 'end') {
-            const newTimelineEnd = Math.max(s.timelineStart + 0.1, newTime); // Removed Math.min with mediaDuration since timeline can grow indefinitely
+            let newTimelineEnd = Math.max(s.timelineStart + 0.1, targetTimelineTime);
+            
+            // Snap to other segments
+            for (const other of prev) {
+              if (other.id === s.id) continue;
+              if (Math.abs(newTimelineEnd - other.timelineStart) < SNAP_THRESHOLD) newTimelineEnd = other.timelineStart;
+              else if (Math.abs(newTimelineEnd - other.timelineEnd) < SNAP_THRESHOLD) newTimelineEnd = other.timelineEnd;
+            }
+
             const delta = newTimelineEnd - s.timelineEnd;
             return { ...s, timelineEnd: newTimelineEnd, sourceEnd: s.sourceEnd + delta };
           } else if (draggingVideoBoundary.type === 'body') {
             // Move the whole body
-            const delta = newTime - (draggingVideoBoundary.offsetStart || 0);
-            const newTimelineStart = Math.max(0, (draggingVideoBoundary.initialTimelineStart || 0) + delta);
+            const delta = targetTimelineTime - (draggingVideoBoundary.offsetStart || 0);
+            let newTimelineStart = Math.max(0, (draggingVideoBoundary.initialTimelineStart || 0) + delta);
+            let newTimelineEnd = newTimelineStart + ((draggingVideoBoundary.initialTimelineEnd || 0) - (draggingVideoBoundary.initialTimelineStart || 0));
+            
+            // Snapping logic for body
+            let snapOffset = 0;
+            let didSnap = false;
+            
+            // Snap to 0
+            if (Math.abs(newTimelineStart - 0) < SNAP_THRESHOLD) {
+                snapOffset = 0 - newTimelineStart;
+                didSnap = true;
+            }
+
+            if (!didSnap) {
+                for (const other of prev) {
+                  if (other.id === s.id) continue;
+                  
+                  if (Math.abs(newTimelineStart - other.timelineEnd) < SNAP_THRESHOLD) {
+                    snapOffset = other.timelineEnd - newTimelineStart;
+                    didSnap = true; break;
+                  }
+                  if (Math.abs(newTimelineEnd - other.timelineStart) < SNAP_THRESHOLD) {
+                    snapOffset = other.timelineStart - newTimelineEnd;
+                    didSnap = true; break;
+                  }
+                  if (Math.abs(newTimelineStart - other.timelineStart) < SNAP_THRESHOLD) {
+                    snapOffset = other.timelineStart - newTimelineStart;
+                    didSnap = true; break;
+                  }
+                  if (Math.abs(newTimelineEnd - other.timelineEnd) < SNAP_THRESHOLD) {
+                    snapOffset = other.timelineEnd - newTimelineEnd;
+                    didSnap = true; break;
+                  }
+                }
+            }
+
+            if (didSnap) {
+              newTimelineStart += snapOffset;
+              newTimelineEnd += snapOffset;
+            }
+
             const actualDelta = newTimelineStart - (draggingVideoBoundary.initialTimelineStart || 0);
-            const newTimelineEnd = newTimelineStart + ((draggingVideoBoundary.initialTimelineEnd || 0) - (draggingVideoBoundary.initialTimelineStart || 0));
             
             // Shift associated subtitle segments if the video was dragged
             if (Math.abs(actualDelta - (s.timelineStart - (draggingVideoBoundary.initialTimelineStart || 0))) > 0.001) {
@@ -352,7 +426,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
         isPlaying={isPlaying}
         togglePlay={togglePlay}
         stopPlay={stopPlay}
-        currentTime={toTimelineTime(currentTime)}
+        currentTime={currentTime}
         mediaDuration={timelineDuration}
         zoomLevel={zoomLevel}
         setZoomLevel={setZoomLevel}
@@ -413,7 +487,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
             const rect = trackRef.current.getBoundingClientRect();
             let x = e.clientX - rect.left;
             if (timelineDuration > 0) {
-              const playheadX = (toTimelineTime(currentTime) / timelineDuration) * rect.width;
+              const playheadX = (currentTime / timelineDuration) * rect.width;
               if (Math.abs(x - playheadX) < 15) {
                 x = playheadX;
               }
@@ -440,13 +514,10 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
           {/* Video Segments blocks */}
           {videoSegments.map((segment) => {
-            const tlStart = toTimelineTime(segment.timelineStart);
-            const tlEnd = toTimelineTime(segment.timelineEnd);
-            // If the segment is completely ripple-deleted, it might have tlStart == tlEnd, so skip rendering if width is 0 or it's hidden
-            if (tlStart >= tlEnd) return null;
-            
-            const left = (tlStart / timelineDuration) * 100;
-            const width = ((tlEnd - tlStart) / timelineDuration) * 100;
+            if (segment.deleted) return null;
+            const left = (segment.timelineStart / timelineDuration) * 100;
+            const width = ((segment.timelineEnd - segment.timelineStart) / timelineDuration) * 100;
+            if (width <= 0) return null;
             const isSelected = selectedVideoIndexes.includes(segment.id);
             
             return (
@@ -455,9 +526,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                 className={`absolute top-[64px] h-10 rounded text-[10px] p-1 font-medium transition-colors border overflow-hidden ${
                   isSelected
                     ? 'bg-blue-500/30 border-blue-400 z-20 text-blue-100'
-                    : segment.deleted
-                      ? 'bg-red-950/20 border-red-900/30 text-red-500/60 opacity-60 z-10'
-                      : 'bg-indigo-900/40 border-indigo-500/50 text-indigo-200 z-10 hover:border-indigo-400 hover:z-20 cursor-grab active:cursor-grabbing'
+                    : 'bg-indigo-900/40 border-indigo-500/50 text-indigo-200 z-10 hover:border-indigo-400 hover:z-20 cursor-grab active:cursor-grabbing'
                 }`}
                 style={{ left: `${left}%`, width: `${width}%` }}
                 onPointerDown={(e) => {
@@ -466,7 +535,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                     const rect = trackRef.current!.getBoundingClientRect();
                     let clickX = e.clientX - rect.left;
                     if (timelineDuration > 0) {
-                      const playheadX = (toTimelineTime(currentTime) / timelineDuration) * rect.width;
+                      const playheadX = (currentTime / timelineDuration) * rect.width;
                       if (Math.abs(clickX - playheadX) < 15) {
                         clickX = playheadX;
                       }
@@ -494,7 +563,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                       const clickX = e.clientX - rect.left;
                       const percentage = clickX / rect.width;
                       const targetTimelineTime = percentage * timelineDuration;
-                      const offsetStart = toMediaTime(targetTimelineTime);
+                      const offsetStart = targetTimelineTime;
                       setDraggingVideoBoundary({ id: segment.id, type: 'body', offsetStart, initialTimelineStart: segment.timelineStart, initialTimelineEnd: segment.timelineEnd });
                     }
                   }
@@ -535,11 +604,14 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
           {/* Subtitle Segments blocks */}
           {editableSegments.map((segment, index) => {
+            // Skip subtitle segments that fall entirely in ripple-deleted zones
+            if (!isInActiveVideoRange(segment.start, segment.end)) return null;
             const tlStart = toTimelineTime(segment.start);
             const tlEnd = toTimelineTime(segment.end);
+            if (tlStart >= tlEnd) return null;
             const left = (tlStart / timelineDuration) * 100;
             const width = ((tlEnd - tlStart) / timelineDuration) * 100;
-            const isActive = currentTime >= (segment.start - 0.05) && currentTime < (segment.end - 0.05);
+            const isActive = currentTime >= (tlStart - 0.05) && currentTime < (tlEnd - 0.05);
             
             const realWords = segment.words ? segment.words.filter((w: any) => !w.isGap) : [];
             const isSilenced = realWords.length > 0 && realWords.every((w: any) => w.deleted);
@@ -597,8 +669,11 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           {zoomLevel >= 15 && editableSegments.map((segment, index) => {
             if (!segment.words || segment.words.length === 0) return null;
             return segment.words.map((word: any, wIdx: number) => {
+              // Skip words that fall entirely in ripple-deleted zones
+              if (!isInActiveVideoRange(word.start, word.end)) return null;
               const tlStart = toTimelineTime(word.start);
               const tlEnd = toTimelineTime(word.end);
+              if (tlStart >= tlEnd) return null;
               const left = (tlStart / timelineDuration) * 100;
               const width = ((tlEnd - tlStart) / timelineDuration) * 100;
               const isDeleted = word.deleted;
@@ -660,7 +735,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           {/* Playhead */}
           <div 
             className={`absolute top-0 bottom-0 w-8 -ml-4 z-20 flex justify-center group ${cursorMode === 'cut' ? 'pointer-events-none' : 'cursor-grab active:cursor-grabbing'}`}
-            style={{ left: `${(toTimelineTime(currentTime) / timelineDuration) * 100}%` }}
+            style={{ left: `${(currentTime / timelineDuration) * 100}%` }}
             onPointerDown={(e) => {
               if (cursorMode === 'cut') return;
               e.preventDefault();

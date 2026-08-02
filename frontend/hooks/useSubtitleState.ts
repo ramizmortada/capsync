@@ -240,6 +240,50 @@ export function useSubtitleState({
     });
   };
 
+  // Helper: given ripple-deleted source-time regions, cut through video segments
+  // and recalculate timeline positions so the timeline collapses with no gaps.
+  const recalcVideoTimeline = (newRippleRegions: { start: number; end: number }[]) => {
+    setVideoSegments((prev) => {
+      // Cut each video segment by the ripple regions
+      let segments = [...prev];
+      for (const region of newRippleRegions) {
+        const result: VideoSegment[] = [];
+        for (const seg of segments) {
+          if (seg.deleted) { result.push(seg); continue; }
+          // No overlap — keep as is
+          if (region.end <= seg.sourceStart || region.start >= seg.sourceEnd) {
+            result.push(seg);
+            continue;
+          }
+          // Full overlap — mark deleted
+          if (region.start <= seg.sourceStart && region.end >= seg.sourceEnd) {
+            result.push({ ...seg, deleted: true });
+            continue;
+          }
+          // Partial overlap — split
+          if (region.start > seg.sourceStart) {
+            result.push({ ...seg, sourceEnd: region.start, timelineEnd: seg.timelineStart + (region.start - seg.sourceStart), id: seg.id });
+          }
+          if (region.end < seg.sourceEnd) {
+            result.push({ ...seg, sourceStart: region.end, timelineStart: seg.timelineStart, id: seg.id + '_r', deleted: false });
+          }
+          continue;
+        }
+        segments = result;
+      }
+      // Recalculate timeline positions for active segments
+      const active = segments.filter(s => !s.deleted).sort((a, b) => a.sourceStart - b.sourceStart);
+      let cursor = 0;
+      for (const seg of active) {
+        const duration = seg.sourceEnd - seg.sourceStart;
+        seg.timelineStart = cursor;
+        seg.timelineEnd = cursor + duration;
+        cursor += duration;
+      }
+      return segments;
+    });
+  };
+
   const handleRippleDelete = (indices: (number | string)[]) => {
     const regionsToAdd: { start: number; end: number }[] = [];
     const segmentIndicesToDelete: number[] = [];
@@ -286,6 +330,7 @@ export function useSubtitleState({
     
     setEditableSegments(newSegments);
     setRippleDeletes(newRippleDeletes);
+    recalcVideoTimeline(regionsToAdd);
   };
 
   const handleRippleDeleteRange = (start: number, end: number) => {
@@ -294,6 +339,7 @@ export function useSubtitleState({
       future: [],
     }));
     setRippleDeletes((prev) => [...prev, { start, end }]);
+    recalcVideoTimeline([{ start, end }]);
   };
 
   const undo = () => {
@@ -400,15 +446,35 @@ export function useSubtitleState({
 
   const handleVideoRippleDelete = (ids: string[]) => {
     const regionsToAdd: { start: number; end: number }[] = [];
-    updateVideoSegments((prev) => {
-      return prev.map(s => {
+    
+    setSegmentHistory((prevHistory) => ({
+      past: [...prevHistory.past, { segments: editableSegments, rippleDeletes, videoSegments }].slice(-50),
+      future: [],
+    }));
+
+    setVideoSegments((prev) => {
+      // Mark targeted segments as deleted and collect their regions
+      const updated = prev.map(s => {
         if (ids.includes(s.id)) {
-          regionsToAdd.push({ start: s.timelineStart, end: s.timelineEnd });
+          regionsToAdd.push({ start: s.sourceStart, end: s.sourceEnd });
           return { ...s, deleted: true };
         }
         return s;
       });
+
+      // Recalculate timeline positions: only active (non-deleted) segments get timeline space
+      const active = updated.filter(s => !s.deleted).sort((a, b) => a.timelineStart - b.timelineStart);
+      let cursor = 0;
+      for (const seg of active) {
+        const duration = seg.sourceEnd - seg.sourceStart;
+        seg.timelineStart = cursor;
+        seg.timelineEnd = cursor + duration;
+        cursor += duration;
+      }
+
+      return updated;
     });
+
     if (regionsToAdd.length > 0) {
       setRippleDeletes((prev) => [...prev, ...regionsToAdd]);
     }

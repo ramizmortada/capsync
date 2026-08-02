@@ -67,6 +67,7 @@ export default function WhisperXApp() {
 
   const [mediaUrl, setMediaUrl] = useState<string>("");
   const [masterTime, setMasterTime] = useState(0);
+
   const masterTimeRef = useRef(0);
   const isPlayingRef = useRef(false);
   const [mediaDuration, setMediaDuration] = useState<number>(0);
@@ -200,7 +201,7 @@ export default function WhisperXApp() {
     setDraggingBoundary,
     trackRef,
     mediaDuration,
-    rippleDeletes,
+    videoSegments,
     editableSegments,
     setEditableSegments,
     setSegmentHistory,
@@ -229,13 +230,12 @@ export default function WhisperXApp() {
     mediaRef,
   });
 
-  const { getValidSeekTime } = usePlaybackSync({
+  const { handleTimelineSeek, currentSourceTime } = usePlaybackSync({
     mediaRef,
     timelineRef,
     trackRef,
     mediaDuration,
     videoSegments,
-    rippleDeletes,
     editableSegments,
     masterTimeRef,
     setMasterTime,
@@ -243,7 +243,7 @@ export default function WhisperXApp() {
     isPlayingRef,
     isHoveringTimeline,
     draggingBoundary,
-    zoomLevel,
+    zoomLevel
   });
 
   // Generate local object URL for instant media playback
@@ -326,11 +326,14 @@ export default function WhisperXApp() {
   const togglePlay = () => {
     if (mediaRef.current) {
       if (mediaRef.current.paused) {
-        if (masterTime >= mediaDuration - 0.1) {
-          const validTime = getValidSeekTime(0);
-          mediaRef.current.currentTime = validTime;
-          masterTimeRef.current = validTime;
-          setMasterTime(validTime);
+        if (masterTime >= mediaDuration) {
+          handleTimelineSeek(0);
+          mediaRef.current.play().catch(e => {
+            if (e.name !== 'AbortError') console.error(e);
+          });
+          setIsPlaying(true);
+          isPlayingRef.current = true;
+          return;
         }
         mediaRef.current.play().catch(e => {
           if (e.name !== 'AbortError') console.error(e);
@@ -348,10 +351,7 @@ export default function WhisperXApp() {
   const stopPlay = () => {
     if (mediaRef.current) {
       mediaRef.current.pause();
-      const validTime = getValidSeekTime(0);
-      mediaRef.current.currentTime = validTime;
-      masterTimeRef.current = validTime;
-      setMasterTime(validTime);
+      handleTimelineSeek(0);
       setIsPlaying(false);
       isPlayingRef.current = false;
     }
@@ -568,19 +568,14 @@ export default function WhisperXApp() {
               safePadding={safePadding}
               setSafePadding={setSafePadding}
               handleAutoCutSilences={handleAutoCutSilences}
-              currentTime={masterTime}
+              currentTime={currentSourceTime}
               handleSegmentChange={handleSegmentChange}
               handleToggleSegmentSilence={handleToggleSegmentSilence}
               handleDeleteSegments={handleDeleteSegments}
               handleDuplicateSegment={handleDuplicateSegment}
               handleOffsetSegments={handleOffsetSegments}
               onSeek={(mediaTime) => {
-                const validTime = getValidSeekTime(mediaTime);
-                if (mediaRef.current) {
-                  mediaRef.current.currentTime = validTime;
-                }
-                masterTimeRef.current = validTime;
-                setMasterTime(validTime);
+                handleTimelineSeek(mediaTime);
               }}
               clearProject={clearProject}
               downloadSRT={downloadSRT}
@@ -597,7 +592,7 @@ export default function WhisperXApp() {
               file={file}
               mediaUrl={mediaUrl}
               mediaRef={mediaRef}
-              currentTime={masterTime}
+              currentTime={currentSourceTime}
               setCurrentTime={(time) => {
                 masterTimeRef.current = time;
                 setMasterTime(time);
@@ -645,13 +640,8 @@ export default function WhisperXApp() {
             setDraggingBoundary={setDraggingBoundary}
             draggingBoundary={draggingBoundary}
             handleToggleWordDelete={handleToggleWordDelete}
-            onSeek={(mediaTime) => {
-              const validTime = getValidSeekTime(mediaTime);
-              if (mediaRef.current) {
-                mediaRef.current.currentTime = validTime;
-              }
-              masterTimeRef.current = validTime;
-              setMasterTime(validTime);
+            onSeek={(_, timelineTime) => {
+              handleTimelineSeek(timelineTime);
             }}
             videoSegments={videoSegments}
             setVideoSegments={setVideoSegments}

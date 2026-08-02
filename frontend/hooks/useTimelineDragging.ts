@@ -6,7 +6,7 @@ export function useTimelineDragging({
   setDraggingBoundary,
   trackRef,
   mediaDuration,
-  rippleDeletes,
+  videoSegments,
   editableSegments,
   setEditableSegments,
   setSegmentHistory,
@@ -15,7 +15,7 @@ export function useTimelineDragging({
   setDraggingBoundary: (t: DragTarget | null) => void;
   trackRef: React.RefObject<HTMLDivElement | null>;
   mediaDuration: number;
-  rippleDeletes: { start: number; end: number }[];
+  videoSegments: any[];
   editableSegments: any[];
   setEditableSegments: React.Dispatch<React.SetStateAction<any[]>>;
   setSegmentHistory: React.Dispatch<React.SetStateAction<{ past: any[]; future: any[] }>>;
@@ -26,47 +26,28 @@ export function useTimelineDragging({
       
       const rect = trackRef.current.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
-      
-      const mergedRippleDeletes = (() => {
-        if (!rippleDeletes || rippleDeletes.length === 0) return [];
-        const sorted = [...rippleDeletes].sort((a, b) => a.start - b.start);
-        const merged = [{ ...sorted[0] }];
-        for (let i = 1; i < sorted.length; i++) {
-          const last = merged[merged.length - 1];
-          const current = sorted[i];
-          if (current.start <= last.end + 0.001) {
-            last.end = Math.max(last.end, current.end);
-          } else {
-            merged.push({ ...current });
-          }
-        }
-        return merged;
-      })();
-      const toTimelineTime = (mediaTime: number) => {
-        let timelineTime = mediaTime;
-        for (const zone of mergedRippleDeletes) {
-          if (mediaTime >= zone.end) {
-            timelineTime -= (zone.end - zone.start);
-          } else if (mediaTime > zone.start) {
-            timelineTime -= (mediaTime - zone.start);
-          }
-        }
-        return Math.max(0, timelineTime);
-      };
 
-      const toMediaTime = (timelineTime: number) => {
-        let mediaTime = timelineTime;
-        for (const zone of mergedRippleDeletes) {
-          if (mediaTime >= zone.start) {
-            mediaTime += (zone.end - zone.start);
-          }
-        }
-        return Math.min(mediaTime, mediaDuration);
-      };
+      const activeSegs = (videoSegments || []).filter((s: any) => !s.deleted).sort((a: any, b: any) => a.timelineStart - b.timelineStart);
 
-      const timelineDuration = Math.max(toTimelineTime(mediaDuration), 0.1);
+      const timelineDuration = activeSegs.length > 0
+        ? Math.max(activeSegs[activeSegs.length - 1].timelineEnd, 0.1)
+        : Math.max(mediaDuration, 0.1);
+
       const percentage = clickX / rect.width;
       const targetTimelineTime = percentage * timelineDuration;
+
+      // Convert timeline time to source/media time using video segments
+      const toMediaTime = (tlTime: number) => {
+        const seg = activeSegs.find((s: any) => tlTime >= s.timelineStart && tlTime <= s.timelineEnd);
+        if (seg) return seg.sourceStart + (tlTime - seg.timelineStart);
+        const closest = [...activeSegs].sort((a: any, b: any) => Math.abs(a.timelineStart - tlTime) - Math.abs(b.timelineStart - tlTime))[0];
+        if (closest) {
+          if (tlTime < closest.timelineStart) return closest.sourceStart;
+          return closest.sourceEnd;
+        }
+        return tlTime;
+      };
+
       let newTime = toMediaTime(targetTimelineTime);
       
       let newSegments = [...editableSegments];
@@ -213,7 +194,7 @@ export function useTimelineDragging({
     const handleMouseUp = () => {
       if (draggingBoundary !== null) {
         setSegmentHistory((prev: any) => ({
-          past: [...prev.past, { segments: editableSegments, rippleDeletes: [...rippleDeletes] }].slice(-50),
+          past: [...prev.past, { segments: editableSegments, videoSegments: [...(videoSegments || [])] }].slice(-50),
           future: []
         }));
         setDraggingBoundary(null);
@@ -229,5 +210,5 @@ export function useTimelineDragging({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [draggingBoundary, editableSegments, mediaDuration, rippleDeletes, trackRef]);
+  }, [draggingBoundary, editableSegments, mediaDuration, videoSegments, trackRef]);
 }
