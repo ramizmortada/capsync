@@ -2,7 +2,20 @@ import { useState } from "react";
 import { resegmentTranscripts } from "@/lib/chunking";
 import { set as idbSet } from "idb-keyval";
 
-type HistoryState = { segments: any[]; rippleDeletes: { start: number; end: number }[] };
+export interface VideoSegment {
+  id: string;
+  sourceStart: number;
+  sourceEnd: number;
+  timelineStart: number;
+  timelineEnd: number;
+  deleted: boolean;
+}
+
+type HistoryState = { 
+  segments: any[]; 
+  rippleDeletes: { start: number; end: number }[];
+  videoSegments: VideoSegment[];
+};
 
 export function useSubtitleState({
   file,
@@ -19,6 +32,11 @@ export function useSubtitleState({
 }) {
   const [editableSegments, setEditableSegments] = useState<any[]>([]);
   const [selectedIndexes, setSelectedIndexes] = useState<(number | string)[]>([]);
+  
+  const [videoSegments, setVideoSegments] = useState<VideoSegment[]>([]);
+  const [selectedVideoIndexes, setSelectedVideoIndexes] = useState<string[]>([]);
+  const [cursorMode, setCursorMode] = useState<'select' | 'cut'>('select');
+
   const [rippleDeletes, setRippleDeletes] = useState<{ start: number; end: number }[]>([]);
   const [segmentHistory, setSegmentHistory] = useState<{ past: HistoryState[]; future: HistoryState[] }>({
     past: [],
@@ -29,7 +47,18 @@ export function useSubtitleState({
     setEditableSegments((prevSegments) => {
       const updated = typeof newSegments === "function" ? newSegments(prevSegments) : newSegments;
       setSegmentHistory((prevHistory) => ({
-        past: [...prevHistory.past, { segments: prevSegments, rippleDeletes: [...rippleDeletes] }].slice(-50),
+        past: [...prevHistory.past, { segments: prevSegments, rippleDeletes: [...rippleDeletes], videoSegments: [...videoSegments] }].slice(-50),
+        future: [],
+      }));
+      return updated;
+    });
+  };
+
+  const updateVideoSegments = (newVideoSegments: VideoSegment[] | ((prev: VideoSegment[]) => VideoSegment[])) => {
+    setVideoSegments((prevSegments) => {
+      const updated = typeof newVideoSegments === "function" ? newVideoSegments(prevSegments) : newVideoSegments;
+      setSegmentHistory((prevHistory) => ({
+        past: [...prevHistory.past, { segments: [...editableSegments], rippleDeletes: [...rippleDeletes], videoSegments: prevSegments }].slice(-50),
         future: [],
       }));
       return updated;
@@ -301,16 +330,62 @@ export function useSubtitleState({
     });
   };
 
+  const handleVideoCut = (time: number) => {
+    updateVideoSegments((prev) => {
+      const newSegments = [...prev];
+      const targetIndex = newSegments.findIndex(s => time > s.timelineStart && time < s.timelineEnd);
+      if (targetIndex !== -1) {
+        const target = newSegments[targetIndex];
+        const timelineRatio = (time - target.timelineStart) / (target.timelineEnd - target.timelineStart);
+        const sourceTime = target.sourceStart + timelineRatio * (target.sourceEnd - target.sourceStart);
+        
+        const firstHalf: VideoSegment = { ...target, timelineEnd: time, sourceEnd: sourceTime };
+        const secondHalf: VideoSegment = { ...target, id: Math.random().toString(36).substr(2, 9), timelineStart: time, sourceStart: sourceTime };
+        newSegments.splice(targetIndex, 1, firstHalf, secondHalf);
+      }
+      return newSegments;
+    });
+  };
+
+  const handleVideoDelete = (ids: string[]) => {
+    updateVideoSegments((prev) => {
+      return prev.map(s => ids.includes(s.id) ? { ...s, deleted: true } : s);
+    });
+  };
+
+  const handleVideoRippleDelete = (ids: string[]) => {
+    const regionsToAdd: { start: number; end: number }[] = [];
+    updateVideoSegments((prev) => {
+      return prev.map(s => {
+        if (ids.includes(s.id)) {
+          regionsToAdd.push({ start: s.timelineStart, end: s.timelineEnd });
+          return { ...s, deleted: true };
+        }
+        return s;
+      });
+    });
+    if (regionsToAdd.length > 0) {
+      setRippleDeletes((prev) => [...prev, ...regionsToAdd]);
+    }
+  };
+
   return {
     editableSegments,
     setEditableSegments,
     selectedIndexes,
     setSelectedIndexes,
+    videoSegments,
+    setVideoSegments,
+    selectedVideoIndexes,
+    setSelectedVideoIndexes,
+    cursorMode,
+    setCursorMode,
     rippleDeletes,
     setRippleDeletes,
     segmentHistory,
     setSegmentHistory,
     updateSegments,
+    updateVideoSegments,
     handleResegment,
     handleSegmentChange,
     handleToggleWordDelete,
@@ -323,5 +398,8 @@ export function useSubtitleState({
     handleRippleDeleteRange,
     handleDuplicateSegment,
     handleOffsetSegments,
+    handleVideoCut,
+    handleVideoDelete,
+    handleVideoRippleDelete,
   };
 }

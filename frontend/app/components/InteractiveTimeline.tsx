@@ -5,7 +5,8 @@ import { TimelineControls } from "./timeline/TimelineControls";
 import { TimeRuler } from "./timeline/TimeRuler";
 import { TimelineBoundaries } from "./timeline/TimelineBoundaries";
 import { TimelineContextMenu, ContextMenuData } from "./timeline/TimelineContextMenu";
-import { Type } from "lucide-react";
+import { Type, Scissors, Film, MousePointer2 } from "lucide-react";
+import { VideoSegment } from "../../hooks/useSubtitleState";
 
 interface InteractiveTimelineProps {
   isPlaying: boolean;
@@ -31,6 +32,14 @@ interface InteractiveTimelineProps {
   draggingBoundary: DragTarget | null;
   onSeek: (time: number) => void;
   handleToggleWordDelete: (segmentIndex: number, wordIndex: number) => void;
+  videoSegments: VideoSegment[];
+  setVideoSegments: React.Dispatch<React.SetStateAction<VideoSegment[]>>;
+  selectedVideoIndexes: string[];
+  setSelectedVideoIndexes: React.Dispatch<React.SetStateAction<string[]>>;
+  cursorMode: 'select' | 'cut';
+  handleVideoCut: (time: number) => void;
+  updateVideoSegments: (newVideoSegments: VideoSegment[] | ((prev: VideoSegment[]) => VideoSegment[])) => void;
+  setEditableSegments: React.Dispatch<React.SetStateAction<any[]>>;
 }
 
 export const InteractiveTimeline = memo(function InteractiveTimeline({
@@ -56,8 +65,17 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   draggingBoundary,
   onSeek,
   handleToggleWordDelete,
+  videoSegments,
+  setVideoSegments,
+  selectedVideoIndexes,
+  setSelectedVideoIndexes,
+  cursorMode,
+  handleVideoCut,
+  updateVideoSegments,
+  setEditableSegments,
 }: InteractiveTimelineProps) {
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
+  const [draggingVideoBoundary, setDraggingVideoBoundary] = useState<{ id: string; type: 'start' | 'end' | 'body', offsetStart?: number, initialTimelineStart?: number, initialTimelineEnd?: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
   const lastSelectedRef = useRef<number | null>(null);
 
@@ -122,6 +140,77 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       window.removeEventListener('pointerup', handleUp);
     };
   }, [isDraggingPlayhead, timelineDuration, mediaDuration, trackRef, onSeek, sortedRippleDeletes]);
+
+  // Video Dragging logic
+  useEffect(() => {
+    if (!draggingVideoBoundary || !trackRef.current) return;
+    
+    const handleMove = (e: PointerEvent) => {
+      const trackRect = trackRef.current!.getBoundingClientRect();
+      let clickX = e.clientX - trackRect.left;
+      clickX = Math.max(0, Math.min(clickX, trackRect.width));
+      const percentage = clickX / trackRect.width;
+      const targetTimelineTime = percentage * timelineDuration;
+      const newTime = toMediaTime(targetTimelineTime);
+
+      setVideoSegments(prev => prev.map(s => {
+        if (s.id === draggingVideoBoundary.id) {
+          if (draggingVideoBoundary.type === 'start') {
+            const newTimelineStart = Math.max(0, Math.min(newTime, s.timelineEnd - 0.1));
+            const delta = newTimelineStart - s.timelineStart;
+            return { ...s, timelineStart: newTimelineStart, sourceStart: s.sourceStart + delta };
+          } else if (draggingVideoBoundary.type === 'end') {
+            const newTimelineEnd = Math.max(s.timelineStart + 0.1, newTime); // Removed Math.min with mediaDuration since timeline can grow indefinitely
+            const delta = newTimelineEnd - s.timelineEnd;
+            return { ...s, timelineEnd: newTimelineEnd, sourceEnd: s.sourceEnd + delta };
+          } else if (draggingVideoBoundary.type === 'body') {
+            // Move the whole body
+            const delta = newTime - (draggingVideoBoundary.offsetStart || 0);
+            const newTimelineStart = Math.max(0, (draggingVideoBoundary.initialTimelineStart || 0) + delta);
+            const actualDelta = newTimelineStart - (draggingVideoBoundary.initialTimelineStart || 0);
+            const newTimelineEnd = newTimelineStart + ((draggingVideoBoundary.initialTimelineEnd || 0) - (draggingVideoBoundary.initialTimelineStart || 0));
+            
+            // Shift associated subtitle segments if the video was dragged
+            if (Math.abs(actualDelta - (s.timelineStart - (draggingVideoBoundary.initialTimelineStart || 0))) > 0.001) {
+                const shiftDiff = actualDelta - (s.timelineStart - (draggingVideoBoundary.initialTimelineStart || 0));
+                setEditableSegments(prevEd => prevEd.map(ed => {
+                    // Check if subtitle originally fell within this video segment's bounds
+                    if (ed.start >= (draggingVideoBoundary.initialTimelineStart || 0) && ed.end <= (draggingVideoBoundary.initialTimelineEnd || 0)) {
+                        return {
+                            ...ed,
+                            start: ed.start + shiftDiff,
+                            end: ed.end + shiftDiff,
+                            words: ed.words?.map((w: any) => ({
+                                ...w,
+                                start: w.start + shiftDiff,
+                                end: w.end + shiftDiff
+                            }))
+                        };
+                    }
+                    return ed;
+                }));
+            }
+            
+            return { ...s, timelineStart: newTimelineStart, timelineEnd: newTimelineEnd };
+          }
+        }
+        return s;
+      }));
+    };
+
+    const handleUp = () => {
+      setDraggingVideoBoundary(null);
+      // Trigger a dummy update to push the final dragged state to the undo history stack
+      updateVideoSegments(prev => [...prev]);
+    };
+
+    window.addEventListener('pointermove', handleMove);
+    window.addEventListener('pointerup', handleUp);
+    return () => {
+      window.removeEventListener('pointermove', handleMove);
+      window.removeEventListener('pointerup', handleUp);
+    };
+  }, [draggingVideoBoundary, timelineDuration, mediaDuration, trackRef, sortedRippleDeletes, setVideoSegments, updateVideoSegments]);
 
   const handleTrackClick = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
@@ -226,12 +315,15 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       />
 
       {/* Scrollable Timeline Container with Headers */}
-      <div className="flex bg-background rounded-xl overflow-hidden h-[72px]">
+      <div className={`flex bg-background rounded-xl overflow-hidden h-[120px] ${cursorMode === 'cut' ? '[&_*]:cursor-crosshair' : ''}`}>
         
         {/* Track Headers (Left Panel) */}
         <div className="w-12 shrink-0 bg-neutral-900/50 border-r border-neutral-800 flex flex-col relative z-10 pointer-events-none">
           <div className="absolute top-[28px] w-full flex justify-center text-neutral-500" title="Subtitles">
             <Type className="w-4 h-4" />
+          </div>
+          <div className="absolute top-[72px] w-full flex justify-center text-neutral-500" title="Video">
+            <Film className="w-4 h-4" />
           </div>
         </div>
 
@@ -262,6 +354,80 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
           {/* Dynamic Time Ruler */}
           <TimeRuler timelineDuration={timelineDuration} zoomLevel={zoomLevel} />
+
+          {/* Video Segments blocks */}
+          {videoSegments.map((segment) => {
+            const tlStart = toTimelineTime(segment.timelineStart);
+            const tlEnd = toTimelineTime(segment.timelineEnd);
+            // If the segment is completely ripple-deleted, it might have tlStart == tlEnd, so skip rendering if width is 0 or it's hidden
+            if (tlStart >= tlEnd) return null;
+            
+            const left = (tlStart / timelineDuration) * 100;
+            const width = ((tlEnd - tlStart) / timelineDuration) * 100;
+            const isSelected = selectedVideoIndexes.includes(segment.id);
+            
+            return (
+              <div 
+                key={segment.id}
+                className={`absolute top-[64px] h-10 rounded text-[10px] p-1 font-medium transition-colors border overflow-hidden ${
+                  isSelected
+                    ? 'bg-blue-500/30 border-blue-400 z-20 text-blue-100'
+                    : segment.deleted
+                      ? 'bg-red-950/20 border-red-900/30 text-red-500/60 opacity-60 z-10'
+                      : 'bg-indigo-900/40 border-indigo-500/50 text-indigo-200 z-10 hover:border-indigo-400 hover:z-20 cursor-grab active:cursor-grabbing'
+                }`}
+                style={{ left: `${left}%`, width: `${width}%` }}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  if (cursorMode === 'cut') {
+                    const rect = trackRef.current!.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left;
+                    const percentage = clickX / rect.width;
+                    const targetTimelineTime = percentage * timelineDuration;
+                    handleVideoCut(toMediaTime(targetTimelineTime));
+                  } else {
+                    if (e.shiftKey || e.ctrlKey || e.metaKey) {
+                      setSelectedVideoIndexes(prev => prev.includes(segment.id) ? prev.filter(i => i !== segment.id) : [...prev, segment.id]);
+                    } else {
+                      setSelectedVideoIndexes([segment.id]);
+                    }
+                    
+                    // Enable body dragging if it's not deleted
+                    if (!segment.deleted) {
+                      const rect = trackRef.current!.getBoundingClientRect();
+                      const clickX = e.clientX - rect.left;
+                      const percentage = clickX / rect.width;
+                      const targetTimelineTime = percentage * timelineDuration;
+                      const offsetStart = toMediaTime(targetTimelineTime);
+                      setDraggingVideoBoundary({ id: segment.id, type: 'body', offsetStart, initialTimelineStart: segment.timelineStart, initialTimelineEnd: segment.timelineEnd });
+                    }
+                  }
+                }}
+              >
+                <div className="truncate relative z-20 pointer-events-none">Video Clip</div>
+                
+                {/* Drag handles for soft cuts */}
+                {cursorMode === 'select' && !segment.deleted && (
+                  <>
+                    <div 
+                      className="absolute top-0 bottom-0 left-0 w-2 cursor-w-resize z-30 hover:bg-white/20 transition-colors"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        setDraggingVideoBoundary({ id: segment.id, type: 'start' });
+                      }}
+                    />
+                    <div 
+                      className="absolute top-0 bottom-0 right-0 w-2 cursor-e-resize z-30 hover:bg-white/20 transition-colors"
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        setDraggingVideoBoundary({ id: segment.id, type: 'end' });
+                      }}
+                    />
+                  </>
+                )}
+              </div>
+            );
+          })}
 
           {/* Subtitle Segments blocks */}
           {editableSegments.map((segment, index) => {

@@ -63,7 +63,10 @@ export default function WhisperXApp() {
   });
 
   const [mediaUrl, setMediaUrl] = useState<string>("");
-  const [currentTime, setCurrentTime] = useState(0);
+  const [masterTime, setMasterTime] = useState(0);
+  const masterTimeRef = useRef(0);
+  const isPlayingRef = useRef(false);
+  const lastRealTimeRef = useRef(0);
   const [mediaDuration, setMediaDuration] = useState<number>(0);
   const [videoDimensions, setVideoDimensions] = useState<{width: number, height: number}>({width: 1920, height: 1080});
   const [draggingBoundary, setDraggingBoundary] = useState<DragTarget | null>(null);
@@ -110,6 +113,16 @@ export default function WhisperXApp() {
     handleDuplicateSegment,
     handleOffsetSegments,
     handleResegment,
+    videoSegments,
+    setVideoSegments,
+    selectedVideoIndexes,
+    setSelectedVideoIndexes,
+    cursorMode,
+    setCursorMode,
+    handleVideoCut,
+    handleVideoDelete,
+    handleVideoRippleDelete,
+    updateVideoSegments,
   } = subtitleState;
 
   // Preset management hook
@@ -184,6 +197,17 @@ export default function WhisperXApp() {
       });
     });
 
+    videoSegments.forEach(seg => {
+      if (seg.deleted) {
+        rawIntervals.push({
+          start: seg.timelineStart,
+          end: seg.timelineEnd,
+          isSegmentStart: true,
+          isSegmentEnd: true
+        });
+      }
+    });
+
     if (rawIntervals.length === 0) return [];
 
     rawIntervals.sort((a, b) => a.start - b.start);
@@ -217,7 +241,7 @@ export default function WhisperXApp() {
     });
 
     return finalZones;
-  }, [editableSegments, safePadding, rippleDeletes]);
+  }, [editableSegments, safePadding, rippleDeletes, videoSegments]);
 
   // Transcription hook
   const {
@@ -365,6 +389,20 @@ export default function WhisperXApp() {
     checkModelsStatus();
   }, []);
 
+  // Initialize video segments when media duration is known
+  useEffect(() => {
+    if (mediaDuration > 0 && videoSegments.length === 0) {
+      setVideoSegments([{
+        id: Math.random().toString(36).substr(2, 9),
+        sourceStart: 0,
+        sourceEnd: mediaDuration,
+        timelineStart: 0,
+        timelineEnd: mediaDuration,
+        deleted: false
+      }]);
+    }
+  }, [mediaDuration, videoSegments.length, setVideoSegments]);
+
   // Poll progress and status
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -412,21 +450,35 @@ export default function WhisperXApp() {
 
   const togglePlay = () => {
     if (!mediaRef.current) return;
-    if (mediaRef.current.paused) {
-      mediaRef.current.play().catch((err) => {
-        if (err.name !== 'AbortError') {
-          console.error("Playback error:", err);
-        }
-      });
+    if (!isPlayingRef.current) {
+      isPlayingRef.current = true;
+      setIsPlaying(true);
+      lastRealTimeRef.current = performance.now();
+      
+      const newTime = masterTimeRef.current;
+      const activeClip = videoSegments.find(s => !s.deleted && newTime >= s.timelineStart && newTime < s.timelineEnd);
+      
+      if (activeClip) {
+        mediaRef.current.currentTime = activeClip.sourceStart + (newTime - activeClip.timelineStart);
+        mediaRef.current.play().catch(e => console.error(e));
+        playRequestedRef.current = true; // tell rAF to wait
+      }
+      // If in a gap, rAF loop will handle advancing the clock
     } else {
+      isPlayingRef.current = false;
+      setIsPlaying(false);
       mediaRef.current.pause();
+      playRequestedRef.current = false;
     }
   };
 
   const stopPlay = () => {
     if (!mediaRef.current) return;
+    isPlayingRef.current = false;
+    setIsPlaying(false);
     mediaRef.current.pause();
-    mediaRef.current.currentTime = 0;
+    masterTimeRef.current = 0;
+    setMasterTime(0);
   };
 
   // Keyboard shortcuts effect
@@ -449,8 +501,9 @@ export default function WhisperXApp() {
             const nextState = prev.future[0];
             setEditableSegments(nextState.segments);
             setRippleDeletes(nextState.rippleDeletes);
+            if (nextState.videoSegments) setVideoSegments(nextState.videoSegments);
             return {
-              past: [...prev.past, { segments: editableSegments, rippleDeletes: [...rippleDeletes] }],
+              past: [...prev.past, { segments: editableSegments, rippleDeletes: [...rippleDeletes], videoSegments: [...videoSegments] }],
               future: prev.future.slice(1)
             };
           });
@@ -461,11 +514,33 @@ export default function WhisperXApp() {
             const prevState = prev.past[prev.past.length - 1];
             setEditableSegments(prevState.segments);
             setRippleDeletes(prevState.rippleDeletes);
+            if (prevState.videoSegments) setVideoSegments(prevState.videoSegments);
             return {
               past: prev.past.slice(0, -1),
-              future: [{ segments: editableSegments, rippleDeletes: [...rippleDeletes] }, ...prev.future]
+              future: [{ segments: editableSegments, rippleDeletes: [...rippleDeletes], videoSegments: [...videoSegments] }, ...prev.future]
             };
           });
+        }
+      }
+      if (!isInput) {
+        if (e.key.toLowerCase() === 'c') {
+          e.preventDefault();
+          setCursorMode('cut');
+        } else if (e.key.toLowerCase() === 'v') {
+          e.preventDefault();
+          setCursorMode('select');
+        } else if (e.key.toLowerCase() === 'd') {
+          if (selectedVideoIndexes.length > 0) {
+            e.preventDefault();
+            handleVideoDelete(selectedVideoIndexes);
+            setSelectedVideoIndexes([]);
+          }
+        } else if (e.key.toLowerCase() === 'x') {
+          if (selectedVideoIndexes.length > 0) {
+            e.preventDefault();
+            handleVideoRippleDelete(selectedVideoIndexes);
+            setSelectedVideoIndexes([]);
+          }
         }
       }
     };
@@ -474,7 +549,7 @@ export default function WhisperXApp() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown, { capture: true });
     };
-  }, [editableSegments, togglePlay, setEditableSegments, setRippleDeletes, setSegmentHistory, rippleDeletes]);
+  }, [editableSegments, togglePlay, setEditableSegments, setRippleDeletes, setSegmentHistory, rippleDeletes, setCursorMode, selectedVideoIndexes, handleVideoDelete, handleVideoRippleDelete, setSelectedVideoIndexes, videoSegments, setVideoSegments]);
 
   // Center timeline on playhead
   useEffect(() => {
@@ -486,70 +561,102 @@ export default function WhisperXApp() {
     }
   }, [zoomLevel, mediaDuration]);
 
-  // Smooth Auto-scroll timeline when playing
+  // Smooth Auto-scroll timeline and Master Clock syncing
+  const playRequestedRef = useRef(false); // prevents rAF from spamming play()
+
   useEffect(() => {
     let animationFrameId: number;
 
-    const smoothSync = () => {
-      if (!mediaRef.current || mediaDuration <= 0) return;
+    const smoothSync = (timestamp: number) => {
+      if (!mediaRef.current || mediaDuration <= 0) {
+        animationFrameId = requestAnimationFrame(smoothSync);
+        return;
+      }
+      
+      if (!lastRealTimeRef.current) lastRealTimeRef.current = timestamp;
+      
+      const delta = (timestamp - lastRealTimeRef.current) / 1000;
+      lastRealTimeRef.current = timestamp;
+      
+      if (isPlayingRef.current) {
+        let newTime = masterTimeRef.current;
+        
+        // Find active video clip at current master time
+        const activeClip = videoSegments.find(s => !s.deleted && newTime >= s.timelineStart && newTime < s.timelineEnd);
+        
+        if (activeClip) {
+          if (mediaRef.current.seeking) {
+            // Video is mid-seek, don't touch anything
+          } else if (playRequestedRef.current) {
+            // We sent a play() command and are waiting for it to take effect
+            if (!mediaRef.current.paused) {
+              // Video has started playing! Clear the flag and let normal sync take over
+              playRequestedRef.current = false;
+            }
+            // Either way, don't update masterTime yet
+          } else if (!mediaRef.current.paused) {
+            // Video is actively playing - the normal steady state.
+            // Read the video's actual currentTime and derive masterTime from it.
+            newTime = activeClip.timelineStart + (mediaRef.current.currentTime - activeClip.sourceStart);
+            masterTimeRef.current = newTime;
+            setMasterTime(newTime);
+          }
+        } else {
+          // We are in an empty gap (no video clip here)
+          if (!mediaRef.current.paused) {
+            mediaRef.current.pause();
+          }
+          playRequestedRef.current = false;
+          
+          // Advance master clock using wall-clock time
+          newTime += delta;
+          masterTimeRef.current = newTime;
+          setMasterTime(newTime);
+          
+          // Check if we've now entered a video clip after advancing
+          const nextClip = videoSegments.find(s => !s.deleted && newTime >= s.timelineStart && newTime < s.timelineEnd);
+          if (nextClip) {
+            // We just crossed from gap into a clip - seek and play
+            const sourcePos = nextClip.sourceStart + (newTime - nextClip.timelineStart);
+            mediaRef.current.currentTime = sourcePos;
+            mediaRef.current.play().catch(e => console.error(e));
+            playRequestedRef.current = true;
+          }
+        }
+      }
 
+      // Update scroll position
       if (timelineRef.current && trackRef.current && !isHoveringTimeline.current && draggingBoundary === null) {
         const trackWidth = trackRef.current.scrollWidth;
-        const playheadX = (mediaRef.current.currentTime / mediaDuration) * trackWidth;
+        const timelineDur = Math.max(mediaDuration, ...videoSegments.map(s => s.timelineEnd), 0.1);
+        const playheadX = (masterTimeRef.current / timelineDur) * trackWidth;
         const container = timelineRef.current;
         const clientWidth = container.clientWidth;
         container.scrollLeft = playheadX - clientWidth / 2;
       }
 
-      if (!mediaRef.current.paused) {
-        animationFrameId = requestAnimationFrame(smoothSync);
-      }
-    };
-
-    const videoEl = mediaRef.current;
-    if (!videoEl) return;
-
-    const onPlay = () => {
-      setIsPlaying(true);
-      if (animationFrameId) cancelAnimationFrame(animationFrameId);
       animationFrameId = requestAnimationFrame(smoothSync);
     };
 
-    const onPause = () => {
-      setIsPlaying(false);
-    };
-
-    videoEl.addEventListener('play', onPlay);
-    videoEl.addEventListener('playing', onPlay);
-    videoEl.addEventListener('pause', onPause);
-    videoEl.addEventListener('seeked', () => {
-      if (!videoEl.paused) onPlay();
-    });
-
-    if (!videoEl.paused) {
-      onPlay();
-    }
+    animationFrameId = requestAnimationFrame(smoothSync);
 
     return () => {
-      videoEl.removeEventListener('play', onPlay);
-      videoEl.removeEventListener('playing', onPlay);
-      videoEl.removeEventListener('pause', onPause);
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
     };
-  }, [mediaDuration, draggingBoundary]);
+  }, [mediaDuration, draggingBoundary, videoSegments]);
 
   // Auto-scroll subtitle editor list
   useEffect(() => {
     if (!mediaRef.current || mediaRef.current.paused || mediaDuration <= 0) return;
 
-    const activeIndex = editableSegments.findIndex((s: any) => currentTime >= s.start && currentTime < s.end);
+    const activeIndex = editableSegments.findIndex((s: any) => masterTime >= s.start && masterTime < s.end);
     if (activeIndex !== -1) {
       const activeElement = document.getElementById(`subtitle-segment-${activeIndex}`);
       if (activeElement) {
         activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }
-  }, [currentTime, mediaDuration, editableSegments]);
+  }, [masterTime, mediaDuration, editableSegments]);
 
   // Convert WhisperX segments to SRT format
   const generateSRT = () => {
@@ -643,7 +750,7 @@ export default function WhisperXApp() {
               safePadding={safePadding}
               setSafePadding={setSafePadding}
               handleAutoCutSilences={handleAutoCutSilences}
-              currentTime={currentTime}
+              currentTime={masterTime}
               handleSegmentChange={handleSegmentChange}
               handleToggleWordDelete={handleToggleWordDelete}
               handleToggleSegmentSilence={handleToggleSegmentSilence}
@@ -665,15 +772,24 @@ export default function WhisperXApp() {
               file={file}
               mediaUrl={mediaUrl}
               mediaRef={mediaRef}
-              setCurrentTime={setCurrentTime}
+              currentTime={masterTime}
+              setCurrentTime={(time) => {
+                masterTimeRef.current = time;
+                setMasterTime(time);
+                const activeClip = videoSegments.find(s => !s.deleted && time >= s.timelineStart && time < s.timelineEnd);
+                if (activeClip && mediaRef.current) {
+                  mediaRef.current.currentTime = activeClip.sourceStart + (time - activeClip.timelineStart);
+                }
+              }}
               setMediaDuration={setMediaDuration}
               setVideoDimensions={setVideoDimensions}
               editableSegments={editableSegments}
+              videoSegments={videoSegments}
               cutZones={cutZones}
-              currentTime={currentTime}
               subtitleStyle={subtitleStyle}
               handleExportVideo={handleExportVideo}
               status={status}
+              togglePlay={togglePlay}
             />
           </div>
         </div>
@@ -683,7 +799,7 @@ export default function WhisperXApp() {
             isPlaying={isPlaying}
             togglePlay={togglePlay}
             stopPlay={stopPlay}
-            currentTime={currentTime}
+            currentTime={masterTime}
             mediaDuration={mediaDuration}
             file={file}
             zoomLevel={zoomLevel}
@@ -707,6 +823,14 @@ export default function WhisperXApp() {
                 mediaRef.current.currentTime = time;
               }
             }}
+            videoSegments={videoSegments}
+            setVideoSegments={setVideoSegments}
+            selectedVideoIndexes={selectedVideoIndexes}
+            setSelectedVideoIndexes={setSelectedVideoIndexes}
+            cursorMode={cursorMode}
+            handleVideoCut={handleVideoCut}
+            updateVideoSegments={updateVideoSegments}
+            setEditableSegments={setEditableSegments}
           />
         </div>
       </div>

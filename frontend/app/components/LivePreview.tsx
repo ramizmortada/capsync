@@ -9,12 +9,14 @@ interface LivePreviewProps {
   setCurrentTime: (time: number) => void;
   setMediaDuration: (duration: number) => void;
   editableSegments: any[];
+  videoSegments: any[];
   cutZones: { start: number; end: number }[];
   currentTime: number;
   subtitleStyle: any; // We'll just pass the object directly
   setVideoDimensions: (dimensions: {width: number, height: number}) => void;
   handleExportVideo?: () => void;
   status?: string;
+  togglePlay?: () => void;
 }
 
 export function LivePreview({
@@ -24,12 +26,14 @@ export function LivePreview({
   setCurrentTime,
   setMediaDuration,
   editableSegments,
+  videoSegments,
   cutZones,
   currentTime,
   subtitleStyle,
   setVideoDimensions,
   handleExportVideo,
   status,
+  togglePlay,
 }: LivePreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
@@ -38,37 +42,7 @@ export function LivePreview({
   const [localTime, setLocalTime] = useState(currentTime);
   const [showBounds, setShowBounds] = useState(false);
 
-  // Sync localTime with high frequency for smooth animations
-  useEffect(() => {
-    let rafId: number;
-    const updateTime = () => {
-      if (mediaRef.current) {
-        const time = mediaRef.current.currentTime;
-        
-        // Find if this time falls inside any cut zone
-        let skipTo = -1;
-        for (const zone of cutZones) {
-          if (time >= zone.start && time < zone.end) {
-            skipTo = zone.end;
-            break;
-          }
-        }
-
-        if (skipTo !== -1 && !mediaRef.current.paused) {
-          mediaRef.current.currentTime = skipTo;
-          setLocalTime(skipTo);
-          setCurrentTime(skipTo);
-        } else {
-          setLocalTime(time);
-        }
-      }
-      rafId = requestAnimationFrame(updateTime);
-    };
-    rafId = requestAnimationFrame(updateTime);
-    return () => cancelAnimationFrame(rafId);
-  }, [mediaRef, cutZones, setCurrentTime]);
-
-  // Sync back to parent when paused/seeking
+  // Sync back to parent when paused/seeking or when master clock ticks
   useEffect(() => {
     setLocalTime(currentTime);
   }, [currentTime]);
@@ -105,11 +79,8 @@ export function LivePreview({
   };
 
   const handleVideoClick = () => {
-    if (!mediaRef.current) return;
-    if (mediaRef.current.paused) {
-      mediaRef.current.play();
-    } else {
-      mediaRef.current.pause();
+    if (togglePlay) {
+      togglePlay();
     }
   };
 
@@ -130,6 +101,9 @@ export function LivePreview({
       renderHeight = renderWidth / videoRatio;
     }
   }
+
+  // Determine if we are currently in a video gap
+  const isGap = !videoSegments || !videoSegments.some(s => !s.deleted && localTime >= s.timelineStart && localTime < s.timelineEnd);
 
   return (
     <div className="h-full rounded-xl overflow-hidden bg-card border border-border shadow-2xl flex flex-col">
@@ -182,8 +156,7 @@ export function LivePreview({
             <video 
               ref={mediaRef as React.RefObject<HTMLVideoElement>}
               src={mediaUrl || undefined} 
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+              className={`absolute inset-0 w-full h-full object-contain pointer-events-none transition-opacity duration-150 ${isGap ? 'opacity-0' : 'opacity-100'}`}
               onLoadedMetadata={(e) => {
                 setMediaDuration(e.currentTarget.duration);
                 const dims = {
@@ -200,7 +173,6 @@ export function LivePreview({
                 ref={mediaRef as React.RefObject<HTMLAudioElement>}
                 src={mediaUrl || undefined} 
                 className="hidden"
-                onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                 onLoadedMetadata={(e) => setMediaDuration(e.currentTarget.duration)}
               />
               {/* Audio visual placeholder */}
