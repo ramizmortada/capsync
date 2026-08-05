@@ -740,7 +740,9 @@ function EditorContent() {
               handleDuplicateSegment={handleDuplicateSegment}
               handleOffsetSegments={handleOffsetSegments}
               onSeek={(mediaTime) => {
-                handleTimelineSeek(mediaTime);
+                const activeSeg = videoSegments.find(s => !s.deleted && mediaTime >= s.sourceStart && mediaTime <= s.sourceEnd);
+                const timelineTime = activeSeg ? activeSeg.timelineStart + (mediaTime - activeSeg.sourceStart) : mediaTime;
+                handleTimelineSeek(timelineTime);
               }}
               clearProject={clearProject}
               downloadSRT={downloadSRT}
@@ -757,8 +759,10 @@ function EditorContent() {
               file={file}
               mediaUrl={mediaUrl}
               mediaRef={mediaRef}
-              setCurrentTime={(time) => {
-                handleTimelineSeek(time);
+              setCurrentTime={(sourceTime) => {
+                const activeSeg = videoSegments.find(s => !s.deleted && sourceTime >= s.sourceStart && sourceTime <= s.sourceEnd);
+                const timelineTime = activeSeg ? activeSeg.timelineStart + (sourceTime - activeSeg.sourceStart) : sourceTime;
+                handleTimelineSeek(timelineTime);
               }}
               setMediaDuration={setMediaDuration}
               editableSegments={editableSegments}

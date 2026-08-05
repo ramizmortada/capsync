@@ -31,7 +31,7 @@ interface InteractiveTimelineProps {
   handleClearTrack: (trackType: 'subtitle' | 'video') => void;
   setDraggingBoundary: (val: DragTarget | null) => void;
   draggingBoundary: DragTarget | null;
-  onSeek: (mediaTime: number, timelineTime: number) => void;
+  onSeek: (timelineTime: number) => void;
   handleToggleWordDelete: (segmentIndex: number, wordIndex: number) => void;
   videoSegments: VideoSegment[];
   setVideoSegments: React.Dispatch<React.SetStateAction<VideoSegment[]>>;
@@ -154,7 +154,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       clickX = Math.max(0, Math.min(clickX, trackRect.width));
       const percentage = clickX / trackRect.width;
       const targetTimelineTime = percentage * timelineDuration;
-      onSeek(toMediaTime(targetTimelineTime), targetTimelineTime);
+      onSeek(targetTimelineTime);
     };
 
     const handleUp = () => {
@@ -288,7 +288,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
     const clickX = e.clientX - rect.left;
     const percentage = clickX / rect.width;
     const targetTimelineTime = percentage * timelineDuration;
-    onSeek(toMediaTime(targetTimelineTime), targetTimelineTime);
+    onSeek(targetTimelineTime);
   };
 
   const handleTrackContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -680,7 +680,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                   key={`track-word-${index}-${wIdx}`} 
                   onPointerDown={selectItem}
                   onContextMenu={handleContextMenu}
-                  onDoubleClick={(e) => { e.stopPropagation(); onSeek(word.start, toTimelineTime(word.start)); }}
+                  onDoubleClick={(e) => { e.stopPropagation(); onSeek(toTimelineTime(word.start)); }}
                   className={`pointer-events-auto absolute top-[20px] h-8 flex items-center justify-center transition-colors z-35 cursor-pointer rounded border ${isDeleted ? 'bg-red-950/70 text-red-400 border-red-900/50 hover:bg-red-900/70 line-through' : selectedIndexes.includes(`word:${index}:${wIdx}`) ? 'bg-emerald-500/40 border-emerald-400 z-40 text-emerald-100' : 'bg-muted/40 border-border hover:border-muted-foreground/50 hover:z-40 text-muted-foreground'}`}
                   style={{ left: `${left}%`, width: `${width}%` }}
                 >
