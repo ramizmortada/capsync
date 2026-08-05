@@ -411,27 +411,10 @@ export default function WhisperXApp() {
         e.stopPropagation();
         
         if (selectedIndexes.length > 0) {
-          setSegmentHistory({
-            past: [{
-              segments: JSON.parse(JSON.stringify(editableSegments)),
-              rippleDeletes: JSON.parse(JSON.stringify(rippleDeletes)),
-              videoSegments: JSON.parse(JSON.stringify(videoSegments))
-            }],
-            future: []
-          });
-          const hasShift = e.shiftKey;
-          setEditableSegments(prev => prev.map((seg, sIdx) => {
-            const newSeg = { ...seg, words: seg.words.map((w: any) => ({ ...w })) };
-            newSeg.words.forEach((w: any, wIdx: number) => {
-              if (selectedIndexes.includes(`word:${sIdx}:${wIdx}`)) {
-                w.deleted = true;
-              }
-            });
-            return newSeg;
-          }));
-          
-          if (hasShift) {
+          if (e.shiftKey) {
             handleRippleDelete(selectedIndexes);
+          } else {
+            handleLiftDelete(selectedIndexes);
           }
         }
         

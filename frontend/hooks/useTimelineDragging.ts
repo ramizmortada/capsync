@@ -36,14 +36,12 @@ export function useTimelineDragging({
       const percentage = clickX / rect.width;
       const targetTimelineTime = percentage * timelineDuration;
 
-      // Convert timeline time to source/media time using video segments
       const toMediaTime = (tlTime: number) => {
         const seg = activeSegs.find((s: any) => tlTime >= s.timelineStart && tlTime <= s.timelineEnd);
         if (seg) return seg.sourceStart + (tlTime - seg.timelineStart);
         const closest = [...activeSegs].sort((a: any, b: any) => Math.abs(a.timelineStart - tlTime) - Math.abs(b.timelineStart - tlTime))[0];
         if (closest) {
-          if (tlTime < closest.timelineStart) return closest.sourceStart;
-          return closest.sourceEnd;
+          return closest.sourceStart + (tlTime - closest.timelineStart);
         }
         return tlTime;
       };
@@ -194,7 +192,11 @@ export function useTimelineDragging({
     const handleMouseUp = () => {
       if (draggingBoundary !== null) {
         setSegmentHistory((prev: any) => ({
-          past: [...prev.past, { segments: editableSegments, videoSegments: [...(videoSegments || [])] }].slice(-50),
+          past: [...prev.past, {
+            segments: JSON.parse(JSON.stringify(editableSegments || [])),
+            rippleDeletes: JSON.parse(JSON.stringify((prev.past[prev.past.length - 1]?.rippleDeletes) || [])),
+            videoSegments: JSON.parse(JSON.stringify(videoSegments || []))
+          }].slice(-50),
           future: []
         }));
         setDraggingBoundary(null);

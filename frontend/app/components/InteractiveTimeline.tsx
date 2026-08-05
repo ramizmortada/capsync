@@ -117,12 +117,9 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
     if (activeSeg) {
       return activeSeg.timelineStart + (mediaTime - activeSeg.sourceStart);
     }
-    // If it falls outside active segments (e.g. trimmed), we can try to guess or just return a default
-    // We can find the closest segment
     const closest = [...videoSegments].filter(s => !s.deleted).sort((a, b) => Math.abs(a.sourceStart - mediaTime) - Math.abs(b.sourceStart - mediaTime))[0];
     if (closest) {
-       if (mediaTime < closest.sourceStart) return closest.timelineStart;
-       if (mediaTime > closest.sourceEnd) return closest.timelineEnd;
+      return closest.timelineStart + (mediaTime - closest.sourceStart);
     }
     return mediaTime;
   };
@@ -132,12 +129,9 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
     if (activeSeg) {
       return activeSeg.sourceStart + (timelineTime - activeSeg.timelineStart);
     }
-    
-    // Gap on timeline
     const closest = [...videoSegments].filter(s => !s.deleted).sort((a, b) => Math.abs(a.timelineStart - timelineTime) - Math.abs(b.timelineStart - timelineTime))[0];
     if (closest) {
-      if (timelineTime < closest.timelineStart) return closest.sourceStart;
-      if (timelineTime > closest.timelineEnd) return closest.sourceEnd;
+      return closest.sourceStart + (timelineTime - closest.timelineStart);
     }
     return timelineTime;
   };
@@ -186,109 +180,86 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       const percentage = clickX / trackRect.width;
       const targetTimelineTime = percentage * timelineDuration;
 
-      setVideoSegments(prev => prev.map(s => {
-        if (s.id === draggingVideoBoundary.id) {
-          const SNAP_THRESHOLD = 0.2; // 0.2 seconds
+      setVideoSegments(prev => {
+        const SNAP_THRESHOLD = 0.2; // 0.2 seconds
+        const activeOthers = prev.filter(o => o.id !== draggingVideoBoundary.id && !o.deleted).sort((a, b) => a.timelineStart - b.timelineStart);
 
-          if (draggingVideoBoundary.type === 'start') {
-            let newTimelineStart = Math.max(0, Math.min(targetTimelineTime, s.timelineEnd - 0.1));
-            
-            // Snap to 0
-            if (Math.abs(newTimelineStart - 0) < SNAP_THRESHOLD) newTimelineStart = 0;
-            
-            // Snap to other segments
-            for (const other of prev) {
-              if (other.id === s.id) continue;
-              if (Math.abs(newTimelineStart - other.timelineEnd) < SNAP_THRESHOLD) newTimelineStart = other.timelineEnd;
-              else if (Math.abs(newTimelineStart - other.timelineStart) < SNAP_THRESHOLD) newTimelineStart = other.timelineStart;
-            }
+        return prev.map(s => {
+          if (s.id === draggingVideoBoundary.id) {
+            if (draggingVideoBoundary.type === 'start') {
+              const prevSeg = activeOthers.filter(o => o.timelineEnd <= s.timelineEnd).sort((a, b) => b.timelineEnd - a.timelineEnd)[0];
+              const minStart = prevSeg ? prevSeg.timelineEnd : 0;
+              let newTimelineStart = Math.max(minStart, Math.min(targetTimelineTime, s.timelineEnd - 0.1));
+              
+              if (Math.abs(newTimelineStart - minStart) < SNAP_THRESHOLD) {
+                newTimelineStart = minStart;
+              }
 
-            const delta = newTimelineStart - s.timelineStart;
-            return { ...s, timelineStart: newTimelineStart, sourceStart: s.sourceStart + delta };
-          } else if (draggingVideoBoundary.type === 'end') {
-            let newTimelineEnd = Math.max(s.timelineStart + 0.1, targetTimelineTime);
-            
-            // Snap to other segments
-            for (const other of prev) {
-              if (other.id === s.id) continue;
-              if (Math.abs(newTimelineEnd - other.timelineStart) < SNAP_THRESHOLD) newTimelineEnd = other.timelineStart;
-              else if (Math.abs(newTimelineEnd - other.timelineEnd) < SNAP_THRESHOLD) newTimelineEnd = other.timelineEnd;
-            }
+              const delta = newTimelineStart - s.timelineStart;
+              return { ...s, timelineStart: newTimelineStart, sourceStart: s.sourceStart + delta };
+            } else if (draggingVideoBoundary.type === 'end') {
+              const nextSeg = activeOthers.filter(o => o.timelineStart >= s.timelineStart).sort((a, b) => a.timelineStart - b.timelineStart)[0];
+              const maxEnd = nextSeg ? nextSeg.timelineStart : timelineDuration + 3600;
+              let newTimelineEnd = Math.max(s.timelineStart + 0.1, Math.min(targetTimelineTime, maxEnd));
 
-            const delta = newTimelineEnd - s.timelineEnd;
-            return { ...s, timelineEnd: newTimelineEnd, sourceEnd: s.sourceEnd + delta };
-          } else if (draggingVideoBoundary.type === 'body') {
-            // Move the whole body
-            const delta = targetTimelineTime - (draggingVideoBoundary.offsetStart || 0);
-            let newTimelineStart = Math.max(0, (draggingVideoBoundary.initialTimelineStart || 0) + delta);
-            let newTimelineEnd = newTimelineStart + ((draggingVideoBoundary.initialTimelineEnd || 0) - (draggingVideoBoundary.initialTimelineStart || 0));
-            
-            // Snapping logic for body
-            let snapOffset = 0;
-            let didSnap = false;
-            
-            // Snap to 0
-            if (Math.abs(newTimelineStart - 0) < SNAP_THRESHOLD) {
-                snapOffset = 0 - newTimelineStart;
-                didSnap = true;
-            }
+              if (nextSeg && Math.abs(newTimelineEnd - nextSeg.timelineStart) < SNAP_THRESHOLD) {
+                newTimelineEnd = nextSeg.timelineStart;
+              }
 
-            if (!didSnap) {
-                for (const other of prev) {
-                  if (other.id === s.id) continue;
-                  
-                  if (Math.abs(newTimelineStart - other.timelineEnd) < SNAP_THRESHOLD) {
-                    snapOffset = other.timelineEnd - newTimelineStart;
-                    didSnap = true; break;
-                  }
-                  if (Math.abs(newTimelineEnd - other.timelineStart) < SNAP_THRESHOLD) {
-                    snapOffset = other.timelineStart - newTimelineEnd;
-                    didSnap = true; break;
-                  }
-                  if (Math.abs(newTimelineStart - other.timelineStart) < SNAP_THRESHOLD) {
-                    snapOffset = other.timelineStart - newTimelineStart;
-                    didSnap = true; break;
-                  }
-                  if (Math.abs(newTimelineEnd - other.timelineEnd) < SNAP_THRESHOLD) {
-                    snapOffset = other.timelineEnd - newTimelineEnd;
-                    didSnap = true; break;
+              const delta = newTimelineEnd - s.timelineEnd;
+              return { ...s, timelineEnd: newTimelineEnd, sourceEnd: s.sourceEnd + delta };
+            } else if (draggingVideoBoundary.type === 'body') {
+              const dur = (draggingVideoBoundary.initialTimelineEnd || 0) - (draggingVideoBoundary.initialTimelineStart || 0);
+              const delta = targetTimelineTime - (draggingVideoBoundary.offsetStart || 0);
+              const desiredStart = Math.max(0, (draggingVideoBoundary.initialTimelineStart || 0) + delta);
+
+              const hasOverlap = (testStart: number) => {
+                const testEnd = testStart + dur;
+                return activeOthers.some(o => testStart < o.timelineEnd - 0.001 && testEnd > o.timelineStart + 0.001);
+              };
+
+              let newTimelineStart = desiredStart;
+
+              if (hasOverlap(desiredStart)) {
+                const candidates: number[] = [];
+                if (!hasOverlap(0)) candidates.push(0);
+
+                for (const o of activeOthers) {
+                  if (!hasOverlap(o.timelineEnd)) candidates.push(o.timelineEnd);
+                  const beforeStart = o.timelineStart - dur;
+                  if (beforeStart >= 0 && !hasOverlap(beforeStart)) candidates.push(beforeStart);
+                }
+
+                if (candidates.length > 0) {
+                  candidates.sort((a, b) => Math.abs(a - desiredStart) - Math.abs(b - desiredStart));
+                  newTimelineStart = candidates[0];
+                } else {
+                  newTimelineStart = s.timelineStart;
+                }
+              } else {
+                // Apply snapping if no overlap
+                if (Math.abs(newTimelineStart - 0) < SNAP_THRESHOLD && !hasOverlap(0)) {
+                  newTimelineStart = 0;
+                } else {
+                  for (const o of activeOthers) {
+                    if (Math.abs(newTimelineStart - o.timelineEnd) < SNAP_THRESHOLD && !hasOverlap(o.timelineEnd)) {
+                      newTimelineStart = o.timelineEnd;
+                      break;
+                    }
+                    if (Math.abs((newTimelineStart + dur) - o.timelineStart) < SNAP_THRESHOLD && !hasOverlap(o.timelineStart - dur)) {
+                      newTimelineStart = o.timelineStart - dur;
+                      break;
+                    }
                   }
                 }
-            }
+              }
 
-            if (didSnap) {
-              newTimelineStart += snapOffset;
-              newTimelineEnd += snapOffset;
+              return { ...s, timelineStart: newTimelineStart, timelineEnd: newTimelineStart + dur };
             }
-
-            const actualDelta = newTimelineStart - (draggingVideoBoundary.initialTimelineStart || 0);
-            
-            // Shift associated subtitle segments if the video was dragged
-            if (Math.abs(actualDelta - (s.timelineStart - (draggingVideoBoundary.initialTimelineStart || 0))) > 0.001) {
-                const shiftDiff = actualDelta - (s.timelineStart - (draggingVideoBoundary.initialTimelineStart || 0));
-                setEditableSegments(prevEd => prevEd.map(ed => {
-                    // Check if subtitle originally fell within this video segment's bounds
-                    if (ed.start >= (draggingVideoBoundary.initialTimelineStart || 0) && ed.end <= (draggingVideoBoundary.initialTimelineEnd || 0)) {
-                        return {
-                            ...ed,
-                            start: ed.start + shiftDiff,
-                            end: ed.end + shiftDiff,
-                            words: ed.words?.map((w: any) => ({
-                                ...w,
-                                start: w.start + shiftDiff,
-                                end: w.end + shiftDiff
-                            }))
-                        };
-                    }
-                    return ed;
-                }));
-            }
-            
-            return { ...s, timelineStart: newTimelineStart, timelineEnd: newTimelineEnd };
           }
-        }
-        return s;
-      }));
+          return s;
+        });
+      });
     };
 
     const handleUp = () => {

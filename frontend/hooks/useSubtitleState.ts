@@ -48,11 +48,17 @@ export function useSubtitleState({
     future: [],
   });
 
+  const cloneState = (segments: any[], rippleDeletesList: any[], videoSegs: VideoSegment[]) => ({
+    segments: JSON.parse(JSON.stringify(segments || [])),
+    rippleDeletes: JSON.parse(JSON.stringify(rippleDeletesList || [])),
+    videoSegments: JSON.parse(JSON.stringify(videoSegs || [])),
+  });
+
   const updateSegments = (newSegments: any[] | ((prev: any[]) => any[])) => {
     setEditableSegments((prevSegments) => {
       const updated = typeof newSegments === "function" ? newSegments(prevSegments) : newSegments;
       setSegmentHistory((prevHistory) => ({
-        past: [...prevHistory.past, { segments: prevSegments, rippleDeletes: [...rippleDeletes], videoSegments: [...videoSegments] }].slice(-50),
+        past: [...prevHistory.past, cloneState(prevSegments, rippleDeletes, videoSegments)].slice(-50),
         future: [],
       }));
       return updated;
@@ -63,7 +69,7 @@ export function useSubtitleState({
     setVideoSegments((prevSegments) => {
       const updated = typeof newVideoSegments === "function" ? newVideoSegments(prevSegments) : newVideoSegments;
       setSegmentHistory((prevHistory) => ({
-        past: [...prevHistory.past, { segments: [...editableSegments], rippleDeletes: [...rippleDeletes], videoSegments: prevSegments }].slice(-50),
+        past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, prevSegments)].slice(-50),
         future: [],
       }));
       return updated;
@@ -240,22 +246,66 @@ export function useSubtitleState({
     });
   };
 
-  // Helper: given ripple-deleted source-time regions, cut through video segments
-  // and recalculate timeline positions so the timeline collapses with no gaps.
-  const recalcVideoTimeline = (newRippleRegions: { start: number; end: number }[]) => {
+  // Helper: given ripple-deleted source-time regions, reconstruct base video segments
+  // and recalculate timeline positions so the timeline collapses/uncollapses dynamically.
+  const recalcVideoTimeline = (rippleDeletesToApply: { start: number; end: number }[], customVideoSegs?: VideoSegment[]) => {
     setVideoSegments((prev) => {
-      // Cut each video segment by the ripple regions
-      let segments = [...prev];
-      for (const region of newRippleRegions) {
+      const sourceSegs = customVideoSegs || prev;
+      if (!sourceSegs || sourceSegs.length === 0) return sourceSegs;
+
+      // 1. Group segments by base ID (strip '_r' suffixes)
+      const groups = new Map<string, VideoSegment[]>();
+      for (const seg of sourceSegs) {
+        const baseId = seg.id.replace(/(_r)+$/, '');
+        if (!groups.has(baseId)) {
+          groups.set(baseId, []);
+        }
+        groups.get(baseId)!.push(seg);
+      }
+
+      // 2. Reconstruct base segments by merging adjacent non-deleted segments in each group
+      const baseSegments: VideoSegment[] = [];
+      groups.forEach((groupSegs, baseId) => {
+        const sorted = [...groupSegs].sort((a, b) => a.sourceStart - b.sourceStart);
+        let currentBase: VideoSegment | null = null;
+        for (const seg of sorted) {
+          if (seg.deleted) {
+            if (currentBase) {
+              baseSegments.push(currentBase);
+              currentBase = null;
+            }
+            baseSegments.push({ ...seg });
+            continue;
+          }
+
+          if (!currentBase) {
+            currentBase = { ...seg, id: baseId };
+          } else {
+            if (Math.abs(seg.sourceStart - currentBase.sourceEnd) < 0.01) {
+              currentBase.sourceEnd = seg.sourceEnd;
+            } else {
+              baseSegments.push(currentBase);
+              currentBase = { ...seg, id: baseId };
+            }
+          }
+        }
+        if (currentBase) {
+          baseSegments.push(currentBase);
+        }
+      });
+
+      // 3. Cut baseSegments by rippleDeletesToApply
+      let segments = baseSegments;
+      for (const region of rippleDeletesToApply) {
         const result: VideoSegment[] = [];
         for (const seg of segments) {
           if (seg.deleted) { result.push(seg); continue; }
-          // No overlap — keep as is
+          // No overlap
           if (region.end <= seg.sourceStart || region.start >= seg.sourceEnd) {
             result.push(seg);
             continue;
           }
-          // Full overlap — mark deleted
+          // Full overlap
           if (region.start <= seg.sourceStart && region.end >= seg.sourceEnd) {
             result.push({ ...seg, deleted: true });
             continue;
@@ -267,20 +317,28 @@ export function useSubtitleState({
           if (region.end < seg.sourceEnd) {
             result.push({ ...seg, sourceStart: region.end, timelineStart: seg.timelineStart, id: seg.id + '_r', deleted: false });
           }
-          continue;
         }
         segments = result;
       }
-      // Recalculate timeline positions for active segments
-      const active = segments.filter(s => !s.deleted).sort((a, b) => a.sourceStart - b.sourceStart);
+
+      // 4. Recalculate timeline positions for active segments
+      const active = segments.filter((s) => !s.deleted).sort((a, b) => a.sourceStart - b.sourceStart);
       let cursor = 0;
+      const timelinePosMap = new Map<string, { start: number; end: number }>();
       for (const seg of active) {
         const duration = seg.sourceEnd - seg.sourceStart;
-        seg.timelineStart = cursor;
-        seg.timelineEnd = cursor + duration;
+        timelinePosMap.set(seg.id, { start: cursor, end: cursor + duration });
         cursor += duration;
       }
-      return segments;
+
+      return segments.map((seg) => {
+        if (seg.deleted) return { ...seg };
+        const pos = timelinePosMap.get(seg.id);
+        if (pos) {
+          return { ...seg, timelineStart: pos.start, timelineEnd: pos.end };
+        }
+        return { ...seg };
+      });
     });
   };
 
@@ -324,46 +382,47 @@ export function useSubtitleState({
     }
 
     setSegmentHistory((prevHistory) => ({
-      past: [...prevHistory.past, { segments: editableSegments, rippleDeletes, videoSegments }].slice(-50),
+      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments)].slice(-50),
       future: [],
     }));
     
     setEditableSegments(newSegments);
     setRippleDeletes(newRippleDeletes);
-    recalcVideoTimeline(regionsToAdd);
+    recalcVideoTimeline(newRippleDeletes);
   };
 
   const handleRippleDeleteRange = (start: number, end: number) => {
+    const newRippleDeletes = [...rippleDeletes, { start, end }];
     setSegmentHistory((prevHistory) => ({
-      past: [...prevHistory.past, { segments: editableSegments, rippleDeletes, videoSegments }].slice(-50),
+      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments)].slice(-50),
       future: [],
     }));
-    setRippleDeletes((prev) => [...prev, { start, end }]);
-    recalcVideoTimeline([{ start, end }]);
+    setRippleDeletes(newRippleDeletes);
+    recalcVideoTimeline(newRippleDeletes);
   };
 
   const undo = () => {
     if (segmentHistory.past.length === 0) return;
     const previous = segmentHistory.past[segmentHistory.past.length - 1];
     const newPast = segmentHistory.past.slice(0, segmentHistory.past.length - 1);
-    const newFuture = [{ segments: editableSegments, rippleDeletes, videoSegments }, ...segmentHistory.future];
+    const newFuture = [cloneState(editableSegments, rippleDeletes, videoSegments), ...segmentHistory.future];
     
     setEditableSegments(previous.segments);
     setRippleDeletes(previous.rippleDeletes);
-    setVideoSegments(previous.videoSegments);
     setSegmentHistory({ past: newPast, future: newFuture });
+    recalcVideoTimeline(previous.rippleDeletes || [], previous.videoSegments);
   };
 
   const redo = () => {
     if (segmentHistory.future.length === 0) return;
     const next = segmentHistory.future[0];
     const newFuture = segmentHistory.future.slice(1);
-    const newPast = [...segmentHistory.past, { segments: editableSegments, rippleDeletes, videoSegments }];
+    const newPast = [...segmentHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments)];
     
     setEditableSegments(next.segments);
     setRippleDeletes(next.rippleDeletes);
-    setVideoSegments(next.videoSegments);
     setSegmentHistory({ past: newPast, future: newFuture });
+    recalcVideoTimeline(next.rippleDeletes || [], next.videoSegments);
   };
 
   const handleDuplicateSegment = (index: number) => {
