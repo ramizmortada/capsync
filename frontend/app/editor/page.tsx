@@ -733,7 +733,7 @@ function EditorContent() {
               safePadding={safePadding}
               setSafePadding={setSafePadding}
               handleAutoCutSilences={handleAutoCutSilences}
-              currentTime={currentSourceTime}
+              currentTime={masterTime}
               handleSegmentChange={handleSegmentChange}
               handleToggleSegmentSilence={handleToggleSegmentSilence}
               handleDeleteSegments={handleDeleteSegments}
@@ -768,7 +768,7 @@ function EditorContent() {
               editableSegments={editableSegments}
               videoSegments={videoSegments}
               cutZones={cutZones}
-              currentTime={currentSourceTime}
+              currentTime={masterTime}
               subtitleStyle={subtitleStyle}
               setVideoDimensions={setVideoDimensions}
               handleExportVideo={handleExportVideo}

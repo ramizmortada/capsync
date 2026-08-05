@@ -111,8 +111,8 @@ export function LivePreview({
     }
   }
 
-  // Determine if we are currently in a video gap
-  const activeClip = videoSegments?.find(s => !s.deleted && localTime >= s.sourceStart && localTime < s.sourceEnd);
+  // Determine if we are currently in a video gap on the timeline
+  const activeClip = videoSegments?.find(s => !s.deleted && localTime >= s.timelineStart && localTime < s.timelineEnd);
   const isGap = !videoSegments || !activeClip;
   
   const activeTransform = activeClip?.transform || { x: 0, y: 0, scale: 1 };

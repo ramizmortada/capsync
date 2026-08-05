@@ -139,7 +139,7 @@ export async function POST(req: Request) {
             const ffmpegArgs = ['-y'];
             if (normStart && normStart !== '00:00:00') ffmpegArgs.push('-ss', normStart);
             if (normEnd && normEnd !== '00:00:00') ffmpegArgs.push('-to', normEnd);
-            ffmpegArgs.push('-i', foundCachedPath, '-c', 'copy', clipFilePath);
+            ffmpegArgs.push('-i', foundCachedPath, '-c', 'copy', '-avoid_negative_ts', 'make_zero', '-movflags', '+faststart', clipFilePath);
 
             console.log(`[API /api/download] Running FFmpeg: ${ffmpegBin} ${ffmpegArgs.join(' ')}`);
             await execFileAsync(ffmpegBin, ffmpegArgs);
@@ -266,7 +266,7 @@ export async function POST(req: Request) {
           const ffmpegArgs = ['-y'];
           if (normStart && normStart !== '00:00:00') ffmpegArgs.push('-ss', normStart);
           if (normEnd && normEnd !== '00:00:00') ffmpegArgs.push('-to', normEnd);
-          ffmpegArgs.push('-i', finalFilePath, '-c', 'copy', clipFilePath);
+          ffmpegArgs.push('-i', finalFilePath, '-c', 'copy', '-avoid_negative_ts', 'make_zero', '-movflags', '+faststart', clipFilePath);
 
           console.log(`[API /api/download] Running FFmpeg: ${ffmpegBin} ${ffmpegArgs.join(' ')}`);
           await execFileAsync(ffmpegBin, ffmpegArgs);

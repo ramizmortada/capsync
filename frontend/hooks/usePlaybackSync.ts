@@ -80,21 +80,20 @@ export function usePlaybackSync({
 
         let currentMaster = masterTimeRef.current;
         const timelineMap = timelineMapRef.current;
-        
+        const mediaTime = mediaRef.current.currentTime;
+
         const activeSegment = timelineMap.find(s => 
+          mediaTime >= s.sourceStart - 0.01 && mediaTime < s.sourceEnd
+        ) || timelineMap.find(s => 
           currentMaster >= s.timelineStart && currentMaster < s.timelineEnd
         );
 
         if (activeSegment) {
-          const expectedSourceTime = activeSegment.sourceStart + (currentMaster - activeSegment.timelineStart);
-          
-          if (Math.abs(mediaRef.current.currentTime - expectedSourceTime) > 0.15) {
-            mediaRef.current.currentTime = expectedSourceTime;
-          } else {
-            currentMaster = activeSegment.timelineStart + (mediaRef.current.currentTime - activeSegment.sourceStart);
-          }
+          // Derive master timeline position directly from video element hardware clock
+          currentMaster = activeSegment.timelineStart + Math.max(0, mediaTime - activeSegment.sourceStart);
 
-          if (currentMaster >= activeSegment.timelineEnd - 0.01 || mediaRef.current.currentTime >= activeSegment.sourceEnd - 0.01) {
+          // Only jump media position when crossing segment boundaries
+          if (mediaTime >= activeSegment.sourceEnd - 0.02 || currentMaster >= activeSegment.timelineEnd - 0.02) {
              const nextSegment = timelineMap.find(s => s.timelineStart >= activeSegment.timelineEnd);
              if (nextSegment) {
                currentMaster = nextSegment.timelineStart + 0.01;
@@ -156,14 +155,14 @@ export function usePlaybackSync({
   useEffect(() => {
     if (!mediaRef.current || mediaRef.current.paused || mediaDuration <= 0) return;
 
-    const activeIndex = editableSegments.findIndex((s: any) => currentSourceTime >= s.start && currentSourceTime < s.end);
+    const activeIndex = editableSegments.findIndex((s: any) => masterTime >= s.start && masterTime < s.end);
     if (activeIndex !== -1) {
       const activeElement = document.getElementById(`subtitle-segment-${activeIndex}`);
       if (activeElement) {
         activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }
-  }, [currentSourceTime, mediaDuration, editableSegments, mediaRef]);
+  }, [masterTime, mediaDuration, editableSegments, mediaRef]);
 
   const handleTimelineSeek = useCallback((time: number) => {
     let validTime = time;
