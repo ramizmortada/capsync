@@ -453,14 +453,18 @@ export function LivePreview({
                   return "";
                 }
 
+                const activeWordIndex = visibleWords.findIndex((w: any) => localTime >= w.start && localTime < w.end);
+
                 return visibleWords.map((word: any, i: number) => {
-                  const isActive = localTime >= word.start && localTime < word.end;
-                  const isPast = localTime >= word.end;
+                  const isActive = i === activeWordIndex;
+                  const isPast = activeWordIndex !== -1 ? i < activeWordIndex : localTime >= word.end;
                   
                   let wordStyle: React.CSSProperties = {
                     display: 'inline-block',
-                    transition: 'all 0.05s ease-out',
+                    transition: 'transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s ease-out, opacity 0.15s ease-out, background-color 0.15s ease-out',
                     verticalAlign: subtitleStyle.alignmentVertical === 'top' ? 'top' : subtitleStyle.alignmentVertical === 'middle' ? 'middle' : 'bottom',
+                    transformOrigin: 'center center',
+                    willChange: 'transform, color',
                   };
 
                   if (subtitleStyle.animationStyle === 'reveal' && !isActive && !isPast) {
@@ -475,15 +479,22 @@ export function LivePreview({
                         wordStyle.borderRadius = `${pxHighlightPad}px`;
                         wordStyle.margin = `0 -${pxHighlightPad}px`;
                       }
+                    } else if (subtitleStyle.animationStyle === 'scale') {
+                      if (isActive) {
+                        const sf = subtitleStyle.scaleFactor ?? 1.1;
+                        wordStyle.transform = `scale(${sf})`;
+                        if (!isStrokeLayer) {
+                          wordStyle.color = subtitleStyle.highlightColor;
+                        }
+                        wordStyle.zIndex = 10;
+                        wordStyle.position = 'relative';
+                      } else {
+                        wordStyle.transform = 'scale(1)';
+                      }
                     } else if (!isStrokeLayer) {
                       if (isActive) {
-                        if (subtitleStyle.animationStyle === 'color' || subtitleStyle.animationStyle === 'dimmed') {
+                        if (subtitleStyle.animationStyle === 'color') {
                           wordStyle.color = subtitleStyle.highlightColor;
-                        } else if (subtitleStyle.animationStyle === 'scale') {
-                          wordStyle.transform = `scale(${subtitleStyle.scaleFactor ?? 1.2})`;
-                          wordStyle.color = subtitleStyle.highlightColor;
-                          wordStyle.zIndex = 10;
-                          wordStyle.position = 'relative';
                         } else if (subtitleStyle.animationStyle === 'karaoke') {
                           wordStyle.color = subtitleStyle.highlightColor;
                         }

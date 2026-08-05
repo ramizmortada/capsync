@@ -70,7 +70,7 @@ export const AnimationTab = ({ subtitleStyle, updateStyle }: AnimationTabProps) 
         <div className="space-y-4 pt-4 border-t border-neutral-800">
           <h3 className="font-semibold text-neutral-200">Preset Settings</h3>
           
-          {(subtitleStyle.animationStyle === 'color' || subtitleStyle.animationStyle === 'karaoke' || subtitleStyle.animationStyle === 'scale' || subtitleStyle.animationStyle === 'dimmed') && (
+          {(subtitleStyle.animationStyle === 'color' || subtitleStyle.animationStyle === 'karaoke' || subtitleStyle.animationStyle === 'scale') && (
             <ColorPickerField label="Highlight Text Color" colorKey="highlightColor" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
           )}
 
