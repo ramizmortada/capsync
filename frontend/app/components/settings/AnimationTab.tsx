@@ -60,6 +60,7 @@ export const AnimationTab = ({ subtitleStyle, updateStyle }: AnimationTabProps) 
               <SelectItem value="scale">Scale Pop</SelectItem>
               <SelectItem value="karaoke">Karaoke Reveal</SelectItem>
               <SelectItem value="reveal">Word Reveal</SelectItem>
+              <SelectItem value="dimmed">Muted Reveal</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -69,7 +70,7 @@ export const AnimationTab = ({ subtitleStyle, updateStyle }: AnimationTabProps) 
         <div className="space-y-4 pt-4 border-t border-neutral-800">
           <h3 className="font-semibold text-neutral-200">Preset Settings</h3>
           
-          {(subtitleStyle.animationStyle === 'color' || subtitleStyle.animationStyle === 'karaoke' || subtitleStyle.animationStyle === 'scale') && (
+          {(subtitleStyle.animationStyle === 'color' || subtitleStyle.animationStyle === 'karaoke' || subtitleStyle.animationStyle === 'scale' || subtitleStyle.animationStyle === 'dimmed') && (
             <ColorPickerField label="Highlight Text Color" colorKey="highlightColor" subtitleStyle={subtitleStyle} updateStyle={updateStyle} />
           )}
 

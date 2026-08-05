@@ -465,6 +465,8 @@ export function LivePreview({
 
                   if (subtitleStyle.animationStyle === 'reveal' && !isActive && !isPast) {
                     wordStyle.opacity = 0;
+                  } else if (subtitleStyle.animationStyle === 'dimmed' && !isActive && !isPast) {
+                    wordStyle.opacity = 0.35;
                   } else if (subtitleStyle.animationStyle !== 'none') {
                     if (subtitleStyle.animationStyle === 'box') {
                       if (isActive && isStrokeLayer) {
@@ -475,7 +477,7 @@ export function LivePreview({
                       }
                     } else if (!isStrokeLayer) {
                       if (isActive) {
-                        if (subtitleStyle.animationStyle === 'color') {
+                        if (subtitleStyle.animationStyle === 'color' || subtitleStyle.animationStyle === 'dimmed') {
                           wordStyle.color = subtitleStyle.highlightColor;
                         } else if (subtitleStyle.animationStyle === 'scale') {
                           wordStyle.transform = `scale(${subtitleStyle.scaleFactor ?? 1.2})`;

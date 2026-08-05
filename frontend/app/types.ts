@@ -19,7 +19,7 @@ export interface SubtitleStyle {
   alignment: 'left' | 'center' | 'right';
   alignmentVertical: 'top' | 'middle' | 'bottom';
   positionY: number;
-  animationStyle: 'none' | 'color' | 'box' | 'scale' | 'karaoke' | 'reveal';
+  animationStyle: 'none' | 'color' | 'box' | 'scale' | 'karaoke' | 'reveal' | 'dimmed';
   animationIn: 'none' | 'fade' | 'zoomIn' | 'zoomOut';
   animationOut: 'none' | 'fade' | 'zoomIn' | 'zoomOut';
   highlightBackgroundColor: string;

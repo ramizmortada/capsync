@@ -306,6 +306,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                         line_parts.append(clean_word)
                     else:
                         line_parts.append(f"{{\\alpha&HFF&}}{clean_word}{{\\alpha&H00&}}")
+                elif animation_style == "dimmed":
+                    if j <= i:
+                        if j == i:
+                            line_parts.append(f"{{\\c{highlight_color}}}{clean_word}{{\\c{primary_color}}}")
+                        else:
+                            line_parts.append(clean_word)
+                    else:
+                        line_parts.append(f"{{\\alpha&HB0&}}{clean_word}{{\\alpha&H00&}}")
                 else:
                     if j == i:
                         if animation_style == "color":

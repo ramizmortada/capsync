@@ -354,8 +354,16 @@ export default function WhisperXApp() {
       handleTimelineSeek(0);
       setIsPlaying(false);
       isPlayingRef.current = false;
+      if (timelineRef.current) {
+        timelineRef.current.scrollLeft = 0;
+      }
     }
   };
+
+  const handleTimelineSeekRef = useRef(handleTimelineSeek);
+  useEffect(() => {
+    handleTimelineSeekRef.current = handleTimelineSeek;
+  }, [handleTimelineSeek]);
 
   // Listen to media element events to sync state (mostly for external pauses)
   useEffect(() => {
@@ -370,13 +378,23 @@ export default function WhisperXApp() {
       setIsPlaying(false);
       isPlayingRef.current = false;
     };
+    const handleEnded = () => {
+      setIsPlaying(false);
+      isPlayingRef.current = false;
+      handleTimelineSeekRef.current(0);
+      if (timelineRef.current) {
+        timelineRef.current.scrollLeft = 0;
+      }
+    };
 
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
+    video.addEventListener('ended', handleEnded);
     
     return () => {
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
+      video.removeEventListener('ended', handleEnded);
     };
   }, []);
 

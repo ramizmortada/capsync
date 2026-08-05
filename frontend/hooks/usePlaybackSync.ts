@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
 interface UsePlaybackSyncProps {
   mediaRef: React.RefObject<HTMLMediaElement | null>;
@@ -102,6 +102,12 @@ export function usePlaybackSync({
              } else {
                mediaRef.current.pause();
                isPlayingRef.current = false;
+               const firstSeg = timelineMap[0];
+               currentMaster = 0;
+               mediaRef.current.currentTime = firstSeg ? firstSeg.sourceStart : 0;
+               if (timelineRef.current) {
+                 timelineRef.current.scrollLeft = 0;
+               }
              }
           }
         } else {
@@ -112,6 +118,12 @@ export function usePlaybackSync({
           } else {
              mediaRef.current.pause();
              isPlayingRef.current = false;
+             const firstSeg = timelineMap[0];
+             currentMaster = 0;
+             mediaRef.current.currentTime = firstSeg ? firstSeg.sourceStart : 0;
+             if (timelineRef.current) {
+               timelineRef.current.scrollLeft = 0;
+             }
           }
         }
 
@@ -153,7 +165,7 @@ export function usePlaybackSync({
     }
   }, [currentSourceTime, mediaDuration, editableSegments, mediaRef]);
 
-  const handleTimelineSeek = (time: number) => {
+  const handleTimelineSeek = useCallback((time: number) => {
     let validTime = time;
 
     masterTimeRef.current = validTime;
@@ -166,7 +178,7 @@ export function usePlaybackSync({
       mediaRef.current.currentTime = activeSeg.sourceStart + (validTime - activeSeg.timelineStart);
       setCurrentSourceTime(mediaRef.current.currentTime);
     }
-  };
+  }, [masterTimeRef, setMasterTime, mediaRef]);
 
   return { handleTimelineSeek, currentSourceTime };
 }
