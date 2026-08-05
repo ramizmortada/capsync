@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
-import { get, set, del } from 'idb-keyval';
+import { getTimeline, saveTimeline, getAllTimelines } from '@/lib/timelineStorage';
 
 interface UseProjectPersistenceProps {
+  timelineId?: string | null;
+  timelineName?: string;
+  setTimelineName?: (name: string) => void;
   file: File | null;
   setFile: (file: File | null) => void;
   status: any;
@@ -25,6 +28,9 @@ interface UseProjectPersistenceProps {
 }
 
 export function useProjectPersistence({
+  timelineId,
+  timelineName,
+  setTimelineName,
   file,
   setFile,
   status,
@@ -49,19 +55,30 @@ export function useProjectPersistence({
   const [isProjectLoaded, setIsProjectLoaded] = useState(false);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
 
-  // Load project from IndexedDB
+  // Load timeline from IndexedDB
   useEffect(() => {
     async function loadProject() {
       try {
-        const savedProject = await get('capsync_project');
-        if (savedProject) {
-          if (savedProject.file) setFile(savedProject.file);
-          if (savedProject.status) setStatus(savedProject.status);
-          if (savedProject.result) setResult(savedProject.result);
-          if (savedProject.editableSegments) setEditableSegments(savedProject.editableSegments);
-          if (savedProject.rippleDeletes) setRippleDeletes(savedProject.rippleDeletes);
-          if (savedProject.videoSegments) setVideoSegments(savedProject.videoSegments);
-          if (savedProject.videoCanvas) setVideoCanvas(savedProject.videoCanvas);
+        let activeId = timelineId;
+        if (!activeId) {
+          const timelines = await getAllTimelines();
+          if (timelines.length > 0) {
+            activeId = timelines[0].id;
+          }
+        }
+
+        if (activeId) {
+          const savedProject = await getTimeline(activeId);
+          if (savedProject) {
+            if (savedProject.name && setTimelineName) setTimelineName(savedProject.name);
+            if (savedProject.file) setFile(savedProject.file);
+            if (savedProject.status) setStatus(savedProject.status);
+            if (savedProject.result) setResult(savedProject.result);
+            if (savedProject.editableSegments) setEditableSegments(savedProject.editableSegments);
+            if (savedProject.rippleDeletes) setRippleDeletes(savedProject.rippleDeletes);
+            if (savedProject.videoSegments) setVideoSegments(savedProject.videoSegments);
+            if (savedProject.videoCanvas) setVideoCanvas(savedProject.videoCanvas);
+          }
         }
       } catch (err) {
         console.error("Failed to load project from IDB", err);
@@ -70,7 +87,7 @@ export function useProjectPersistence({
       }
     }
     loadProject();
-  }, [setFile, setStatus, setResult, setEditableSegments, setRippleDeletes, setVideoSegments, setVideoCanvas]);
+  }, [timelineId, setTimelineName, setFile, setStatus, setResult, setEditableSegments, setRippleDeletes, setVideoSegments, setVideoCanvas]);
 
   // Load subtitle style from localStorage
   useEffect(() => {
@@ -109,22 +126,23 @@ export function useProjectPersistence({
 
   // Save project to IndexedDB
   useEffect(() => {
-    if (isProjectLoaded) {
-      if (file === null && status === 'idle') {
-        del('capsync_project').catch(console.error);
-      } else {
-        set('capsync_project', { 
-          file, 
-          status, 
-          result, 
-          editableSegments, 
-          rippleDeletes, 
-          videoSegments, 
-          videoCanvas 
-        }).catch(console.error);
-      }
+    if (isProjectLoaded && timelineId) {
+      saveTimeline({
+        id: timelineId,
+        name: timelineName || 'Timeline',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        file,
+        status,
+        result,
+        editableSegments,
+        rippleDeletes,
+        videoSegments,
+        videoCanvas,
+        subtitleStyle,
+      }).catch(console.error);
     }
-  }, [isProjectLoaded, file, status, result, editableSegments, rippleDeletes, videoSegments, videoCanvas]);
+  }, [isProjectLoaded, timelineId, timelineName, file, status, result, editableSegments, rippleDeletes, videoSegments, videoCanvas, subtitleStyle]);
 
   // Save subtitle style to localStorage
   useEffect(() => {

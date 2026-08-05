@@ -1,8 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { del } from "idb-keyval";
+import { ArrowLeft, Edit2, Check, Film } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { SubtitleEditor } from "../components/SubtitleEditor";
 import { LivePreview } from "../components/LivePreview";
@@ -17,13 +20,20 @@ import { useTimelineDragging } from "../../hooks/useTimelineDragging";
 import { useCutZones } from "../../hooks/useCutZones";
 import { usePlaybackSync } from "../../hooks/usePlaybackSync";
 import { useProjectPersistence } from "../../hooks/useProjectPersistence";
+import { renameTimeline } from "@/lib/timelineStorage";
 
 export type { SubtitleStyle, StylePreset, DragTarget };
 export { DEFAULT_PRESETS };
 
-export default function WhisperXApp() {
+function EditorContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const timelineId = searchParams.get('id');
+
   const [file, setFile] = useState<File | null>(null);
+  const [timelineName, setTimelineName] = useState<string>("Timeline");
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState("");
   
   // States
   const [modelSize, setModelSize] = useState("tiny");
@@ -208,6 +218,9 @@ export default function WhisperXApp() {
   });
 
   useProjectPersistence({
+    timelineId,
+    timelineName,
+    setTimelineName,
     file,
     setFile,
     status,
@@ -419,27 +432,6 @@ export default function WhisperXApp() {
         }
         
         if (selectedVideoIndexes.length > 0) {
-          if (e.shiftKey) {
-            handleVideoRippleDelete(selectedVideoIndexes);
-          } else {
-            handleVideoDelete(selectedVideoIndexes);
-          }
-        }
-      } else if (e.code === 'KeyC') {
-        e.preventDefault();
-        setCursorMode('cut');
-      } else if (e.code === 'KeyV') {
-        e.preventDefault();
-        setCursorMode('select');
-      } else if (e.code === 'KeyD') {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        if (selectedIndexes.length > 0) {
-          handleLiftDelete(selectedIndexes);
-        }
-        
-        if (selectedVideoIndexes.length > 0) {
           handleVideoDelete(selectedVideoIndexes);
         }
       } else if (e.code === 'KeyX') {
@@ -474,32 +466,29 @@ export default function WhisperXApp() {
     };
   }, [editableSegments, togglePlay, setEditableSegments, setRippleDeletes, setSegmentHistory, rippleDeletes, setCursorMode, selectedVideoIndexes, handleVideoDelete, handleVideoRippleDelete, setSelectedVideoIndexes, videoSegments, setVideoSegments, selectedIndexes, handleRippleDelete, handleLiftDelete, undo, redo]);
 
-  // Convert WhisperX segments to SRT format
-  const generateSRT = () => {
-    if (!editableSegments || editableSegments.length === 0) return "";
-    
-    let srtContent = "";
-    editableSegments.forEach((segment: any, index: number) => {
-      srtContent += `${index + 1}\n`;
-      srtContent += `${formatSrtTime(segment.start)} --> ${formatSrtTime(segment.end)}\n`;
-      srtContent += `${segment.text.trim()}\n\n`;
-    });
-    
-    return srtContent;
-  };
-
+  // Clear current project
   const clearProject = async () => {
-    await del('capsync_project');
     setFile(null);
     setStatus("idle");
     setResult(null);
     setEditableSegments([]);
-    setSegmentHistory({ past: [], future: [] });
     setRippleDeletes([]);
     setVideoSegments([]);
     setSelectedVideoIndexes([]);
     setMediaUrl("");
     setMediaDuration(0);
+  };
+
+  const generateSRT = () => {
+    if (!editableSegments || editableSegments.length === 0) return "";
+    let srt = "";
+    editableSegments.forEach((seg, idx) => {
+      const realWords = seg.words ? seg.words.filter((w: any) => !w.deleted && !w.isGap) : [];
+      if (realWords.length === 0 && seg.words && seg.words.length > 0) return;
+      const text = realWords.length > 0 ? realWords.map((w: any) => w.word).join(" ") : seg.text;
+      srt += `${idx + 1}\n${formatSrtTime(seg.start)} --> ${formatSrtTime(seg.end)}\n${text}\n\n`;
+    });
+    return srt;
   };
 
   const downloadSRT = () => {
@@ -515,8 +504,59 @@ export default function WhisperXApp() {
     URL.revokeObjectURL(url);
   };
 
+  const handleSaveTitle = async () => {
+    if (timelineId && titleInput.trim()) {
+      setTimelineName(titleInput.trim());
+      await renameTimeline(timelineId, titleInput.trim());
+    }
+    setIsEditingTitle(false);
+  };
+
   return (
     <div className="bg-neutral-950 text-neutral-50 font-sans selection:bg-blue-500/30 h-screen flex flex-col overflow-hidden p-4">
+      {/* Top Header Bar with Timeline Navigation & Title */}
+      <div className="mx-auto w-full max-w-[100rem] mb-3 flex items-center justify-between bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2 shrink-0">
+        <div className="flex items-center gap-3">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => router.push('/')}
+            className="text-neutral-400 hover:text-white hover:bg-neutral-800 gap-2 h-8 text-xs font-semibold"
+          >
+            <ArrowLeft className="w-4 h-4" /> Timelines
+          </Button>
+
+          <div className="h-4 w-[1px] bg-neutral-800" />
+
+          {isEditingTitle ? (
+            <div className="flex items-center gap-2">
+              <Input
+                value={titleInput}
+                onChange={(e) => setTitleInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveTitle()}
+                className="h-8 text-sm font-bold bg-neutral-950 border-blue-500 w-64"
+                autoFocus
+              />
+              <Button size="icon" className="h-8 w-8 bg-blue-600 hover:bg-blue-500" onClick={handleSaveTitle}>
+                <Check className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 group cursor-pointer" onClick={() => { setIsEditingTitle(true); setTitleInput(timelineName); }}>
+              <Film className="w-4 h-4 text-blue-400" />
+              <h2 className="font-bold text-sm text-neutral-100 group-hover:text-blue-400 transition-colors">
+                {timelineName}
+              </h2>
+              <Edit2 className="w-3 h-3 text-neutral-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 text-xs font-semibold text-neutral-400">
+          {file ? <span className="bg-neutral-800 px-2.5 py-1 rounded-md">{file.name}</span> : <span>No video loaded</span>}
+        </div>
+      </div>
+
       <div className="mx-auto w-full transition-all duration-500 ease-in-out flex flex-col flex-1 overflow-hidden max-w-[100rem]">
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 overflow-hidden mb-4">
           <div className="lg:col-span-3 flex flex-col h-full overflow-hidden">
@@ -588,26 +628,21 @@ export default function WhisperXApp() {
             />
           </div>
 
-          <div className="lg:col-span-5 animate-in fade-in slide-in-from-right-8 duration-700 h-full overflow-hidden">
+          <div className="lg:col-span-5 flex flex-col h-full overflow-hidden">
             <LivePreview 
               file={file}
               mediaUrl={mediaUrl}
               mediaRef={mediaRef}
-              currentTime={currentSourceTime}
               setCurrentTime={(time) => {
-                masterTimeRef.current = time;
-                setMasterTime(time);
-                const activeClip = videoSegments.find(s => !s.deleted && time >= s.timelineStart && time < s.timelineEnd);
-                if (activeClip && mediaRef.current) {
-                  mediaRef.current.currentTime = activeClip.sourceStart + (time - activeClip.timelineStart);
-                }
+                handleTimelineSeek(time);
               }}
               setMediaDuration={setMediaDuration}
-              setVideoDimensions={setVideoDimensions}
               editableSegments={editableSegments}
               videoSegments={videoSegments}
               cutZones={cutZones}
+              currentTime={currentSourceTime}
               subtitleStyle={subtitleStyle}
+              setVideoDimensions={setVideoDimensions}
               handleExportVideo={handleExportVideo}
               status={status}
               togglePlay={togglePlay}
@@ -617,51 +652,56 @@ export default function WhisperXApp() {
           </div>
         </div>
 
-        <div className="shrink-0 animate-in fade-in slide-in-from-bottom-8 duration-700">
-          <InteractiveTimeline 
-            isPlaying={isPlaying}
-            togglePlay={togglePlay}
-            stopPlay={stopPlay}
-            currentTime={masterTime}
-            mediaDuration={mediaDuration}
-            file={file}
-            zoomLevel={zoomLevel}
-            setZoomLevel={setZoomLevel}
-            timelineRef={timelineRef}
-            isHoveringTimeline={isHoveringTimeline}
-            trackRef={trackRef}
-            editableSegments={editableSegments}
-            selectedIndexes={selectedIndexes}
-            setSelectedIndexes={setSelectedIndexes}
-            handleLiftDelete={handleLiftDelete}
-            handleRippleDelete={handleRippleDelete}
-            handleRippleDeleteRange={handleRippleDeleteRange}
-            rippleDeletes={rippleDeletes}
-            cutZones={cutZones}
-            setDraggingBoundary={setDraggingBoundary}
-            draggingBoundary={draggingBoundary}
-            handleToggleWordDelete={handleToggleWordDelete}
-            onSeek={(_, timelineTime) => {
-              handleTimelineSeek(timelineTime);
-            }}
-            videoSegments={videoSegments}
-            setVideoSegments={setVideoSegments}
-            selectedVideoIndexes={selectedVideoIndexes}
-            setSelectedVideoIndexes={setSelectedVideoIndexes}
-            cursorMode={cursorMode}
-            handleVideoCut={handleVideoCut}
-            setEditableSegments={setEditableSegments}
-            setSegmentHistory={setSegmentHistory}
-            handleClearTrack={(trackType) => {
-              if (trackType === 'video') {
-                clearProject();
-              } else {
-                handleClearTrack(trackType);
-              }
-            }}
-          />
-        </div>
+        {/* Bottom Interactive Timeline */}
+        <InteractiveTimeline 
+          isPlaying={isPlaying}
+          togglePlay={togglePlay}
+          stopPlay={stopPlay}
+          currentTime={masterTime}
+          mediaDuration={mediaDuration}
+          file={file}
+          zoomLevel={zoomLevel}
+          setZoomLevel={setZoomLevel}
+          timelineRef={timelineRef}
+          isHoveringTimeline={isHoveringTimeline}
+          trackRef={trackRef}
+          editableSegments={editableSegments}
+          cutZones={cutZones}
+          rippleDeletes={rippleDeletes}
+          selectedIndexes={selectedIndexes}
+          setSelectedIndexes={setSelectedIndexes}
+          handleLiftDelete={handleLiftDelete}
+          handleRippleDelete={handleRippleDelete}
+          handleRippleDeleteRange={handleRippleDeleteRange}
+          handleClearTrack={handleClearTrack}
+          setDraggingBoundary={setDraggingBoundary}
+          draggingBoundary={draggingBoundary}
+          onSeek={(mediaTime) => {
+            handleTimelineSeek(mediaTime);
+          }}
+          handleToggleWordDelete={handleToggleWordDelete}
+          videoSegments={videoSegments}
+          setVideoSegments={setVideoSegments}
+          selectedVideoIndexes={selectedVideoIndexes}
+          setSelectedVideoIndexes={setSelectedVideoIndexes}
+          cursorMode={cursorMode}
+          handleVideoCut={handleVideoCut}
+          setEditableSegments={setEditableSegments}
+          setSegmentHistory={setSegmentHistory}
+        />
       </div>
     </div>
+  );
+}
+
+export default function WhisperXApp() {
+  return (
+    <Suspense fallback={
+      <div className="h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+      </div>
+    }>
+      <EditorContent />
+    </Suspense>
   );
 }

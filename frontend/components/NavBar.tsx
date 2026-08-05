@@ -2,15 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Download, Edit3, Sparkles, Video } from 'lucide-react';
+import { Film, Download, Edit3, Video } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function NavBar() {
   const pathname = usePathname();
 
   const links = [
-    { href: '/', label: 'Home', icon: Home },
-    { href: '/download', label: 'Download', icon: Download },
+    { href: '/', label: 'Timelines', icon: Film },
+    { href: '/download', label: 'Downloader', icon: Download },
     { href: '/editor', label: 'Editor', icon: Edit3 },
   ];
 
@@ -41,7 +41,7 @@ export function NavBar() {
                   : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"
               )}
             >
-              <Icon className={cn("w-5 h-5", isActive && link.href === '/download' && "text-blue-400", isActive && link.href === '/editor' && "text-purple-400", isActive && link.href === '/clips' && "text-amber-400")} />
+              <Icon className={cn("w-5 h-5", isActive && link.href === '/' && "text-blue-400", isActive && link.href === '/download' && "text-blue-400", isActive && link.href === '/editor' && "text-purple-400")} />
               {link.label}
             </Link>
           );
