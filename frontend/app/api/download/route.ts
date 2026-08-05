@@ -44,17 +44,27 @@ function getVideoId(url: string): string {
   return url.replace(/[^a-zA-Z0-9]/g, '_').slice(-25);
 }
 
+function sanitizeFilename(name?: string): string {
+  if (!name) return '';
+  return name
+    .replace(/[\/\\?%*:|"<>]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 100);
+}
+
 const SCRATCH_DIR = path.resolve(process.cwd(), '..', 'scratch');
 const CACHE_DIR = path.join(SCRATCH_DIR, 'video_cache');
 const TEMP_DIR = path.join(SCRATCH_DIR, 'temp');
 
 export async function POST(req: Request) {
   const body = await req.json();
-  const { url, isAudio, quality, type, startTime, endTime } = body;
+  const { url, isAudio, quality, type, startTime, endTime, title } = body;
 
   console.log(`\n========================================`);
   console.log(`[API /api/download] STARTING DOWNLOAD REQUEST`);
   console.log(`[API /api/download] URL: ${url}`);
+  console.log(`[API /api/download] Title: "${title || 'N/A'}"`);
   console.log(`[API /api/download] Parameters: isAudio=${isAudio}, quality=${quality}, type=${type}`);
   console.log(`[API /api/download] Raw Time Range: startTime="${startTime}", endTime="${endTime}"`);
 
@@ -83,25 +93,45 @@ export async function POST(req: Request) {
         }
 
         const videoId = getVideoId(url);
+        const safeTitle = sanitizeFilename(title) || `video_${videoId}`;
         const ext = isAudio ? 'mp3' : (type || 'mp4');
-        const cacheFileName = isAudio ? `audio_${videoId}.${ext}` : `video_${videoId}_${quality}p.${ext}`;
+        const cacheFileName = isAudio ? `${safeTitle}.${ext}` : `${safeTitle} (${quality}p).${ext}`;
         const cachedFilePath = path.join(CACHE_DIR, cacheFileName);
 
         const normStart = normalizeTimestamp(startTime);
         const normEnd = normalizeTimestamp(endTime);
         const hasClipping = Boolean((normStart && normStart !== '00:00:00') || (normEnd && normEnd !== '00:00:00'));
 
-        console.log(`[API /api/download] Video ID: "${videoId}", Cache Key: "${cacheFileName}"`);
+        console.log(`[API /api/download] Video Title: "${safeTitle}", Cache Key: "${cacheFileName}"`);
         console.log(`[API /api/download] Normalized Range: start="${normStart}", end="${normEnd}", Clipping Required=${hasClipping}`);
 
-        // CHECK CACHE HIT
-        if (fs.existsSync(cachedFilePath) && fs.statSync(cachedFilePath).size > 1000) {
-          console.log(`[API /api/download] ⚡ CACHE HIT! Using existing local video file: ${cachedFilePath}`);
+        // CHECK CACHE HIT (Exact match or fuzzy scan match)
+        let foundCachedPath: string | null = null;
+        if (fs.existsSync(cachedFilePath) && fs.statSync(cachedFilePath).isFile() && fs.statSync(cachedFilePath).size > 1000) {
+          foundCachedPath = cachedFilePath;
+        } else {
+          try {
+            const files = fs.readdirSync(CACHE_DIR);
+            for (const f of files) {
+              if (f.endsWith('.json')) continue;
+              const fullP = path.join(CACHE_DIR, f);
+              if (fs.statSync(fullP).isFile() && fs.statSync(fullP).size > 1000) {
+                if ((videoId && f.includes(videoId)) || (safeTitle && f.includes(safeTitle))) {
+                  foundCachedPath = fullP;
+                  break;
+                }
+              }
+            }
+          } catch (e) {}
+        }
+
+        if (foundCachedPath && fs.existsSync(foundCachedPath)) {
+          console.log(`[API /api/download] ⚡ CACHE HIT! Using existing local video file: ${foundCachedPath}`);
           safeEnqueue({ type: 'progress', data: { percentage: 50, speed: 'CACHE_HIT', downloaded_str: 'Cached', total_str: 'Cached' } });
 
-          let finalFilePath = cachedFilePath;
+          let finalFilePath = foundCachedPath;
           if (hasClipping) {
-            const clipFileName = `clip_${videoId}_${Date.now()}.${ext}`;
+            const clipFileName = `${safeTitle} - Clip.${ext}`;
             const clipFilePath = path.join(TEMP_DIR, clipFileName);
             console.log(`[API /api/download] Trimming clip using local FFmpeg from cached video...`);
 
@@ -109,7 +139,7 @@ export async function POST(req: Request) {
             const ffmpegArgs = ['-y'];
             if (normStart && normStart !== '00:00:00') ffmpegArgs.push('-ss', normStart);
             if (normEnd && normEnd !== '00:00:00') ffmpegArgs.push('-to', normEnd);
-            ffmpegArgs.push('-i', cachedFilePath, '-c', 'copy', clipFilePath);
+            ffmpegArgs.push('-i', foundCachedPath, '-c', 'copy', clipFilePath);
 
             console.log(`[API /api/download] Running FFmpeg: ${ffmpegBin} ${ffmpegArgs.join(' ')}`);
             await execFileAsync(ffmpegBin, ffmpegArgs);
@@ -127,9 +157,15 @@ export async function POST(req: Request) {
           return;
         }
 
-        // CACHE MISS: Download full video into cache directory first
-        console.log(`[API /api/download] 🌐 CACHE MISS. Downloading full video into cache: ${cachedFilePath}`);
-        let dl = ytdlp.download(url).output(cachedFilePath);
+        // If a directory with cachedFilePath name exists from an old run, clean it up
+        if (fs.existsSync(cachedFilePath) && fs.statSync(cachedFilePath).isDirectory()) {
+          try { fs.rmSync(cachedFilePath, { recursive: true, force: true }); } catch (e) {}
+        }
+
+        // CACHE MISS: Download to a clean temporary path inside TEMP_DIR to avoid yt-dlp title parsing issues
+        const tempDownloadPath = path.join(TEMP_DIR, `dl_${videoId}_${quality}p_${Date.now()}.${ext}`);
+        console.log(`[API /api/download] 🌐 CACHE MISS. Downloading via yt-dlp to temp path: ${tempDownloadPath}`);
+        let dl = ytdlp.download(url).output(tempDownloadPath);
 
         req.signal.addEventListener('abort', () => {
           isAborted = true;
@@ -168,14 +204,61 @@ export async function POST(req: Request) {
         const elapsedSec = ((Date.now() - startTimeMs) / 1000).toFixed(2);
         console.log(`[API /api/download] Full video cached in ${elapsedSec}s!`);
 
-        let finalFilePath = cachedFilePath;
-        if (result.filePaths && result.filePaths.length > 0) {
-          finalFilePath = result.filePaths[0];
+        let actualDownloadedFile: string | null = null;
+
+        if (fs.existsSync(tempDownloadPath) && fs.statSync(tempDownloadPath).isFile() && fs.statSync(tempDownloadPath).size > 1000) {
+          actualDownloadedFile = tempDownloadPath;
+        } else if (result.filePaths && result.filePaths.length > 0 && fs.existsSync(result.filePaths[0]) && fs.statSync(result.filePaths[0]).isFile()) {
+          actualDownloadedFile = result.filePaths[0];
+        } else {
+          try {
+            const tempFiles = fs.readdirSync(TEMP_DIR);
+            for (const f of tempFiles) {
+              if (f.startsWith(`dl_${videoId}`)) {
+                const fullP = path.join(TEMP_DIR, f);
+                if (fs.statSync(fullP).isFile() && fs.statSync(fullP).size > 1000) {
+                  actualDownloadedFile = fullP;
+                  break;
+                }
+              }
+            }
+          } catch (e) {}
         }
 
+        // Clean up stale file or directory if it exists at target cache location
+        if (fs.existsSync(cachedFilePath)) {
+          try { fs.rmSync(cachedFilePath, { recursive: true, force: true }); } catch (e) {}
+        }
+
+        if (actualDownloadedFile && fs.existsSync(actualDownloadedFile)) {
+          console.log(`[API /api/download] Storing in video cache: ${actualDownloadedFile} -> ${cachedFilePath}`);
+          try {
+            fs.renameSync(actualDownloadedFile, cachedFilePath);
+          } catch (e) {
+            fs.copyFileSync(actualDownloadedFile, cachedFilePath);
+            try { fs.unlinkSync(actualDownloadedFile); } catch (err) {}
+          }
+
+          // Write sidecar metadata file for instant thumbnails & titles
+          try {
+            const metaPath = cachedFilePath.replace(/\.(mp4|mkv|webm|mp3)$/i, '.meta.json');
+            const metaData = {
+              videoId,
+              title: title || safeTitle,
+              thumbnail: videoId ? `https://img.youtube.com/vi/${videoId}/mqdefault.jpg` : null,
+              url,
+              quality,
+              isAudio
+            };
+            fs.writeFileSync(metaPath, JSON.stringify(metaData, null, 2));
+          } catch (e) {}
+        }
+
+        let finalFilePath = cachedFilePath;
+
         // If clip was requested, trim from the newly cached video file
-        if (hasClipping && fs.existsSync(finalFilePath)) {
-          const clipFileName = `clip_${videoId}_${Date.now()}.${ext}`;
+        if (hasClipping && fs.existsSync(cachedFilePath)) {
+          const clipFileName = `${safeTitle} - Clip.${ext}`;
           const clipFilePath = path.join(TEMP_DIR, clipFileName);
           console.log(`[API /api/download] Trimming clip using local FFmpeg...`);
 

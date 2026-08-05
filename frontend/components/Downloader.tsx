@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Search, Music, Video, Loader2, Download, CheckCircle2, ArrowRight, Scissors, AlertCircle, Repeat } from 'lucide-react';
+import { Search, Music, Video, Loader2, Download, CheckCircle2, ArrowRight, Scissors, AlertCircle, Repeat, HardDrive, Folder } from 'lucide-react';
 import TimeSegmentPicker, { TimeValue } from './TimeSegmentPicker';
 import YouTubePreviewPlayer from './YouTubePreviewPlayer';
 
@@ -43,6 +43,7 @@ const formatDurationBadge = (totalSec: number): string => {
 
 export interface DownloaderProps {
   onDownloadComplete?: (file: File, action: 'download' | 'download_and_edit') => void;
+  onCacheStatusChange?: (isCached: boolean, cachedFilePath?: string) => void;
   url: string;
   info: any;
   initialStartTime?: number;
@@ -60,6 +61,7 @@ const secondsToTimeValue = (totalSeconds: number): TimeValue => {
 
 export default function Downloader({ 
   onDownloadComplete,
+  onCacheStatusChange,
   url,
   info,
   initialStartTime,
@@ -72,6 +74,20 @@ export default function Downloader({
   const [quality, setQuality] = useState('1080');
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [isCached, setIsCached] = useState<boolean>(Boolean(info?.isCached));
+  const [cachedFileName, setCachedFileName] = useState<string | null>(info?.cachedFileName || null);
+  const [cachedFilePath, setCachedFilePath] = useState<string | null>(info?.cachedFilePath || null);
+  const [cachedSizeMb, setCachedSizeMb] = useState<string | null>(info?.cachedSizeMb || null);
+
+  useEffect(() => {
+    if (info) {
+      setIsCached(Boolean(info.isCached));
+      setCachedFileName(info.cachedFileName || null);
+      setCachedFilePath(info.cachedFilePath || null);
+      setCachedSizeMb(info.cachedSizeMb || null);
+    }
+  }, [info]);
+
   const [statusText, setStatusText] = useState('');
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [downloadAction, setDownloadAction] = useState<'download' | 'download_and_edit'>('download');
@@ -257,6 +273,7 @@ export default function Downloader({
           isAudio,
           quality,
           type: 'mp4',
+          title: info?.title,
           startTime: isClipping ? `${startValue.hours}:${startValue.minutes}:${startValue.seconds}` : undefined,
           endTime: isClipping ? `${endValue.hours}:${endValue.minutes}:${endValue.seconds}` : undefined,
         }),
@@ -295,6 +312,9 @@ export default function Downloader({
                 setDownloading(false);
                 setProgress(100);
                 setStatusText('Download Complete! Prompting save dialog...');
+                setIsCached(true);
+                setCachedFilePath(event.file);
+                if (onCacheStatusChange) onCacheStatusChange(true, event.file);
                 
                 const fileRes = await fetch('/api/serve?file=' + encodeURIComponent(event.file));
                 const blob = await fileRes.blob();
@@ -502,25 +522,86 @@ export default function Downloader({
                   </div>
                 </div>
 
-                {/* Download Button */}
+                {/* Cache Status Banner & Download Action Buttons */}
                 <div className="flex flex-col gap-2.5 shrink-0">
-                  <Button 
-                    onClick={() => startDownload('download')} 
-                    disabled={(!downloading && loading) || (!downloading && isClipping && Boolean(clippingError))}
-                    className={`w-full rounded-xl h-11 text-sm font-bold transition-colors relative overflow-hidden disabled:opacity-50 ${
-                      downloading 
-                        ? 'bg-zinc-800 text-zinc-100 hover:bg-zinc-700 border border-zinc-700' 
-                        : 'bg-white text-black hover:bg-zinc-200 shadow-md'
-                    }`}
-                  >
-                    <span className="relative z-10 flex items-center justify-center gap-2">
-                      {downloading ? 'Cancel Download' : 'Download'} 
-                      {downloading 
-                        ? <div className="w-3 h-3 bg-current rounded-sm" /> 
-                        : <Download className="w-4 h-4" />
-                      }
-                    </span>
-                  </Button>
+                  {isCached && !downloading && (
+                    <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl text-xs text-emerald-400 font-medium">
+                      <div className="flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span>Available in Cache Storage {cachedSizeMb ? `(${cachedSizeMb} MB)` : ''}</span>
+                      </div>
+                      <span className="text-[10px] font-mono bg-emerald-500/20 px-2 py-0.5 rounded text-emerald-300">Fast Clip Ready</span>
+                    </div>
+                  )}
+
+                  {isCached && !downloading ? (
+                    <div className="flex flex-col gap-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        {/* Button 1: Save/Extract Clip */}
+                        <Button 
+                          onClick={() => startDownload('download')} 
+                          disabled={isClipping && Boolean(clippingError)}
+                          className="bg-emerald-500 hover:bg-emerald-600 text-black font-bold h-11 text-xs sm:text-sm rounded-xl shadow-md gap-1.5"
+                        >
+                          <Scissors className="w-4 h-4" />
+                          <span>Save Clip</span>
+                        </Button>
+
+                        {/* Button 2: Open Location */}
+                        <Button 
+                          onClick={async () => {
+                            if (cachedFilePath) {
+                              fetch('/api/open-location', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ filepath: cachedFilePath })
+                              }).catch(() => {});
+                              window.open('/api/serve?file=' + encodeURIComponent(cachedFilePath), '_blank');
+                            } else {
+                              startDownload('download');
+                            }
+                          }}
+                          variant="outline"
+                          className="bg-zinc-900 border-zinc-700 hover:bg-zinc-800 text-white font-bold h-11 text-xs sm:text-sm rounded-xl shadow-md gap-1.5"
+                        >
+                          <Folder className="w-4 h-4 text-amber-400" />
+                          <span>Open Location</span>
+                        </Button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCached(false);
+                          startDownload('download');
+                        }}
+                        className="text-[11px] text-zinc-500 hover:text-zinc-300 underline transition-colors self-center mt-0.5"
+                      >
+                        Re-download fresh from YouTube
+                      </button>
+                    </div>
+                  ) : (
+                    <Button 
+                      onClick={() => startDownload('download')} 
+                      disabled={(!downloading && loading) || (!downloading && isClipping && Boolean(clippingError))}
+                      className={`w-full rounded-xl h-11 text-sm font-bold transition-colors relative overflow-hidden disabled:opacity-50 ${
+                        downloading 
+                          ? 'bg-zinc-800 text-zinc-100 hover:bg-zinc-700 border border-zinc-700' 
+                          : 'bg-white text-black hover:bg-zinc-200 shadow-md'
+                      }`}
+                    >
+                      <span className="relative z-10 flex items-center justify-center gap-2">
+                        {downloading 
+                          ? 'Cancel Download' 
+                          : (isClipping ? 'Download & Save Clip' : 'Download Full Video')
+                        } 
+                        {downloading 
+                          ? <div className="w-3 h-3 bg-current rounded-sm" /> 
+                          : <Download className="w-4 h-4" />
+                        }
+                      </span>
+                    </Button>
+                  )}
 
                   {/* Progress Indicators */}
                   <AnimatePresence>

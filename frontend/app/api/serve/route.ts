@@ -15,29 +15,37 @@ export async function GET(req: Request) {
 
   const fileStream = fs.createReadStream(filepath);
 
+  const isCachedFile = filepath.includes('video_cache');
+
   // Use a ReadableStream for the response
   const stream = new ReadableStream({
     start(controller) {
       fileStream.on('data', (chunk) => controller.enqueue(chunk));
       fileStream.on('end', () => {
         controller.close();
-        // Move instead of copy: Delete the temp file to prevent disk buildup
-        setTimeout(() => {
-          try {
-            if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-          } catch (e) {
-            console.error('Failed to cleanup temp file', e);
-          }
-        }, 1000); // 1s delay to ensure the browser fully saves it
+        // Only delete temp files, NEVER delete files stored in video_cache!
+        if (!isCachedFile) {
+          setTimeout(() => {
+            try {
+              if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+            } catch (e) {
+              console.error('Failed to cleanup temp file', e);
+            }
+          }, 2000);
+        }
       });
       fileStream.on('error', (err) => {
         controller.error(err);
-        try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch (e) {}
+        if (!isCachedFile) {
+          try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch (e) {}
+        }
       });
     },
     cancel() {
       fileStream.destroy();
-      try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch (e) {}
+      if (!isCachedFile) {
+        try { if (fs.existsSync(filepath)) fs.unlinkSync(filepath); } catch (e) {}
+      }
     }
   });
 
