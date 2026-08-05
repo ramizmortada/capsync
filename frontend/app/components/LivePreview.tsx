@@ -297,8 +297,8 @@ export function LivePreview({
                 subtitleStyle.alignment === 'right' ? 'justify-end' : 'justify-center'
               }`}
               style={{
-                paddingLeft: `${(100 - (subtitleStyle.maxWidth ?? 90)) / 2}%`,
-                paddingRight: `${(100 - (subtitleStyle.maxWidth ?? 90)) / 2}%`,
+                paddingLeft: `${subtitleStyle.marginLeft ?? Math.round((100 - (subtitleStyle.maxWidth ?? 90)) / 2)}%`,
+                paddingRight: `${subtitleStyle.marginRight ?? Math.round((100 - (subtitleStyle.maxWidth ?? 90)) / 2)}%`,
                 top: subtitleStyle.alignmentVertical === 'top' 
                   ? `${subtitleStyle.positionY ?? 10}%` 
                   : subtitleStyle.alignmentVertical === 'middle'

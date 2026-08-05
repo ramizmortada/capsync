@@ -99,8 +99,11 @@ def generate_ass(segments, style, video_width, video_height):
     position_y_pct = float(style.get("positionY", 10))
     margin_v = int(video_height * (position_y_pct / 100.0))
     
-    max_width_pct = float(style.get("maxWidth", 90))
-    margin_l = margin_r = int(video_width * ((100 - max_width_pct) / 2) / 100)
+    default_margin = (100 - float(style.get("maxWidth", 90))) / 2.0
+    margin_l_pct = float(style.get("marginLeft", default_margin))
+    margin_r_pct = float(style.get("marginRight", default_margin))
+    margin_l = int(video_width * (margin_l_pct / 100.0))
+    margin_r = int(video_width * (margin_r_pct / 100.0))
 
     if h_align == "left":
         pos_x = margin_l

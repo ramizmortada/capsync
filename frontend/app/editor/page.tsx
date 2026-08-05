@@ -93,7 +93,9 @@ function EditorContent() {
     animationOut: 'none',
     highlightBackgroundColor: "#ff0000",
     scaleFactor: 1.2,
-    maxWidth: 100,
+    maxWidth: 90,
+    marginLeft: 5,
+    marginRight: 5,
     textTransform: 'none',
   });
 

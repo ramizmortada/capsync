@@ -87,13 +87,29 @@ export const StyleTab = ({ subtitleStyle, updateStyle }: StyleTabProps) => {
 
         <div className="space-y-3 pt-2">
           <div className="flex justify-between">
-            <Label className="text-neutral-300">Max Width</Label>
-            <span className="text-xs text-neutral-500 font-mono">{subtitleStyle.maxWidth ?? 90}%</span>
+            <Label className="text-neutral-300">Left Margin</Label>
+            <span className="text-xs text-neutral-500 font-mono">
+              {subtitleStyle.marginLeft ?? Math.round((100 - (subtitleStyle.maxWidth ?? 90)) / 2)}%
+            </span>
           </div>
           <Slider 
-            value={[subtitleStyle.maxWidth ?? 90]} 
-            min={20} max={100} step={1}
-            onValueChange={([v]) => updateStyle("maxWidth", v)} 
+            value={[subtitleStyle.marginLeft ?? Math.round((100 - (subtitleStyle.maxWidth ?? 90)) / 2)]} 
+            min={0} max={45} step={1}
+            onValueChange={([v]) => updateStyle("marginLeft", v)} 
+          />
+        </div>
+
+        <div className="space-y-3 pt-2">
+          <div className="flex justify-between">
+            <Label className="text-neutral-300">Right Margin</Label>
+            <span className="text-xs text-neutral-500 font-mono">
+              {subtitleStyle.marginRight ?? Math.round((100 - (subtitleStyle.maxWidth ?? 90)) / 2)}%
+            </span>
+          </div>
+          <Slider 
+            value={[subtitleStyle.marginRight ?? Math.round((100 - (subtitleStyle.maxWidth ?? 90)) / 2)]} 
+            min={0} max={45} step={1}
+            onValueChange={([v]) => updateStyle("marginRight", v)} 
           />
         </div>
       </div>
