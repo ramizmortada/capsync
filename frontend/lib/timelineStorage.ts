@@ -1,7 +1,16 @@
 import { get, set, del } from 'idb-keyval';
 
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+  description?: string;
+}
+
 export interface TimelineMetadata {
   id: string;
+  projectId?: string | null;
   name: string;
   createdAt: number;
   updatedAt: number;
@@ -13,6 +22,7 @@ export interface TimelineMetadata {
 
 export interface TimelineProjectData {
   id: string;
+  projectId?: string | null;
   name: string;
   createdAt: number;
   updatedAt: number;
@@ -27,9 +37,95 @@ export interface TimelineProjectData {
 }
 
 const INDEX_KEY = 'capsync_timelines_index';
+const PROJECTS_INDEX_KEY = 'capsync_projects_index';
 const LEGACY_KEY = 'capsync_project';
 
-// Get list of timeline metadata
+// --- PROJECT HELPERS ---
+
+export async function getAllProjects(): Promise<Project[]> {
+  try {
+    const projects = await get<Project[]>(PROJECTS_INDEX_KEY);
+    return projects ? projects.sort((a, b) => b.updatedAt - a.updatedAt) : [];
+  } catch (err) {
+    console.error('Failed to get projects index:', err);
+    return [];
+  }
+}
+
+export async function createProject(name?: string): Promise<Project> {
+  const now = Date.now();
+  const id = Math.random().toString(36).substring(2, 11);
+  const projectName = name || `Project ${new Date().toLocaleDateString()}`;
+
+  const newProject: Project = {
+    id,
+    name: projectName,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const projects = (await get<Project[]>(PROJECTS_INDEX_KEY)) || [];
+  projects.push(newProject);
+  await set(PROJECTS_INDEX_KEY, projects);
+
+  return newProject;
+}
+
+export async function renameProject(id: string, newName: string): Promise<void> {
+  const projects = (await get<Project[]>(PROJECTS_INDEX_KEY)) || [];
+  const project = projects.find(p => p.id === id);
+  if (project) {
+    project.name = newName;
+    project.updatedAt = Date.now();
+    await set(PROJECTS_INDEX_KEY, projects);
+  }
+}
+
+export async function deleteProject(id: string, deleteTimelines: boolean = false): Promise<void> {
+  try {
+    const projects = (await get<Project[]>(PROJECTS_INDEX_KEY)) || [];
+    const filteredProjects = projects.filter(p => p.id !== id);
+    await set(PROJECTS_INDEX_KEY, filteredProjects);
+
+    const index = (await get<TimelineMetadata[]>(INDEX_KEY)) || [];
+    if (deleteTimelines) {
+      // Delete all timelines in this project
+      const timelinesToDelete = index.filter(t => t.projectId === id);
+      for (const t of timelinesToDelete) {
+        await del(`capsync_timeline_${t.id}`);
+      }
+      const remainingIndex = index.filter(t => t.projectId !== id);
+      await set(INDEX_KEY, remainingIndex);
+    } else {
+      // Unassign timelines from this project
+      const updatedIndex = index.map(t => t.projectId === id ? { ...t, projectId: null } : t);
+      await set(INDEX_KEY, updatedIndex);
+
+      for (const t of index) {
+        if (t.projectId === id) {
+          const fullData = await getTimeline(t.id);
+          if (fullData) {
+            fullData.projectId = null;
+            await set(`capsync_timeline_${t.id}`, fullData);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`Failed to delete project ${id}:`, err);
+  }
+}
+
+export async function assignTimelineToProject(timelineId: string, projectId: string | null): Promise<void> {
+  const timeline = await getTimeline(timelineId);
+  if (timeline) {
+    timeline.projectId = projectId;
+    await saveTimeline(timeline);
+  }
+}
+
+// --- TIMELINE HELPERS ---
+
 export async function getAllTimelines(): Promise<TimelineMetadata[]> {
   try {
     await migrateLegacyProject();
@@ -41,7 +137,6 @@ export async function getAllTimelines(): Promise<TimelineMetadata[]> {
   }
 }
 
-// Get single timeline full data
 export async function getTimeline(id: string): Promise<TimelineProjectData | null> {
   try {
     const data = await get<TimelineProjectData>(`capsync_timeline_${id}`);
@@ -52,7 +147,6 @@ export async function getTimeline(id: string): Promise<TimelineProjectData | nul
   }
 }
 
-// Save timeline data and update index
 export async function saveTimeline(data: TimelineProjectData): Promise<void> {
   try {
     const now = Date.now();
@@ -61,13 +155,12 @@ export async function saveTimeline(data: TimelineProjectData): Promise<void> {
       updatedAt: now,
     };
 
-    // Save full data
     await set(`capsync_timeline_${data.id}`, updatedData);
 
-    // Update index
     const index = (await get<TimelineMetadata[]>(INDEX_KEY)) || [];
     const meta: TimelineMetadata = {
       id: updatedData.id,
+      projectId: updatedData.projectId || null,
       name: updatedData.name,
       createdAt: updatedData.createdAt || now,
       updatedAt: now,
@@ -90,9 +183,9 @@ export async function saveTimeline(data: TimelineProjectData): Promise<void> {
   }
 }
 
-// Create new blank or initial timeline
 export async function createTimeline(
   name?: string,
+  projectId?: string | null,
   initialFile?: File | null
 ): Promise<TimelineProjectData> {
   const now = Date.now();
@@ -101,6 +194,7 @@ export async function createTimeline(
 
   const newTimeline: TimelineProjectData = {
     id,
+    projectId: projectId || null,
     name: timelineName,
     createdAt: now,
     updatedAt: now,
@@ -117,7 +211,6 @@ export async function createTimeline(
   return newTimeline;
 }
 
-// Duplicate existing timeline
 export async function duplicateTimeline(id: string): Promise<TimelineProjectData | null> {
   const original = await getTimeline(id);
   if (!original) return null;
@@ -130,14 +223,13 @@ export async function duplicateTimeline(id: string): Promise<TimelineProjectData
     name: `${original.name} (Copy)`,
     createdAt: now,
     updatedAt: now,
-    file: original.file, // Keep file reference
+    file: original.file,
   };
 
   await saveTimeline(duplicated);
   return duplicated;
 }
 
-// Rename timeline
 export async function renameTimeline(id: string, newName: string): Promise<void> {
   const timeline = await getTimeline(id);
   if (!timeline) return;
@@ -146,7 +238,6 @@ export async function renameTimeline(id: string, newName: string): Promise<void>
   await saveTimeline(timeline);
 }
 
-// Delete timeline
 export async function deleteTimeline(id: string): Promise<void> {
   try {
     await del(`capsync_timeline_${id}`);
@@ -158,7 +249,6 @@ export async function deleteTimeline(id: string): Promise<void> {
   }
 }
 
-// Auto-migrate single legacy project into multi-timeline index if present
 export async function migrateLegacyProject(): Promise<void> {
   try {
     const legacy = await get<any>(LEGACY_KEY);
@@ -197,7 +287,6 @@ export async function migrateLegacyProject(): Promise<void> {
       ]);
     }
 
-    // Clean up legacy key after migrating
     await del(LEGACY_KEY);
   } catch (err) {
     console.error('Failed to migrate legacy project:', err);

@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { del } from "idb-keyval";
-import { ArrowLeft, Edit2, Check, Film } from "lucide-react";
+import { ArrowLeft, Edit2, Check, Film, Folder } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SettingsPanel } from "../components/SettingsPanel";
@@ -20,7 +20,7 @@ import { useTimelineDragging } from "../../hooks/useTimelineDragging";
 import { useCutZones } from "../../hooks/useCutZones";
 import { usePlaybackSync } from "../../hooks/usePlaybackSync";
 import { useProjectPersistence } from "../../hooks/useProjectPersistence";
-import { renameTimeline } from "@/lib/timelineStorage";
+import { renameTimeline, getTimeline, getAllProjects } from "@/lib/timelineStorage";
 
 export type { SubtitleStyle, StylePreset, DragTarget };
 export { DEFAULT_PRESETS };
@@ -32,8 +32,23 @@ function EditorContent() {
 
   const [file, setFile] = useState<File | null>(null);
   const [timelineName, setTimelineName] = useState<string>("Timeline");
+  const [projectName, setProjectName] = useState<string | null>(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState("");
+
+  useEffect(() => {
+    async function loadProjectInfo() {
+      if (timelineId) {
+        const t = await getTimeline(timelineId);
+        if (t && t.projectId) {
+          const projects = await getAllProjects();
+          const p = projects.find(proj => proj.id === t.projectId);
+          if (p) setProjectName(p.name);
+        }
+      }
+    }
+    loadProjectInfo();
+  }, [timelineId]);
   
   // States
   const [modelSize, setModelSize] = useState("tiny");
@@ -543,7 +558,13 @@ function EditorContent() {
             </div>
           ) : (
             <div className="flex items-center gap-2 group cursor-pointer" onClick={() => { setIsEditingTitle(true); setTitleInput(timelineName); }}>
-              <Film className="w-4 h-4 text-blue-400" />
+              {projectName ? (
+                <span className="flex items-center gap-1.5 text-xs font-semibold text-blue-400 bg-blue-950/60 border border-blue-800/40 px-2 py-0.5 rounded-md">
+                  <Folder className="w-3.5 h-3.5" /> {projectName}
+                </span>
+              ) : (
+                <Film className="w-4 h-4 text-blue-400" />
+              )}
               <h2 className="font-bold text-sm text-neutral-100 group-hover:text-blue-400 transition-colors">
                 {timelineName}
               </h2>
