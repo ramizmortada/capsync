@@ -9,15 +9,18 @@ echo ===================================
 :: Add FFmpeg to PATH so WhisperX can process audio
 set PATH=%PATH%;C:\FFmpeg\bin
 
-:: Start the Python Backend in a new terminal window
+:: Start the Python Backend in the background (no new window)
 echo Starting Python FastAPI Backend...
-start "CapSync Backend" cmd /k "cd backend && ..\whisperx_env\Scripts\python.exe main.py"
+start /B cmd /c "cd backend && ..\whisperx_env\Scripts\python.exe main.py"
 
-:: Start the Next.js Frontend in another new terminal window
+:: Start the Next.js Frontend in the background (no new window)
 echo Starting Next.js Frontend...
-start "CapSync Frontend" cmd /k "cd frontend && npm run dev"
+start /B cmd /c "cd frontend && npm run dev"
 
 echo.
-echo Both servers are booting up in separate background windows!
-echo You can close this launcher window now.
-pause
+echo CapSync Studio is running!
+echo  - Frontend: http://localhost:3000
+echo  - Backend:  http://localhost:8000
+echo.
+echo Keep this window open. Close this window to stop both servers.
+pause > nul

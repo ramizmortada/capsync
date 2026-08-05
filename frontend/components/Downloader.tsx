@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +25,20 @@ const formatSecondsToHHMMSS = (totalSeconds: number): string => {
     return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   }
   return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+};
+
+const formatDurationBadge = (totalSec: number): string => {
+  if (totalSec <= 0) return '0s';
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) {
+    return `${h}h ${m}m ${s}s`;
+  }
+  if (m > 0) {
+    return `${m}m ${s.toString().padStart(2, '0')}s`;
+  }
+  return `${s}s`;
 };
 
 export interface DownloaderProps {
@@ -62,10 +76,63 @@ export default function Downloader({
   const [abortController, setAbortController] = useState<AbortController | null>(null);
   const [downloadAction, setDownloadAction] = useState<'download' | 'download_and_edit'>('download');
 
-  // Time segment values
-  const [startValue, setStartValue] = useState<TimeValue>(initialStartTime !== undefined ? secondsToTimeValue(initialStartTime) : { hours: '00', minutes: '00', seconds: '00' });
-  const [endValue, setEndValue] = useState<TimeValue>(initialEndTime !== undefined ? secondsToTimeValue(initialEndTime) : { hours: '00', minutes: '00', seconds: '00' });
+  const isMountedRef = useRef(false);
+
+  // Time segment values initialized directly from localStorage if present
+  const [startValue, setStartValue] = useState<TimeValue>(() => {
+    if (initialStartTime !== undefined) return secondsToTimeValue(initialStartTime);
+    if (typeof window !== 'undefined' && url) {
+      const savedSegment = localStorage.getItem(`capsync_segment_${url}`);
+      if (savedSegment) {
+        try {
+          const parsed = JSON.parse(savedSegment);
+          if (parsed.startValue) return parsed.startValue;
+        } catch (e) {}
+      }
+    }
+    return { hours: '00', minutes: '00', seconds: '00' };
+  });
+
+  const [endValue, setEndValue] = useState<TimeValue>(() => {
+    if (initialEndTime !== undefined) return secondsToTimeValue(initialEndTime);
+    if (typeof window !== 'undefined' && url) {
+      const savedSegment = localStorage.getItem(`capsync_segment_${url}`);
+      if (savedSegment) {
+        try {
+          const parsed = JSON.parse(savedSegment);
+          if (parsed.endValue) return parsed.endValue;
+        } catch (e) {}
+      }
+    }
+    return { hours: '00', minutes: '00', seconds: '00' };
+  });
+
   const [isLoopingClip, setIsLoopingClip] = useState(false);
+
+  // Re-sync state when URL changes
+  useEffect(() => {
+    if (url && initialStartTime === undefined && initialEndTime === undefined) {
+      const savedSegment = localStorage.getItem(`capsync_segment_${url}`);
+      if (savedSegment) {
+        try {
+          const parsed = JSON.parse(savedSegment);
+          if (parsed.startValue) setStartValue(parsed.startValue);
+          if (parsed.endValue) setEndValue(parsed.endValue);
+        } catch (e) {}
+      }
+    }
+    isMountedRef.current = true;
+  }, [url, initialStartTime, initialEndTime]);
+
+  // Persist segment times to localStorage ONLY when modified after mount
+  useEffect(() => {
+    if (isMountedRef.current && url && initialStartTime === undefined && initialEndTime === undefined) {
+      localStorage.setItem(`capsync_segment_${url}`, JSON.stringify({
+        startValue,
+        endValue
+      }));
+    }
+  }, [url, startValue, endValue, initialStartTime, initialEndTime]);
 
   // Calculate clipping state and validation
   const startSeconds = timeValueToSeconds(startValue);
@@ -97,10 +164,11 @@ export default function Downloader({
     ? { start: startSeconds, end: endSeconds }
     : null;
 
-  // Pre-fill end time and auto-select highest available quality option
+  // Pre-fill end time (if not saved) and auto-select highest available quality option
   useEffect(() => {
     if (info) {
-      if (info.duration && typeof info.duration === 'number' && initialEndTime === undefined) {
+      const savedSegment = url ? localStorage.getItem(`capsync_segment_${url}`) : null;
+      if (info.duration && typeof info.duration === 'number' && initialEndTime === undefined && !savedSegment) {
         const hrs = Math.floor(info.duration / 3600);
         const mins = Math.floor((info.duration % 3600) / 60);
         const secs = Math.floor(info.duration % 60);
@@ -120,11 +188,14 @@ export default function Downloader({
         }
       }
     }
-  }, [info]);
+  }, [info, url, initialEndTime]);
 
   const handleResetClipping = () => {
     setIsLoopingClip(false);
     setStartValue({ hours: '00', minutes: '00', seconds: '00' });
+    if (url) {
+      localStorage.removeItem(`capsync_segment_${url}`);
+    }
     if (info?.duration && typeof info.duration === 'number') {
       const hrs = Math.floor(info.duration / 3600);
       const mins = Math.floor((info.duration % 3600) / 60);
@@ -357,13 +428,15 @@ export default function Downloader({
                 {/* Segment Clipping Section (Always Visible) */}
                 <div className="w-full flex flex-col gap-2 shrink-0 border-t border-zinc-800/80 pt-3">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300 flex-wrap">
                       <Scissors className={`w-3.5 h-3.5 ${isClipping ? 'text-amber-400' : 'text-zinc-500'}`} />
-                      <span>Crop / Clip Segment</span>
-                      {isClipping ? (
-                        <span className="text-[10px] bg-amber-400/20 text-amber-300 px-1.5 py-0.5 rounded font-mono font-semibold">CLIP ACTIVE</span>
-                      ) : (
-                        <span className="text-[10px] text-zinc-500 font-mono">FULL VIDEO</span>
+                      <span>Clip</span>
+                      {endSeconds > startSeconds && (
+                        <span className="ml-1 text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-400 border border-amber-400/30 flex items-center gap-1">
+                          <span>Length:</span>
+                          <span>{formatDurationBadge(endSeconds - startSeconds)}</span>
+                          <span className="text-amber-400/70 font-normal">({formatSecondsToHHMMSS(endSeconds - startSeconds)})</span>
+                        </span>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
@@ -378,7 +451,7 @@ export default function Downloader({
                         }`}
                       >
                         <Repeat className="w-3 h-3" />
-                        <span>Loop Segment</span>
+                        <span>Loop Clip</span>
                       </button>
 
                       {isClipping && (
@@ -455,9 +528,18 @@ export default function Downloader({
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="space-y-1.5">
                         <div className="flex justify-between text-[11px] text-zinc-400 font-medium px-1">
                           <span>{statusText}</span>
-                          <span className="text-zinc-100">{progress.toFixed(1)}%</span>
+                          <span className="text-zinc-100">{progress > 0 ? `${progress.toFixed(1)}%` : 'Fetching stream...'}</span>
                         </div>
-                        <Progress value={progress} className="h-1.5 rounded-full bg-zinc-900 border border-zinc-800" />
+                        <div className="h-1.5 w-full rounded-full bg-zinc-900 border border-zinc-800 overflow-hidden relative">
+                          {progress > 0 ? (
+                            <div 
+                              className="h-full bg-white transition-all duration-300 rounded-full" 
+                              style={{ width: `${progress}%` }} 
+                            />
+                          ) : (
+                            <div className="h-full w-full bg-gradient-to-r from-amber-500/20 via-amber-400 to-amber-500/20 animate-pulse rounded-full" />
+                          )}
+                        </div>
                       </motion.div>
                     )}
                   </AnimatePresence>

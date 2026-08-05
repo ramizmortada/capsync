@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Film, Download, Edit3, Video } from 'lucide-react';
+import { Film, Download, Edit3, Video, HardDrive } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export function NavBar() {
@@ -12,6 +12,7 @@ export function NavBar() {
     { href: '/', label: 'Timelines', icon: Film },
     { href: '/download', label: 'Downloader', icon: Download },
     { href: '/editor', label: 'Editor', icon: Edit3 },
+    { href: '/cache', label: 'Cache Storage', icon: HardDrive },
   ];
 
   return (

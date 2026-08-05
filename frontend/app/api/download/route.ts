@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server';
 import { YtDlp } from 'ytdlp-nodejs';
 import path from 'path';
 import os from 'os';
+import fs from 'fs';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 export const dynamic = 'force-dynamic';
 
@@ -31,59 +36,174 @@ function normalizeTimestamp(timeStr?: string): string | null {
   return trimmed;
 }
 
+function getVideoId(url: string): string {
+  const match = url.match(/(?:v=|\/embed\/|\/1\/|\/v\/|https:\/\/youtu\.be\/|\/shorts\/)([a-zA-Z0-9_-]{11})/);
+  if (match && match[1]) {
+    return match[1];
+  }
+  return url.replace(/[^a-zA-Z0-9]/g, '_').slice(-25);
+}
+
+const SCRATCH_DIR = path.resolve(process.cwd(), '..', 'scratch');
+const CACHE_DIR = path.join(SCRATCH_DIR, 'video_cache');
+const TEMP_DIR = path.join(SCRATCH_DIR, 'temp');
+
 export async function POST(req: Request) {
-  const { url, isAudio, quality, type, startTime, endTime } = await req.json();
+  const body = await req.json();
+  const { url, isAudio, quality, type, startTime, endTime } = body;
+
+  console.log(`\n========================================`);
+  console.log(`[API /api/download] STARTING DOWNLOAD REQUEST`);
+  console.log(`[API /api/download] URL: ${url}`);
+  console.log(`[API /api/download] Parameters: isAudio=${isAudio}, quality=${quality}, type=${type}`);
+  console.log(`[API /api/download] Raw Time Range: startTime="${startTime}", endTime="${endTime}"`);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
       const ytdlp = new YtDlp({});
+      const startTimeMs = Date.now();
+      let isAborted = false;
+
+      const safeEnqueue = (payload: any) => {
+        if (isAborted || req.signal.aborted) return;
+        try {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+        } catch (e) {
+          isAborted = true;
+        }
+      };
 
       try {
-        // Use a safe temporary directory
-        const tempDir = os.tmpdir();
-        
-        let dl = ytdlp.download(url).output(path.join(tempDir, '%(title)s.%(ext)s'));
+        if (!fs.existsSync(CACHE_DIR)) {
+          fs.mkdirSync(CACHE_DIR, { recursive: true });
+        }
+        if (!fs.existsSync(TEMP_DIR)) {
+          fs.mkdirSync(TEMP_DIR, { recursive: true });
+        }
+
+        const videoId = getVideoId(url);
+        const ext = isAudio ? 'mp3' : (type || 'mp4');
+        const cacheFileName = isAudio ? `audio_${videoId}.${ext}` : `video_${videoId}_${quality}p.${ext}`;
+        const cachedFilePath = path.join(CACHE_DIR, cacheFileName);
 
         const normStart = normalizeTimestamp(startTime);
         const normEnd = normalizeTimestamp(endTime);
+        const hasClipping = Boolean((normStart && normStart !== '00:00:00') || (normEnd && normEnd !== '00:00:00'));
 
-        let ffmpegArgs = [];
-        if (normStart && normStart !== '00:00:00') {
-          ffmpegArgs.push(`-ss ${normStart}`);
+        console.log(`[API /api/download] Video ID: "${videoId}", Cache Key: "${cacheFileName}"`);
+        console.log(`[API /api/download] Normalized Range: start="${normStart}", end="${normEnd}", Clipping Required=${hasClipping}`);
+
+        // CHECK CACHE HIT
+        if (fs.existsSync(cachedFilePath) && fs.statSync(cachedFilePath).size > 1000) {
+          console.log(`[API /api/download] ⚡ CACHE HIT! Using existing local video file: ${cachedFilePath}`);
+          safeEnqueue({ type: 'progress', data: { percentage: 50, speed: 'CACHE_HIT', downloaded_str: 'Cached', total_str: 'Cached' } });
+
+          let finalFilePath = cachedFilePath;
+          if (hasClipping) {
+            const clipFileName = `clip_${videoId}_${Date.now()}.${ext}`;
+            const clipFilePath = path.join(TEMP_DIR, clipFileName);
+            console.log(`[API /api/download] Trimming clip using local FFmpeg from cached video...`);
+
+            const ffmpegBin = 'C:\\FFmpeg\\bin\\ffmpeg.exe';
+            const ffmpegArgs = ['-y'];
+            if (normStart && normStart !== '00:00:00') ffmpegArgs.push('-ss', normStart);
+            if (normEnd && normEnd !== '00:00:00') ffmpegArgs.push('-to', normEnd);
+            ffmpegArgs.push('-i', cachedFilePath, '-c', 'copy', clipFilePath);
+
+            console.log(`[API /api/download] Running FFmpeg: ${ffmpegBin} ${ffmpegArgs.join(' ')}`);
+            await execFileAsync(ffmpegBin, ffmpegArgs);
+            console.log(`[API /api/download] FFmpeg clip trimmed in ${((Date.now() - startTimeMs)/1000).toFixed(2)}s!`);
+            finalFilePath = clipFilePath;
+          }
+
+          if (!isAborted && !req.signal.aborted) {
+            safeEnqueue({ type: 'progress', data: { percentage: 100, speed: 'INSTANT', downloaded_str: 'Done', total_str: 'Done' } });
+            safeEnqueue({ type: 'finish', file: finalFilePath });
+            console.log(`[API /api/download] CACHE HIT completed in ${((Date.now() - startTimeMs)/1000).toFixed(2)}s!`);
+            console.log(`========================================\n`);
+            try { controller.close(); } catch (e) {}
+          }
+          return;
         }
-        if (normEnd && normEnd !== '00:00:00') {
-          ffmpegArgs.push(`-to ${normEnd}`);
-        }
-        
-        if (ffmpegArgs.length > 0) {
-          dl = dl.addArgs('--postprocessor-args', `ffmpeg:${ffmpegArgs.join(' ')}`);
-        }
+
+        // CACHE MISS: Download full video into cache directory first
+        console.log(`[API /api/download] 🌐 CACHE MISS. Downloading full video into cache: ${cachedFilePath}`);
+        let dl = ytdlp.download(url).output(cachedFilePath);
+
+        req.signal.addEventListener('abort', () => {
+          isAborted = true;
+          console.log(`[API /api/download] Download cancelled by user.`);
+          try {
+            if (typeof (dl as any).abort === 'function') {
+              (dl as any).abort();
+            }
+          } catch (e) {}
+        });
+
+        console.log(`[API /api/download] Setting FFmpeg Location: C:\\FFmpeg\\bin`);
+        dl = dl.addArgs('--ffmpeg-location', 'C:\\FFmpeg\\bin');
         
         if (isAudio) {
+          console.log(`[API /api/download] Format Mode: Extract Audio (mp3)`);
           dl = dl.extractAudio().audioFormat('mp3').audioQuality('0');
         } else {
+          console.log(`[API /api/download] Format Mode: Video (mergevideo, quality=${quality}p, type=${type || 'mp4'})`);
           dl = dl.format({ filter: 'mergevideo', quality: `${quality}p` as any, type: type || 'mp4' });
         }
 
+        let lastProgressLogTime = 0;
         dl.on('progress', (p) => {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'progress', data: p })}\n\n`));
+          if (isAborted || req.signal.aborted) return;
+          const now = Date.now();
+          if (now - lastProgressLogTime > 1000 || p.percentage === 100) {
+            console.log(`[API /api/download] Progress: ${p.percentage?.toFixed(1)}% | ${p.downloaded_str || '0B'} / ${p.total_str || '0B'} | Speed: ${p.speed || 'N/A'}`);
+            lastProgressLogTime = now;
+          }
+          safeEnqueue({ type: 'progress', data: p });
         });
 
+        console.log(`[API /api/download] Spawning yt-dlp process to populate cache...`);
         const result = await dl.run();
-        
-        // Pass the downloaded file path to the frontend
+        const elapsedSec = ((Date.now() - startTimeMs) / 1000).toFixed(2);
+        console.log(`[API /api/download] Full video cached in ${elapsedSec}s!`);
+
+        let finalFilePath = cachedFilePath;
         if (result.filePaths && result.filePaths.length > 0) {
-          const finalFilePath = result.filePaths[0];
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'finish', file: finalFilePath })}\n\n`));
-        } else {
-          throw new Error('Download failed, no file paths returned.');
+          finalFilePath = result.filePaths[0];
         }
-        
-        controller.close();
+
+        // If clip was requested, trim from the newly cached video file
+        if (hasClipping && fs.existsSync(finalFilePath)) {
+          const clipFileName = `clip_${videoId}_${Date.now()}.${ext}`;
+          const clipFilePath = path.join(TEMP_DIR, clipFileName);
+          console.log(`[API /api/download] Trimming clip using local FFmpeg...`);
+
+          const ffmpegBin = 'C:\\FFmpeg\\bin\\ffmpeg.exe';
+          const ffmpegArgs = ['-y'];
+          if (normStart && normStart !== '00:00:00') ffmpegArgs.push('-ss', normStart);
+          if (normEnd && normEnd !== '00:00:00') ffmpegArgs.push('-to', normEnd);
+          ffmpegArgs.push('-i', finalFilePath, '-c', 'copy', clipFilePath);
+
+          console.log(`[API /api/download] Running FFmpeg: ${ffmpegBin} ${ffmpegArgs.join(' ')}`);
+          await execFileAsync(ffmpegBin, ffmpegArgs);
+          finalFilePath = clipFilePath;
+        }
+
+        if (!isAborted && !req.signal.aborted) {
+          console.log(`[API /api/download] Output File Path: ${finalFilePath}`);
+          console.log(`========================================\n`);
+          safeEnqueue({ type: 'finish', file: finalFilePath });
+          try { controller.close(); } catch (e) {}
+        }
       } catch (error: any) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: 'error', data: error.message })}\n\n`));
-        controller.close();
+        if (!isAborted && !req.signal.aborted) {
+          console.error(`[API /api/download] ERROR: ${error.message || error}`);
+          if (error.stack) console.error(error.stack);
+          console.log(`========================================\n`);
+          safeEnqueue({ type: 'error', data: error.message });
+          try { controller.close(); } catch (e) {}
+        }
       }
     }
   });
@@ -97,4 +217,5 @@ export async function POST(req: Request) {
     },
   });
 }
+
 
