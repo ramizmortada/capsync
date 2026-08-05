@@ -116,7 +116,22 @@ export function LivePreview({
   const isGap = !videoSegments || !activeClip;
   
   const activeTransform = activeClip?.transform || { x: 0, y: 0, scale: 1 };
+  const activeCrop = activeClip?.crop || { top: 0, bottom: 0, left: 0, right: 0 };
   const scaleOnScreen = renderWidth / renderDim.width;
+
+  const videoAspect = (localVideoDim.width && localVideoDim.height) ? (localVideoDim.width / localVideoDim.height) : (renderDim.width / (renderDim.height || 1));
+  const canvasAspect = renderWidth / (renderHeight || 1);
+
+  let actualVideoWidth = renderWidth;
+  let actualVideoHeight = renderHeight;
+
+  if (videoAspect > canvasAspect) {
+    actualVideoWidth = renderWidth;
+    actualVideoHeight = renderWidth / videoAspect;
+  } else if (videoAspect < canvasAspect) {
+    actualVideoHeight = renderHeight;
+    actualVideoWidth = renderHeight * videoAspect;
+  }
 
   const handlePointerDown = (e: React.PointerEvent) => {
     if (!activeClip || !setVideoSegments) return;
@@ -230,10 +245,15 @@ export function LivePreview({
             <video 
               ref={mediaRef as React.RefObject<HTMLVideoElement>}
               src={mediaUrl || undefined} 
-              className={`absolute inset-0 w-full h-full bg-transparent object-contain pointer-events-none transition-opacity duration-150 ${isGap ? 'opacity-0' : 'opacity-100'}`}
+              className={`absolute bg-transparent object-cover pointer-events-none transition-opacity duration-150 ${isGap ? 'opacity-0' : 'opacity-100'}`}
               style={{
-                transform: `translate(${activeTransform.x}%, ${activeTransform.y}%) scale(${activeTransform.scale})`,
-                transition: 'transform 0.1s ease-out'
+                width: `${actualVideoWidth}px`,
+                height: `${actualVideoHeight}px`,
+                left: '50%',
+                top: '50%',
+                transform: `translate(calc(-50% + ${activeTransform.x}%), calc(-50% + ${activeTransform.y}%)) scale(${activeTransform.scale})`,
+                clipPath: `inset(${activeCrop.top || 0}% ${activeCrop.right || 0}% ${activeCrop.bottom || 0}% ${activeCrop.left || 0}%)`,
+                transition: 'transform 0.1s ease-out, clip-path 0.1s ease-out'
               }}
               onLoadedMetadata={(e) => {
                 setMediaDuration(e.currentTarget.duration);

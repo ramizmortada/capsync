@@ -380,12 +380,14 @@ async def burn_subtitles(
         ffmpeg_fonts_path = temp_fonts_dir.replace("\\", "/").replace(":", "\\:")
         
         # 6. Build and execute splicing command or direct burn command
-        def get_transform_for_time(t, segments):
+        def get_clip_settings_for_time(t, segments):
             for seg in segments:
                 if seg.get("deleted"): continue
                 if seg.get("sourceStart", 0) <= t + 0.01 and t - 0.01 <= seg.get("sourceEnd", 999999):
-                    return seg.get("transform", {"x": 0, "y": 0, "scale": 1})
-            return {"x": 0, "y": 0, "scale": 1}
+                    transform = seg.get("transform", {"x": 0, "y": 0, "scale": 1})
+                    crop = seg.get("crop", {"top": 0, "bottom": 0, "left": 0, "right": 0})
+                    return transform, crop
+            return {"x": 0, "y": 0, "scale": 1}, {"top": 0, "bottom": 0, "left": 0, "right": 0}
 
         filter_complex = []
         concat_inputs = ""
@@ -393,15 +395,30 @@ async def burn_subtitles(
         
         for idx, (start, end) in enumerate(kept_ranges):
             mid_t = (start + end) / 2
-            transform = get_transform_for_time(mid_t, parsed_video_segments)
+            transform, crop = get_clip_settings_for_time(mid_t, parsed_video_segments)
             scale_val = transform.get("scale", 1.0)
             x_pct = transform.get("x", 0.0) / 100.0
             y_pct = transform.get("y", 0.0) / 100.0
+
+            c_top = float(crop.get("top", 0))
+            c_bottom = float(crop.get("bottom", 0))
+            c_left = float(crop.get("left", 0))
+            c_right = float(crop.get("right", 0))
             
             filter_complex.append(f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[vtrim{idx}]")
             filter_complex.append(f"[{audio_source}]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{idx}]")
+
+            if c_top > 0 or c_bottom > 0 or c_left > 0 or c_right > 0:
+                crop_w_pct = max(0.01, (100.0 - c_left - c_right) / 100.0)
+                crop_h_pct = max(0.01, (100.0 - c_top - c_bottom) / 100.0)
+                crop_x_pct = c_left / 100.0
+                crop_y_pct = c_top / 100.0
+                filter_complex.append(f"[vtrim{idx}]crop=iw*{crop_w_pct:.4f}:ih*{crop_h_pct:.4f}:iw*{crop_x_pct:.4f}:ih*{crop_y_pct:.4f}[vcrop{idx}]")
+                v_scaled_in = f"[vcrop{idx}]"
+            else:
+                v_scaled_in = f"[vtrim{idx}]"
             
-            filter_complex.append(f"[vtrim{idx}]scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=decrease,scale=iw*{scale_val}:ih*{scale_val}[vscale{idx}]")
+            filter_complex.append(f"{v_scaled_in}scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=decrease,scale=iw*{scale_val}:ih*{scale_val}[vscale{idx}]")
             
             filter_complex.append(f"color=c=0x{bg_color}:s={canvas_w}x{canvas_h}:d={(end-start):.3f}[bg{idx}]")
             

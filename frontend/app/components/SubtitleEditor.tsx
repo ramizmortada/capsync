@@ -587,6 +587,140 @@ export function SubtitleEditor({
                       Reset Transform
                     </Button>
                   </div>
+
+                  {/* Clip Crop Section */}
+                  <div className="col-span-2 border-t border-border pt-4 mt-2 flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <Scissors className="w-3.5 h-3.5 text-purple-400" /> Crop Video Edges
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Crop Top */}
+                      <div className="flex flex-col gap-2">
+                        <label className="text-xs font-medium text-muted-foreground flex justify-between">
+                          <span>Top Crop</span>
+                          <span className="font-mono text-purple-400">
+                            {Number(videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.top || 0).toFixed(1)}%
+                          </span>
+                        </label>
+                        <input 
+                          type="range" min="0" max="50" step="0.5"
+                          value={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.top || 0}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setVideoSegments((prev: any[]) => prev.map(s => 
+                              selectedVideoIndexes.includes(s.id) 
+                                ? { ...s, crop: { ...(s.crop || { top: 0, bottom: 0, left: 0, right: 0 }), top: val } } 
+                                : s
+                            ));
+                          }}
+                          className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-purple-500 [&::-webkit-slider-thumb]:rounded-full"
+                        />
+                      </div>
+
+                      {/* Crop Bottom */}
+                      <div className="flex flex-col gap-2">
+                        <label className="text-xs font-medium text-muted-foreground flex justify-between">
+                          <span>Bottom Crop</span>
+                          <span className="font-mono text-purple-400">
+                            {Number(videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.bottom || 0).toFixed(1)}%
+                          </span>
+                        </label>
+                        <input 
+                          type="range" min="0" max="50" step="0.5"
+                          value={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.bottom || 0}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setVideoSegments((prev: any[]) => prev.map(s => 
+                              selectedVideoIndexes.includes(s.id) 
+                                ? { ...s, crop: { ...(s.crop || { top: 0, bottom: 0, left: 0, right: 0 }), bottom: val } } 
+                                : s
+                            ));
+                          }}
+                          className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-purple-500 [&::-webkit-slider-thumb]:rounded-full"
+                        />
+                      </div>
+
+                      {/* Crop Left */}
+                      <div className="flex flex-col gap-2">
+                        <label className="text-xs font-medium text-muted-foreground flex justify-between">
+                          <span>Left Crop</span>
+                          <span className="font-mono text-purple-400">
+                            {Number(videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.left || 0).toFixed(1)}%
+                          </span>
+                        </label>
+                        <input 
+                          type="range" min="0" max="50" step="0.5"
+                          value={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.left || 0}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setVideoSegments((prev: any[]) => prev.map(s => 
+                              selectedVideoIndexes.includes(s.id) 
+                                ? { ...s, crop: { ...(s.crop || { top: 0, bottom: 0, left: 0, right: 0 }), left: val } } 
+                                : s
+                            ));
+                          }}
+                          className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-purple-500 [&::-webkit-slider-thumb]:rounded-full"
+                        />
+                      </div>
+
+                      {/* Crop Right */}
+                      <div className="flex flex-col gap-2">
+                        <label className="text-xs font-medium text-muted-foreground flex justify-between">
+                          <span>Right Crop</span>
+                          <span className="font-mono text-purple-400">
+                            {Number(videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.right || 0).toFixed(1)}%
+                          </span>
+                        </label>
+                        <input 
+                          type="range" min="0" max="50" step="0.5"
+                          value={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.right || 0}
+                          onChange={(e) => {
+                            const val = parseFloat(e.target.value);
+                            setVideoSegments((prev: any[]) => prev.map(s => 
+                              selectedVideoIndexes.includes(s.id) 
+                                ? { ...s, crop: { ...(s.crop || { top: 0, bottom: 0, left: 0, right: 0 }), right: val } } 
+                                : s
+                            ));
+                          }}
+                          className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-purple-500 [&::-webkit-slider-thumb]:rounded-full"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="col-span-2 flex justify-end gap-2">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="text-xs h-7 text-muted-foreground"
+                      onClick={() => {
+                        setVideoSegments((prev: any[]) => prev.map(s => 
+                          selectedVideoIndexes.includes(s.id) 
+                            ? { ...s, crop: { top: 0, bottom: 0, left: 0, right: 0 } } 
+                            : s
+                        ));
+                      }}
+                    >
+                      Reset Crop
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="text-xs h-7 text-muted-foreground"
+                      onClick={() => {
+                        setVideoSegments((prev: any[]) => prev.map(s => 
+                          selectedVideoIndexes.includes(s.id) 
+                            ? { ...s, transform: { x: 0, y: 0, scale: 1 }, crop: { top: 0, bottom: 0, left: 0, right: 0 } } 
+                            : s
+                        ));
+                      }}
+                    >
+                      Reset All
+                    </Button>
+                  </div>
                 </div>
               )}
             </div>
