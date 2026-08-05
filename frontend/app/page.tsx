@@ -190,9 +190,10 @@ export default function Home() {
     }
 
     return true;
-  });
+  }).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
 
-  const activeProject = projects.find((p) => p.id === selectedProjectId);
+  const sortedProjects = [...projects].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+  const activeProject = sortedProjects.find((p) => p.id === selectedProjectId);
 
   const formatDuration = (seconds?: number) => {
     if (!seconds || seconds <= 0) return '00:00';
@@ -302,9 +303,9 @@ export default function Home() {
               </span>
             </button>
 
-            {projects.length > 0 && <div className="h-[1px] bg-neutral-800/80 my-1" />}
+            {sortedProjects.length > 0 && <div className="h-[1px] bg-neutral-800/80 my-1" />}
 
-            {projects.map((proj) => {
+            {sortedProjects.map((proj) => {
               const count = timelines.filter(t => t.projectId === proj.id).length;
               const isSelected = selectedProjectId === proj.id;
 

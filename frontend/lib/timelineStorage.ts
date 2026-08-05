@@ -178,6 +178,16 @@ export async function saveTimeline(data: TimelineProjectData): Promise<void> {
     }
 
     await set(INDEX_KEY, index);
+
+    // Update parent project's updatedAt timestamp
+    if (updatedData.projectId) {
+      const projects = (await get<Project[]>(PROJECTS_INDEX_KEY)) || [];
+      const project = projects.find((p) => p.id === updatedData.projectId);
+      if (project) {
+        project.updatedAt = now;
+        await set(PROJECTS_INDEX_KEY, projects);
+      }
+    }
   } catch (err) {
     console.error(`Failed to save timeline ${data.id}:`, err);
   }
