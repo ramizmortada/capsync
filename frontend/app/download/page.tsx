@@ -196,7 +196,7 @@ export default function DownloadPage() {
             onClick={fetchInfo} 
             disabled={loadingInfo || !urlInput} 
             size="icon"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-white text-black hover:bg-zinc-200 transition-none flex items-center justify-center shadow-md disabled:opacity-50"
+            className="absolute right-1.5 inset-y-1.5 my-auto h-8 w-8 rounded-full bg-white text-black hover:bg-zinc-200 active:translate-y-0 active:scale-100 transition-none flex items-center justify-center shadow-md disabled:opacity-50"
           >
             {loadingInfo ? <Loader2 className="animate-spin w-4 h-4" /> : <ArrowRight className="w-4 h-4" />}
           </Button>

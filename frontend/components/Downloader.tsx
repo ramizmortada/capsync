@@ -429,37 +429,25 @@ export default function Downloader({
                   </div>
                 </div>
 
-                {/* Download Buttons */}
+                {/* Download Button */}
                 <div className="flex flex-col gap-2.5 shrink-0">
-                  <div className="flex gap-2">
-                    <Button 
-                      onClick={() => startDownload('download')} 
-                      disabled={(!downloading && loading) || (!downloading && isClipping && Boolean(clippingError))}
-                      className={`flex-1 rounded-xl h-10 text-sm font-medium transition-colors relative overflow-hidden disabled:opacity-50 ${
-                        downloading 
-                          ? 'bg-zinc-800 text-zinc-100 hover:bg-zinc-700 border border-zinc-700' 
-                          : 'bg-white text-black hover:bg-zinc-200'
-                      }`}
-                    >
-                      <span className="relative z-10 flex items-center">
-                        {downloading ? 'Cancel' : 'Save Locally'} 
-                        {downloading 
-                          ? <div className="w-3 h-3 ml-2 bg-current rounded-sm" /> 
-                          : <Download className="w-4 h-4 ml-2" />
-                        }
-                      </span>
-                    </Button>
-
-                    {!downloading && (
-                      <Button 
-                        onClick={() => startDownload('download_and_edit')} 
-                        disabled={loading || (isClipping && Boolean(clippingError))}
-                        className="flex-1 rounded-xl h-10 text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white border-blue-500 transition-colors"
-                      >
-                        Download & Edit
-                      </Button>
-                    )}
-                  </div>
+                  <Button 
+                    onClick={() => startDownload('download')} 
+                    disabled={(!downloading && loading) || (!downloading && isClipping && Boolean(clippingError))}
+                    className={`w-full rounded-xl h-11 text-sm font-bold transition-colors relative overflow-hidden disabled:opacity-50 ${
+                      downloading 
+                        ? 'bg-zinc-800 text-zinc-100 hover:bg-zinc-700 border border-zinc-700' 
+                        : 'bg-white text-black hover:bg-zinc-200 shadow-md'
+                    }`}
+                  >
+                    <span className="relative z-10 flex items-center justify-center gap-2">
+                      {downloading ? 'Cancel Download' : 'Download'} 
+                      {downloading 
+                        ? <div className="w-3 h-3 bg-current rounded-sm" /> 
+                        : <Download className="w-4 h-4" />
+                      }
+                    </span>
+                  </Button>
 
                   {/* Progress Indicators */}
                   <AnimatePresence>

@@ -541,18 +541,7 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
 
           {/* Quick Timestamp Capture Buttons & CC */}
           <div className="flex items-center gap-1.5 ml-auto">
-            {!transcriptData ? (
-              <button
-                type="button"
-                onClick={handleTranscribeClip}
-                disabled={isTranscribing}
-                className="px-2 py-1 rounded-lg bg-amber-400/10 hover:bg-amber-400/20 border border-amber-400/30 text-[10px] font-semibold text-amber-400 flex items-center gap-1 transition-colors disabled:opacity-50"
-                title="Transcribe Clip via AI"
-              >
-                {isTranscribing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                <span>AI Captions</span>
-              </button>
-            ) : (
+            {transcriptData && (
               <button
                 type="button"
                 onClick={toggleCaptions}
