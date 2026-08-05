@@ -178,18 +178,6 @@ export function SettingsPanel({
               clearProject={clearProject}
               result={result}
             />
-
-            {/* Find Viral Clips Button */}
-            {status === "done" && onGoToGrid && (
-              <div className="pt-2">
-                <Button 
-                  onClick={onGoToGrid} 
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-10 shadow-lg border border-blue-500"
-                >
-                  <Sparkles className="w-4 h-4 mr-2" /> Find Viral Clips
-                </Button>
-              </div>
-            )}
           </TabsContent>
 
           <TabsContent value="style" className="m-0">

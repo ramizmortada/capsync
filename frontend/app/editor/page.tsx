@@ -3,9 +3,16 @@
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { del } from "idb-keyval";
-import { ArrowLeft, Edit2, Check, Film, Folder } from "lucide-react";
+import { ArrowLeft, Edit2, Check, Film, Folder, Copy, Trash2, Download, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogFooter 
+} from "@/components/ui/dialog";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { SubtitleEditor } from "../components/SubtitleEditor";
 import { LivePreview } from "../components/LivePreview";
@@ -20,7 +27,7 @@ import { useTimelineDragging } from "../../hooks/useTimelineDragging";
 import { useCutZones } from "../../hooks/useCutZones";
 import { usePlaybackSync } from "../../hooks/usePlaybackSync";
 import { useProjectPersistence } from "../../hooks/useProjectPersistence";
-import { renameTimeline, getTimeline, getAllProjects } from "@/lib/timelineStorage";
+import { renameTimeline, getTimeline, getAllProjects, duplicateTimeline, deleteTimeline } from "@/lib/timelineStorage";
 
 export type { SubtitleStyle, StylePreset, DragTarget };
 export { DEFAULT_PRESETS };
@@ -519,6 +526,8 @@ function EditorContent() {
     URL.revokeObjectURL(url);
   };
 
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+
   const handleSaveTitle = async () => {
     if (timelineId && titleInput.trim()) {
       setTimelineName(titleInput.trim());
@@ -527,9 +536,25 @@ function EditorContent() {
     setIsEditingTitle(false);
   };
 
+  const handleDuplicateCurrentTimeline = async () => {
+    if (timelineId) {
+      const dup = await duplicateTimeline(timelineId);
+      if (dup) {
+        router.push(`/editor?id=${dup.id}`);
+      }
+    }
+  };
+
+  const handleDeleteCurrentTimeline = async () => {
+    if (timelineId) {
+      await deleteTimeline(timelineId);
+      router.push('/');
+    }
+  };
+
   return (
     <div className="bg-neutral-950 text-neutral-50 font-sans selection:bg-blue-500/30 h-screen flex flex-col overflow-hidden p-4">
-      {/* Top Header Bar with Timeline Navigation & Title */}
+      {/* Top Header Bar with Timeline Navigation, Title & Actions */}
       <div className="mx-auto w-full max-w-[100rem] mb-3 flex items-center justify-between bg-neutral-900 border border-neutral-800 rounded-xl px-4 py-2 shrink-0">
         <div className="flex items-center gap-3">
           <Button 
@@ -573,10 +598,86 @@ function EditorContent() {
           )}
         </div>
 
-        <div className="flex items-center gap-2 text-xs font-semibold text-neutral-400">
-          {file ? <span className="bg-neutral-800 px-2.5 py-1 rounded-md">{file.name}</span> : <span>No video loaded</span>}
+        {/* Action Buttons in Header */}
+        <div className="flex items-center gap-2">
+          {file && (
+            <span className="bg-neutral-800 text-neutral-300 text-xs px-2.5 py-1 rounded-md font-semibold truncate max-w-[180px]">
+              {file.name}
+            </span>
+          )}
+
+          <div className="h-4 w-[1px] bg-neutral-800" />
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setIsEditingTitle(true); setTitleInput(timelineName); }}
+            className="text-neutral-400 hover:text-white hover:bg-neutral-800 gap-1.5 h-8 text-xs font-semibold"
+            title="Rename Timeline"
+          >
+            <Edit2 className="w-3.5 h-3.5" /> Rename
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDuplicateCurrentTimeline}
+            className="text-neutral-400 hover:text-white hover:bg-neutral-800 gap-1.5 h-8 text-xs font-semibold"
+            title="Duplicate Timeline"
+          >
+            <Copy className="w-3.5 h-3.5" /> Duplicate
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsConfirmingDelete(true)}
+            className="text-neutral-400 hover:text-red-400 hover:bg-neutral-800 gap-1.5 h-8 text-xs font-semibold"
+            title="Delete Timeline"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Delete
+          </Button>
+
+          {editableSegments.length > 0 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={downloadSRT}
+              className="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 gap-1.5 h-8 text-xs font-semibold"
+              title="Download SRT"
+            >
+              <Download className="w-3.5 h-3.5" /> SRT
+            </Button>
+          )}
+
+          {file && (
+            <Button
+              size="sm"
+              onClick={handleExportVideo}
+              className="bg-blue-600 hover:bg-blue-500 text-white font-bold gap-1.5 h-8 text-xs shadow-lg shadow-blue-900/30"
+              title="Export Video"
+            >
+              <Video className="w-3.5 h-3.5" /> Export
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isConfirmingDelete} onOpenChange={setIsConfirmingDelete}>
+        <DialogContent className="bg-neutral-900 border-neutral-800 text-neutral-100 sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-red-400">Delete Timeline?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-neutral-300 py-2">
+            Are you sure you want to delete <span className="font-bold text-white">{timelineName}</span>? This action cannot be undone.
+          </p>
+          <DialogFooter className="flex gap-2">
+            <Button variant="ghost" onClick={() => setIsConfirmingDelete(false)}>Cancel</Button>
+            <Button onClick={handleDeleteCurrentTimeline} variant="destructive" className="bg-red-600 hover:bg-red-500 font-semibold">Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="mx-auto w-full transition-all duration-500 ease-in-out flex flex-col flex-1 overflow-hidden max-w-[100rem]">
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-4 overflow-hidden mb-4">
