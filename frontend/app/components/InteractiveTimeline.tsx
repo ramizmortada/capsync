@@ -626,6 +626,18 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                   }
                   // Clear video selection when selecting subtitle segments
                   setSelectedVideoIndexes([]);
+                  if (trackRef.current && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                    const rect = trackRef.current.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left;
+                    const clickTimelineTime = (clickX / rect.width) * timelineDuration;
+                    setDraggingBoundary({
+                      type: 'body',
+                      index,
+                      initialStart: segment.start,
+                      initialEnd: segment.end,
+                      dragOffset: clickTimelineTime - segment.start
+                    });
+                  }
                   if (e.shiftKey) {
                     if (lastSelectedRef.current !== null) {
                       const start = Math.min(lastSelectedRef.current, index);

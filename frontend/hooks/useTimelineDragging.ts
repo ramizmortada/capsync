@@ -46,7 +46,7 @@ export function useTimelineDragging({
         return tlTime;
       };
 
-      let newTime = toMediaTime(targetTimelineTime);
+      let newTime = targetTimelineTime;
       
       let newSegments = [...editableSegments];
       
@@ -62,7 +62,7 @@ export function useTimelineDragging({
         newSegments[0] = seg;
       } else if (draggingBoundary === 'end') {
         const prevStart = newSegments[newSegments.length - 1].start;
-        newTime = Math.max(prevStart + 0.1, Math.min(newTime, mediaDuration));
+        newTime = Math.max(prevStart + 0.1, Math.min(newTime, timelineDuration));
         const seg = { ...newSegments[newSegments.length - 1], end: newTime };
         if (seg.words && seg.words.length > 0) {
           const words = [...seg.words];
@@ -107,7 +107,7 @@ export function useTimelineDragging({
           } else if (type === 'gap-ripple') {
             const gapWord = currWords[wordIdx];
             const oldEnd = gapWord.end;
-            newTime = Math.max(gapWord.start + 0.02, Math.min(newTime, mediaDuration));
+            newTime = Math.max(gapWord.start + 0.02, Math.min(newTime, timelineDuration));
             const delta = newTime - oldEnd;
 
             if (Math.abs(delta) > 0.001) {
@@ -154,12 +154,49 @@ export function useTimelineDragging({
           if (type === 'start') {
             const prevEnd = index > 0 ? newSegments[index - 1].end : 0;
             newTime = Math.max(prevEnd, Math.min(newTime, currSegment.end - 0.1));
-            newSegments[index] = { ...currSegment, start: newTime };
+            const seg = { ...currSegment, start: newTime };
+            if (seg.words && seg.words.length > 0) {
+              const words = [...seg.words];
+              words[0] = { ...words[0], start: newTime };
+              seg.words = words;
+            }
+            newSegments[index] = seg;
           } else if (type === 'end') {
-            const nextStart = index < newSegments.length - 1 ? newSegments[index + 1].start : mediaDuration;
+            const nextStart = index < newSegments.length - 1 ? newSegments[index + 1].start : timelineDuration;
             newTime = Math.max(currSegment.start + 0.1, Math.min(newTime, nextStart));
-            newSegments[index] = { ...currSegment, end: newTime };
-          } else if (type === 'both') {
+            const seg = { ...currSegment, end: newTime };
+            if (seg.words && seg.words.length > 0) {
+              const words = [...seg.words];
+              const lastIdx = words.length - 1;
+              words[lastIdx] = { ...words[lastIdx], end: newTime };
+              seg.words = words;
+            }
+            newSegments[index] = seg;
+          } else if (type === 'body') {
+            const currSegment = { ...newSegments[index] };
+            const duration = currSegment.end - currSegment.start;
+            const dragOffset = boundary.dragOffset || 0;
+            const prevEnd = index > 0 ? newSegments[index - 1].end : 0;
+            const nextStart = index < newSegments.length - 1 ? newSegments[index + 1].start : timelineDuration;
+
+            let targetStart = targetTimelineTime - dragOffset;
+            targetStart = Math.max(prevEnd, Math.min(targetStart, nextStart - duration));
+            const targetEnd = targetStart + duration;
+            const delta = targetStart - currSegment.start;
+
+            if (Math.abs(delta) > 0.001) {
+              currSegment.start = targetStart;
+              currSegment.end = targetEnd;
+              if (currSegment.words && currSegment.words.length > 0) {
+                currSegment.words = currSegment.words.map((w: any) => ({
+                  ...w,
+                  start: w.start + delta,
+                  end: w.end + delta,
+                }));
+              }
+              newSegments[index] = currSegment;
+            }
+          } else if (type === 'both' && nextSegment) {
             const prevStart = currSegment.start;
             const nextEnd = nextSegment.end;
             newTime = Math.max(prevStart + 0.1, Math.min(newTime, nextEnd - 0.1));

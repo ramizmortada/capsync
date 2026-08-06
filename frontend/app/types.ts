@@ -81,6 +81,6 @@ export const DEFAULT_PRESETS: StylePreset[] = [
 ];
 
 export type DragTarget = 
-  | { type: 'start' | 'end' | 'both', index: number } 
-  | { type: 'start' | 'end' | 'both', segmentIdx: number, wordIdx: number }
+  | { type: 'start' | 'end' | 'both' | 'body', index: number, initialStart?: number, initialEnd?: number, dragOffset?: number } 
+  | { type: 'start' | 'end' | 'both' | 'gap-ripple', segmentIdx: number, wordIdx: number }
   | 'start' | 'end';
