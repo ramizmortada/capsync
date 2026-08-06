@@ -1,5 +1,67 @@
 import { useState, useRef } from "react";
 
+export function mapTranscriptionToTimeline(rawSegments: any[], videoSegments: any[]) {
+  const activeSegs = (videoSegments || []).filter((s: any) => !s.deleted);
+  if (activeSegs.length === 0) return rawSegments;
+
+  const mapTimeToTimeline = (sourceTime: number): number | null => {
+    const seg = activeSegs.find(
+      (s: any) => sourceTime >= s.sourceStart - 0.05 && sourceTime <= s.sourceEnd + 0.05
+    );
+    if (!seg) return null;
+    return seg.timelineStart + Math.max(0, Math.min(seg.timelineEnd - seg.timelineStart, sourceTime - seg.sourceStart));
+  };
+
+  const processedSegments: any[] = [];
+
+  for (const seg of rawSegments) {
+    let mappedWords: any[] = [];
+    if (seg.words && seg.words.length > 0) {
+      mappedWords = seg.words
+        .map((w: any) => {
+          const wStart = mapTimeToTimeline(w.start);
+          const wEnd = mapTimeToTimeline(w.end);
+          if (wStart === null || wEnd === null) return null;
+          return {
+            ...w,
+            start: wStart,
+            end: wEnd,
+            word: w.word || w.text
+          };
+        })
+        .filter(Boolean);
+
+      if (mappedWords.length === 0) continue;
+    }
+
+    const mappedStart = mapTimeToTimeline(seg.start);
+    const mappedEnd = mapTimeToTimeline(seg.end);
+
+    if (mappedStart === null && mappedEnd === null && mappedWords.length === 0) continue;
+
+    const firstWord = mappedWords[0];
+    const lastWord = mappedWords[mappedWords.length - 1];
+
+    const finalStart = firstWord ? firstWord.start : (mappedStart ?? 0);
+    const finalEnd = lastWord ? lastWord.end : (mappedEnd ?? finalStart + 1);
+
+    const segmentText = mappedWords.length > 0
+      ? mappedWords.map((w: any) => w.word || w.text).join(" ")
+      : seg.text;
+
+    processedSegments.push({
+      ...seg,
+      id: Math.random().toString(36).substr(2, 9),
+      start: finalStart,
+      end: finalEnd,
+      text: segmentText,
+      words: mappedWords
+    });
+  }
+
+  return processedSegments;
+}
+
 export function useTranscription({
   file,
   status,
@@ -92,13 +154,14 @@ export function useTranscription({
       setResult(data);
       setSegmentHistory({ past: [], future: [] });
       setRippleDeletes([]);
-      setEditableSegments(data.segments);
+      const mappedSegments = mapTranscriptionToTimeline(data.segments, videoSegments);
+      setEditableSegments(mappedSegments);
       
       setProgress(100);
       setStatus("done");
       checkModelsStatus();
     } catch (err: any) {
-      if (err.name === 'AbortError') {
+      if (err.name === 'AbortError' || err.code === 20 || err === "Transcription cancelled by user" || abortControllerRef.current?.signal.aborted) {
         setStatus("idle");
         setProgress(0);
         return;
@@ -111,7 +174,8 @@ export function useTranscription({
 
   const cancelTranscription = () => {
     if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+      abortControllerRef.current.abort("Transcription cancelled by user");
+      abortControllerRef.current = null;
     }
     setStatus("idle");
     setProgress(0);

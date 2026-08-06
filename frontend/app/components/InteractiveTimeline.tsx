@@ -591,10 +591,8 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
           {/* Subtitle Segments blocks */}
           {editableSegments.map((segment, index) => {
-            // Skip subtitle segments that fall entirely in ripple-deleted zones
-            if (!isInActiveVideoRange(segment.start, segment.end)) return null;
-            const tlStart = toTimelineTime(segment.start);
-            const tlEnd = toTimelineTime(segment.end);
+            const tlStart = segment.start;
+            const tlEnd = segment.end;
             if (tlStart >= tlEnd) return null;
             const left = (tlStart / timelineDuration) * 100;
             const width = ((tlEnd - tlStart) / timelineDuration) * 100;
@@ -672,10 +670,8 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           {zoomLevel >= 15 && editableSegments.map((segment, index) => {
             if (!segment.words || segment.words.length === 0) return null;
             return segment.words.map((word: any, wIdx: number) => {
-              // Skip words that fall entirely in ripple-deleted zones
-              if (!isInActiveVideoRange(word.start, word.end)) return null;
-              const tlStart = toTimelineTime(word.start);
-              const tlEnd = toTimelineTime(word.end);
+              const tlStart = word.start;
+              const tlEnd = word.end;
               if (tlStart >= tlEnd) return null;
               const left = (tlStart / timelineDuration) * 100;
               const width = ((tlEnd - tlStart) / timelineDuration) * 100;
