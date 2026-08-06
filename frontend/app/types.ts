@@ -30,12 +30,24 @@ export interface SubtitleStyle {
   textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
 }
 
+export interface VideoTransformSettings {
+  transform?: { x: number; y: number; scale: number };
+  crop?: { top: number; right: number; bottom: number; left: number };
+}
+
 export interface StylePreset {
   id: string;
   name: string;
   subtitleStyle: SubtitleStyle;
   modelSize: string;
   maxWords: string;
+  videoCanvas?: {
+    type?: 'auto' | '16:9' | '9:16' | '1:1';
+    width?: number;
+    height?: number;
+    backgroundColor?: string;
+  };
+  videoSettings?: VideoTransformSettings;
   isDefault?: boolean;
 }
 
@@ -46,6 +58,11 @@ export const DEFAULT_PRESETS: StylePreset[] = [
     modelSize: "tiny",
     maxWords: "-1",
     isDefault: true,
+    videoCanvas: { type: 'auto', backgroundColor: '#000000' },
+    videoSettings: {
+      transform: { x: 0, y: 0, scale: 1 },
+      crop: { top: 0, right: 0, bottom: 0, left: 0 }
+    },
     subtitleStyle: {
       fontFamily: "Inter",
       fontWeight: "500",

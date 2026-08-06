@@ -5,8 +5,12 @@ FONTS_DIR = os.path.join(os.path.dirname(__file__), "fonts")
 
 # We download static TTF files for each standard weight from Fontsource CDN
 # so that libass can easily resolve FontName and Weight natively.
-FAMILIES = ["inter", "poppins", "instrument-serif", "oswald"]
-WEIGHTS = ["300", "400", "500", "600", "700", "800", "900"]
+FAMILY_WEIGHTS = {
+    "inter": ["300", "400", "500", "600", "700", "800", "900"],
+    "poppins": ["300", "400", "500", "600", "700", "800", "900"],
+    "instrument-serif": ["400"],
+    "oswald": ["300", "400", "500", "600", "700"],
+}
 
 def ensure_fonts():
     """
@@ -15,21 +19,21 @@ def ensure_fonts():
     """
     os.makedirs(FONTS_DIR, exist_ok=True)
     
-    for family in FAMILIES:
-        family_name = family.capitalize()
+    for family, weights in FAMILY_WEIGHTS.items():
+        family_name = "".join(word.capitalize() for word in family.split("-"))
+        if family == "instrument-serif":
+            family_name = "Instrument-serif"
+            
         family_dir = os.path.join(FONTS_DIR, family_name)
         os.makedirs(family_dir, exist_ok=True)
         
-        # Check if we already have all expected weights downloaded
-        existing_files = os.listdir(family_dir)
-        if sum(1 for f in existing_files if f.endswith('.ttf')) >= len(WEIGHTS):
+        marker_file = os.path.join(family_dir, ".complete")
+        if os.path.exists(marker_file):
             continue
             
         print(f"Downloading static fonts for: {family_name}...", flush=True)
         
-        for weight in WEIGHTS:
-            # Roboto doesn't have an 800 weight in the standard fontsource package, 
-            # but we'll try to download it, and fall back if 404.
+        for weight in weights:
             url = f"https://cdn.jsdelivr.net/fontsource/fonts/{family}@latest/latin-{weight}-normal.ttf"
             filename = f"{family_name}-{weight}.ttf"
             target_path = os.path.join(family_dir, filename)
@@ -47,6 +51,11 @@ def ensure_fonts():
                     print(f"  Warning: No weight {weight} found for {family_name}", flush=True)
             except Exception as e:
                 print(f"  Warning: Could not download {family_name} {weight}: {e}", flush=True)
+        
+        try:
+            open(marker_file, 'w').close()
+        except:
+            pass
     
     return FONTS_DIR
 

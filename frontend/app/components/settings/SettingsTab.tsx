@@ -256,12 +256,8 @@ export const SettingsTab = ({
                (result ? (transcriptionMessage || "").replace("Transcribing", "Retranscribing") : transcriptionMessage)}
             </span>
             <div className="flex items-center gap-3">
-              {status !== "transcribing" && status !== "burning" && (
-                <span className="text-neutral-400 font-mono">{progress}%</span>
-              )}
-              {status !== "burning" && (
-                <Button variant="ghost" size="sm" onClick={cancelTranscription} className="h-6 px-2 text-xs text-neutral-400 hover:text-white border border-neutral-700">Cancel</Button>
-              )}
+              <span className="text-neutral-400 font-mono">{progress}%</span>
+              <Button variant="ghost" size="sm" onClick={cancelTranscription} className="h-6 px-2 text-xs text-neutral-400 hover:text-white border border-neutral-700">Cancel</Button>
             </div>
           </div>
           {status === "transcribing" || status === "burning" ? (

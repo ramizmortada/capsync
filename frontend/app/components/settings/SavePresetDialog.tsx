@@ -77,7 +77,7 @@ export const SavePresetDialog = ({
         <DialogHeader>
           <DialogTitle>Save Custom Preset</DialogTitle>
           <DialogDescription>
-            Save your current style, model, and word limits settings.
+            Save your current subtitle style, aspect ratio, background color, video position, scaling, cropping, and model settings.
           </DialogDescription>
         </DialogHeader>
         

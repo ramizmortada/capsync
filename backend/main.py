@@ -39,18 +39,36 @@ import asyncio
 
 download_progress = {}
 current_transcription_status = "Idle"
+current_ffmpeg_process = None
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "models"))
+
+MIN_MODEL_SIZES = {
+    "tiny": 30 * 1024 * 1024,
+    "base": 100 * 1024 * 1024,
+    "medium": 500 * 1024 * 1024,
+    "large-v2": 1500 * 1024 * 1024,
+}
+
+def is_valid_model_file(model_name: str, file_name: str, path: str) -> bool:
+    if not os.path.exists(path):
+        return False
+    if file_name == "model.bin":
+        min_size = MIN_MODEL_SIZES.get(model_name, 10 * 1024 * 1024)
+        if os.path.getsize(path) < min_size:
+            return False
+    elif os.path.getsize(path) == 0:
+        return False
+    return True
 
 def check_downloaded_models():
     models = ["tiny", "base", "medium", "large-v2"]
     status = {}
     for m in models:
-        # Check if the model directory exists and has all 4 files
         local_dir = os.path.join(MODELS_DIR, m)
         files = ["config.json", "model.bin", "vocabulary.txt", "tokenizer.json"]
-        is_downloaded = all(os.path.exists(os.path.join(local_dir, f)) for f in files)
+        is_downloaded = all(is_valid_model_file(m, f, os.path.join(local_dir, f)) for f in files)
         status[m] = is_downloaded
     return status
 
@@ -66,6 +84,20 @@ async def get_download_progress(model_name: str):
 async def get_transcription_status():
     return {"status": current_transcription_status}
 
+@app.post("/api/cancel")
+async def cancel_active_task():
+    global current_ffmpeg_process, current_transcription_status
+    current_transcription_status = "Idle"
+    if current_ffmpeg_process:
+        try:
+            current_ffmpeg_process.kill()
+            print("Cancelled and killed active FFmpeg process upon request.", flush=True)
+        except Exception as e:
+            print(f"Error killing process: {e}", flush=True)
+        finally:
+            current_ffmpeg_process = None
+    return {"status": "cancelled"}
+
 def download_hf_model(model_size: str):
     repo = f"Systran/faster-whisper-{model_size}"
     local_dir = os.path.join(MODELS_DIR, model_size)
@@ -79,26 +111,29 @@ def download_hf_model(model_size: str):
     total_files = len(files)
     for idx, f_name in enumerate(files):
         target_path = os.path.join(local_dir, f_name)
-        if not os.path.exists(target_path):
+        if not is_valid_model_file(model_size, f_name, target_path):
+            if os.path.exists(target_path):
+                try: os.remove(target_path)
+                except: pass
             print(f"Downloading {f_name} from mirror...", flush=True)
+            temp_path = target_path + ".tmp"
             resp = requests.get(base_url + f_name, stream=True)
             resp.raise_for_status()
             total_length = resp.headers.get('content-length')
             
-            if total_length is None:
-                with open(target_path, "wb") as out_file:
+            with open(temp_path, "wb") as out_file:
+                if total_length is None:
                     out_file.write(resp.content)
-            else:
-                total_length = int(total_length)
-                downloaded = 0
-                with open(target_path, "wb") as out_file:
-                    for chunk in resp.iter_content(chunk_size=8192):
+                else:
+                    total_length = int(total_length)
+                    downloaded = 0
+                    for chunk in resp.iter_content(chunk_size=65536):
                         out_file.write(chunk)
                         downloaded += len(chunk)
-                        # Calculate overall progress
                         file_progress = downloaded / total_length
                         overall_progress = ((idx + file_progress) / total_files) * 100
                         download_progress[model_size]["progress"] = int(overall_progress)
+            os.replace(temp_path, target_path)
     
     download_progress[model_size] = {"progress": 100, "status": "done"}
     return local_dir
@@ -287,44 +322,34 @@ async def burn_subtitles(
             shutil.copyfileobj(file.file, f)
             
         # 2. Get video duration and shift subtitle timestamps if cuts are present
-        if parsed_cuts:
-            total_duration = get_video_duration(temp_video_path)
-            if total_duration <= 0.0:
-                total_duration = max([seg["end"] for seg in parsed_segments] + [0.0])
-                
-            def shift_timestamp(t, cuts_list):
-                total_cut_before = 0.0
-                for c in cuts_list:
-                    if c["end"] <= t:
-                        total_cut_before += (c["end"] - c["start"])
-                    elif c["start"] < t < c["end"]:
-                        total_cut_before += (t - c["start"])
-                return max(0.0, t - total_cut_before)
-                
-            # Filter out deleted words and gaps, and shift the remaining words
-            clean_segments = []
-            for seg in parsed_segments:
-                if "words" in seg:
-                    seg["words"] = [w for w in seg["words"] if not w.get("deleted") and not w.get("isGap")]
-                    if not seg["words"]:
-                        continue
-                    seg["text"] = " ".join([w["word"] for w in seg["words"]])
-                    seg["start"] = seg["words"][0]["start"]
-                    seg["end"] = seg["words"][-1]["end"]
-                
-                seg["start"] = shift_timestamp(seg["start"], parsed_cuts)
-                seg["end"] = shift_timestamp(seg["end"], parsed_cuts)
-                if "words" in seg:
-                    for w in seg["words"]:
-                        if "start" in w:
-                            w["start"] = shift_timestamp(w["start"], parsed_cuts)
-                        if "end" in w:
-                            w["end"] = shift_timestamp(w["end"], parsed_cuts)
-                clean_segments.append(seg)
-            parsed_segments = clean_segments
-            
-            # Generate kept ranges
-            kept_ranges = []
+        # 2. Clean subtitle segments and generate kept ranges from videoSegments or cuts
+        clean_segments = []
+        for seg in parsed_segments:
+            if "words" in seg:
+                seg["words"] = [w for w in seg["words"] if not w.get("deleted") and not w.get("isGap")]
+                if not seg["words"]:
+                    continue
+                seg["text"] = " ".join([w.get("word", w.get("text", "")) for w in seg["words"]])
+                seg["start"] = seg["words"][0]["start"]
+                seg["end"] = seg["words"][-1]["end"]
+            clean_segments.append(seg)
+        parsed_segments = clean_segments
+        
+        total_duration = get_video_duration(temp_video_path)
+        if total_duration <= 0.0:
+            total_duration = max([seg["end"] for seg in parsed_segments] + [0.0])
+
+        kept_ranges = []
+        if parsed_video_segments:
+            active_video_segs = [s for s in parsed_video_segments if not s.get("deleted")]
+            if active_video_segs:
+                for s in sorted(active_video_segs, key=lambda x: x.get("timelineStart", 0)):
+                    src_s = max(0.0, float(s.get("sourceStart", 0)))
+                    src_e = float(s.get("sourceEnd", total_duration))
+                    if src_e > src_s + 0.01:
+                        kept_ranges.append((src_s, src_e))
+
+        if not kept_ranges and parsed_cuts:
             current_pos = 0.0
             for c in sorted(parsed_cuts, key=lambda x: x["start"]):
                 if c["start"] > current_pos + 0.02:
@@ -332,23 +357,8 @@ async def burn_subtitles(
                 current_pos = max(current_pos, c["end"])
             if current_pos < total_duration - 0.02:
                 kept_ranges.append((current_pos, total_duration))
-        else:
-            # Shift timestamps (simple case, only filter out deleted/gap words but no cuts)
-            clean_segments = []
-            for seg in parsed_segments:
-                if "words" in seg:
-                    seg["words"] = [w for w in seg["words"] if not w.get("deleted") and not w.get("isGap")]
-                    if not seg["words"]:
-                        continue
-                    seg["text"] = " ".join([w["word"] for w in seg["words"]])
-                    seg["start"] = seg["words"][0]["start"]
-                    seg["end"] = seg["words"][-1]["end"]
-                clean_segments.append(seg)
-            parsed_segments = clean_segments
-            
-            total_duration = get_video_duration(temp_video_path)
-            if total_duration <= 0.0:
-                total_duration = max([seg["end"] for seg in parsed_segments] + [0.0])
+
+        if not kept_ranges:
             kept_ranges = [(0.0, total_duration)]
 
         # 3. Generate ASS content using cleaned/shifted segments
@@ -438,17 +448,21 @@ async def burn_subtitles(
         command.extend([
             "-filter_complex", filter_str,
             "-map", "[outv]", "-map", "[outa]",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-threads", "0",
             "-c:a", "aac",
             output_video_path
         ])
         
         print(f"Running FFmpeg: {' '.join(command)}", flush=True)
-        process = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        global current_ffmpeg_process
+        current_ffmpeg_process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        stdout, stderr = current_ffmpeg_process.communicate()
+        returncode = current_ffmpeg_process.returncode
+        current_ffmpeg_process = None
         
-        if process.returncode != 0:
-            print(f"FFmpeg failed: {process.stderr}", flush=True)
-            raise Exception(f"FFmpeg processing failed: {process.stderr}")
+        if returncode != 0:
+            print(f"FFmpeg failed: {stderr}", flush=True)
+            raise Exception(f"FFmpeg processing failed or was cancelled: {stderr}")
             
         print("FFmpeg processing complete.", flush=True)
         

@@ -183,7 +183,11 @@ function EditorContent() {
     modelSize,
     setModelSize,
     maxWords,
-    setMaxWords
+    setMaxWords,
+    videoCanvas,
+    setVideoCanvas,
+    videoSegments,
+    setVideoSegments
   );
 
   // Fetch downloaded models status
@@ -676,29 +680,6 @@ function EditorContent() {
           >
             <Trash2 className="w-3.5 h-3.5" /> Delete
           </Button>
-
-          {editableSegments.length > 0 && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={downloadSRT}
-              className="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 gap-1.5 h-8 text-xs font-semibold"
-              title="Download SRT"
-            >
-              <Download className="w-3.5 h-3.5" /> SRT
-            </Button>
-          )}
-
-          {file && (
-            <Button
-              size="sm"
-              onClick={handleExportVideo}
-              className="bg-blue-600 hover:bg-blue-500 text-white font-bold gap-1.5 h-8 text-xs shadow-lg shadow-blue-900/30"
-              title="Export Video"
-            >
-              <Video className="w-3.5 h-3.5" /> Export
-            </Button>
-          )}
         </div>
       </div>
 
@@ -809,6 +790,8 @@ function EditorContent() {
               subtitleStyle={subtitleStyle}
               setVideoDimensions={setVideoDimensions}
               handleExportVideo={handleExportVideo}
+              cancelTranscription={cancelTranscription}
+              progress={progress}
               status={status}
               togglePlay={togglePlay}
               videoCanvas={videoCanvas}

@@ -15,6 +15,8 @@ interface LivePreviewProps {
   subtitleStyle: any; // We'll just pass the object directly
   setVideoDimensions: (dimensions: {width: number, height: number}) => void;
   handleExportVideo?: () => void;
+  cancelTranscription?: () => void;
+  progress?: number;
   status?: string;
   togglePlay?: () => void;
   videoCanvas?: any;
@@ -34,6 +36,8 @@ export function LivePreview({
   subtitleStyle,
   setVideoDimensions,
   handleExportVideo,
+  cancelTranscription,
+  progress,
   status,
   togglePlay,
   videoCanvas,
@@ -201,12 +205,19 @@ export function LivePreview({
             </Button>
           )}
           {status === "burning" ? (
-            <Button disabled size="sm" className="text-xs h-8 flex items-center gap-1.5 font-semibold">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Exporting...
-            </Button>
-          ) : (status === "done" && file?.type.startsWith('video') && handleExportVideo) ? (
-            <Button onClick={handleExportVideo} size="sm" className="text-xs h-8 flex items-center gap-1.5 font-semibold">
-              <Download className="w-3.5 h-3.5" /> Export Video
+            <div className="flex items-center gap-1.5">
+              <Button disabled size="sm" className="text-xs h-8 flex items-center gap-1.5 font-semibold">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Exporting ({progress || 0}%)...
+              </Button>
+              {cancelTranscription && (
+                <Button variant="outline" size="sm" onClick={cancelTranscription} className="text-xs h-8 px-2 border-red-500/50 text-red-400 hover:bg-red-950/50 hover:text-red-300 font-semibold">
+                  Cancel
+                </Button>
+              )}
+            </div>
+          ) : (file && handleExportVideo) ? (
+            <Button onClick={handleExportVideo} size="sm" className="text-xs h-8 flex items-center gap-1.5 font-bold bg-white text-black hover:bg-zinc-200 shadow-md transition-colors">
+              <Download className="w-3.5 h-3.5 text-black" /> Export Video
             </Button>
           ) : null}
         </div>
@@ -249,11 +260,11 @@ export function LivePreview({
               style={{
                 width: `${actualVideoWidth}px`,
                 height: `${actualVideoHeight}px`,
-                left: '50%',
-                top: '50%',
-                transform: `translate(calc(-50% + ${activeTransform.x}%), calc(-50% + ${activeTransform.y}%)) scale(${activeTransform.scale})`,
+                left: `calc(50% + ${activeTransform.x * (renderWidth / 100)}px)`,
+                top: `calc(50% + ${activeTransform.y * (renderHeight / 100)}px)`,
+                transform: `translate(-50%, -50%) scale(${activeTransform.scale})`,
                 clipPath: `inset(${activeCrop.top || 0}% ${activeCrop.right || 0}% ${activeCrop.bottom || 0}% ${activeCrop.left || 0}%)`,
-                transition: 'transform 0.1s ease-out, clip-path 0.1s ease-out'
+                transition: 'transform 0.1s ease-out, clip-path 0.1s ease-out, left 0.1s ease-out, top 0.1s ease-out'
               }}
               onLoadedMetadata={(e) => {
                 setMediaDuration(e.currentTarget.duration);

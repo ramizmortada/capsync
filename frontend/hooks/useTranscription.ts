@@ -87,7 +87,7 @@ export function useTranscription({
   file: File | null;
   status: string;
   setStatus: (s: any) => void;
-  setProgress: (p: number) => void;
+  setProgress: React.Dispatch<React.SetStateAction<number>>;
   setResult: (r: any) => void;
   setErrorMessage: (m: string) => void;
   editableSegments: any[];
@@ -107,6 +107,7 @@ export function useTranscription({
 }) {
   const [transcriptionMessage, setTranscriptionMessage] = useState<string>("Processing media...");
   const abortControllerRef = useRef<AbortController | null>(null);
+  const exportAbortControllerRef = useRef<AbortController | null>(null);
 
   const handleTranscribe = async () => {
     if (!file) return;
@@ -169,43 +170,61 @@ export function useTranscription({
       setErrorMessage(err.message || "An unknown error occurred.");
       setStatus("error");
       setProgress(0);
+    } finally {
+      abortControllerRef.current = null;
     }
   };
 
-  const cancelTranscription = () => {
+  const cancelTranscription = async () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort("Transcription cancelled by user");
       abortControllerRef.current = null;
+    }
+    if (exportAbortControllerRef.current) {
+      exportAbortControllerRef.current.abort("Export cancelled by user");
+      exportAbortControllerRef.current = null;
+    }
+    try {
+      await fetch("http://127.0.0.1:8000/api/cancel", { method: "POST" });
+    } catch (e) {
+      console.error("Failed to notify backend cancel:", e);
     }
     setStatus("idle");
     setProgress(0);
   };
 
   const handleExportVideo = async () => {
-    if (!file || editableSegments.length === 0) return;
+    if (!file) return;
 
     setStatus("burning");
-    setProgress(10);
+    setProgress(15);
     setErrorMessage("");
+
+    exportAbortControllerRef.current = new AbortController();
 
     const formData = new FormData();
     formData.append("file", file);
-    formData.append("segments", JSON.stringify(editableSegments));
+    formData.append("segments", JSON.stringify(editableSegments || []));
     formData.append("style", JSON.stringify(subtitleStyle));
-    formData.append("videoWidth", videoDimensions.width.toString());
-    formData.append("videoHeight", videoDimensions.height.toString());
-    formData.append("cuts", JSON.stringify(cutZones));
-    formData.append("videoCanvas", JSON.stringify(videoCanvas));
-    formData.append("videoSegments", JSON.stringify(videoSegments));
+    formData.append("videoWidth", (videoDimensions.width || 1920).toString());
+    formData.append("videoHeight", (videoDimensions.height || 1080).toString());
+    formData.append("cuts", JSON.stringify(cutZones || []));
+    formData.append("videoCanvas", JSON.stringify(videoCanvas || { type: 'auto' }));
+    formData.append("videoSegments", JSON.stringify(videoSegments || []));
+
+    const progressTimer = setInterval(() => {
+      setProgress((prev: number) => (prev < 92 ? prev + 4 : prev));
+    }, 600);
 
     try {
       const response = await fetch("http://127.0.0.1:8000/api/burn", {
         method: "POST",
         body: formData,
+        signal: exportAbortControllerRef.current.signal,
       });
 
       if (!response.ok) {
-        throw new Error("Failed to burn subtitles.");
+        throw new Error("Failed to burn subtitles and render video.");
       }
 
       const blob = await response.blob();
@@ -221,9 +240,18 @@ export function useTranscription({
       setStatus("done");
       setProgress(100);
     } catch (err: any) {
+      if (err.name === 'AbortError' || exportAbortControllerRef.current?.signal.aborted) {
+        setStatus("idle");
+        setProgress(0);
+        return;
+      }
       console.error(err);
       setErrorMessage(err.message || "An unknown error occurred during burning.");
-      setStatus("done");
+      setStatus("error");
+      setProgress(0);
+    } finally {
+      clearInterval(progressTimer);
+      exportAbortControllerRef.current = null;
     }
   };
 
