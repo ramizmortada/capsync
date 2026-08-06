@@ -250,11 +250,6 @@ export function SubtitleEditor({
                   </PopoverContent>
                 </Popover>
               </div>
-              {selectedIndexes.length > 0 && (
-                <span className="ml-2 text-xs font-semibold bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-500/30">
-                  {selectedIndexes.length} selected
-                </span>
-              )}
               {selectedIndexes.length === 0 && (
                 <div className="flex items-center gap-0.5 ml-3 bg-background border border-border rounded-md overflow-hidden">
                   <button 
@@ -281,9 +276,18 @@ export function SubtitleEditor({
         </div>
         <div className="flex items-center gap-2">
           {activeTab === 'subtitles' && selectedIndexes.length > 0 && (
-            <Button onClick={onLiftDeleteClick} variant="destructive" size="sm" className="gap-2 h-8 text-xs px-3 shadow-lg bg-red-600 hover:bg-red-500">
-              <Trash2 className="w-3 h-3" /> Delete Selected
-            </Button>
+            <div className="flex items-center bg-red-950/40 border border-red-800/60 rounded-lg overflow-hidden h-8 shadow-sm">
+              <span className="px-2.5 text-xs font-bold text-red-300 border-r border-red-800/60 select-none">
+                {selectedIndexes.length}
+              </span>
+              <button
+                onClick={onLiftDeleteClick}
+                className="px-2.5 h-full flex items-center justify-center text-red-400 hover:bg-red-600 hover:text-white transition-colors"
+                title={`Delete ${selectedIndexes.length} selected subtitle${selectedIndexes.length > 1 ? 's' : ''}`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
           )}
           <Button onClick={downloadSRT} size="icon" variant="secondary" className="h-8 w-8 shadow-lg" title="Download .SRT">
             <Download className="w-3.5 h-3.5" />
@@ -467,8 +471,8 @@ export function SubtitleEditor({
                   <Video className="w-4 h-4 text-purple-500" /> Selected Clip Transform
                 </h3>
                 {selectedVideoIndexes && selectedVideoIndexes.length > 0 && (
-                  <span className="text-xs font-semibold bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30">
-                    {selectedVideoIndexes.length} selected
+                  <span className="text-xs font-bold bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30 min-w-[22px] text-center inline-block">
+                    {selectedVideoIndexes.length}
                   </span>
                 )}
               </div>
