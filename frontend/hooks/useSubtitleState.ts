@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { resegmentTranscripts } from "@/lib/chunking";
 import { set as idbSet } from "idb-keyval";
+import { mapTranscriptionToTimeline } from "./useTranscription";
 
 export interface VideoSegment {
   id: string;
@@ -207,7 +208,8 @@ export function useSubtitleState({
 
   const handleResegment = (maxWords: string) => {
     if (!result || !result.raw_segments) return;
-    const newSegments = resegmentTranscripts(result.raw_segments, maxWords);
+    const rechunkedSegments = resegmentTranscripts(result.raw_segments, maxWords);
+    const newSegments = mapTranscriptionToTimeline(rechunkedSegments, videoSegments);
     updateSegments(newSegments);
     const newResult = { ...result, segments: newSegments };
     setResult(newResult);

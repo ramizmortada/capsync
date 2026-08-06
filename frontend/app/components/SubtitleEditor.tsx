@@ -99,6 +99,19 @@ export function SubtitleEditor({
     return () => window.removeEventListener('pointerdown', handleWindowClick);
   }, []);
 
+  const toTimelineTime = (mediaTime: number) => {
+    if (!videoSegments || videoSegments.length === 0) return mediaTime;
+    const activeSeg = videoSegments.find(s => mediaTime >= s.sourceStart && mediaTime <= s.sourceEnd && !s.deleted);
+    if (activeSeg) {
+      return activeSeg.timelineStart + (mediaTime - activeSeg.sourceStart);
+    }
+    const closest = [...videoSegments].filter(s => !s.deleted).sort((a, b) => Math.abs(a.sourceStart - mediaTime) - Math.abs(b.sourceStart - mediaTime))[0];
+    if (closest) {
+      return closest.timelineStart + (mediaTime - closest.sourceStart);
+    }
+    return mediaTime;
+  };
+
   // Toggle selection or range selection
   const handleSelection = (e: React.MouseEvent, index: number) => {
     if (e.shiftKey) {
@@ -313,7 +326,7 @@ export function SubtitleEditor({
       <ScrollArea className="flex-1 h-0 bg-background/50">
         <div className="p-0 relative">
           {editableSegments.map((segment, index) => {
-            const isActive = currentTime >= (segment.start - 0.05) && currentTime < (segment.end - 0.05);
+            const isActive = currentTime >= (toTimelineTime(segment.start) - 0.05) && currentTime < (toTimelineTime(segment.end) - 0.05);
             const isSelected = selectedIndexes.includes(index);
             const isFirstSelected = isMergeVisible && Math.min(...(selectedIndexes.filter(i => typeof i === 'number') as number[])) === index;
             const canSplit = segment.text.trim().split(/\s+/).filter(Boolean).length >= 2;
@@ -360,9 +373,9 @@ export function SubtitleEditor({
                     {/* Top Row: Timestamps and Delete Action */}
                     <div className="text-xs text-muted-foreground mb-2 flex justify-between items-center font-mono tracking-wider">
                       <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground/95">{formatUiTime(segment.start)}</span>
+                        <span className="text-muted-foreground/95">{formatUiTime(toTimelineTime(segment.start))}</span>
                         <ArrowRight className="w-3 h-3 text-muted-foreground/60" />
-                        <span className="text-muted-foreground/95">{formatUiTime(segment.end)}</span>
+                        <span className="text-muted-foreground/95">{formatUiTime(toTimelineTime(segment.end))}</span>
                       </div>
                       <div className="flex items-center gap-1">
                         {/* Silence/Mute Segment Button */}
@@ -412,7 +425,7 @@ export function SubtitleEditor({
                       <AutoResizeTextarea
                         value={segment.text}
                         onChange={(e: any) => handleSegmentChange(index, e.target.value)}
-                        onFocus={() => onSeek(segment.start)}
+                        onFocus={() => onSeek(toTimelineTime(segment.start))}
                         className="w-full bg-transparent text-sm text-foreground outline-none resize-none font-medium placeholder-muted-foreground/30 overflow-hidden"
                         rows={1}
                       />

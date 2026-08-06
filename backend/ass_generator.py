@@ -182,6 +182,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         words = segment.get("words", [])
         seg_start = segment.get("start", 0)
         seg_end = segment.get("end", 0)
+        if seg_end <= seg_start + 0.005:
+            continue
 
         first_word_dur = int((words[0].get("end", seg_start) - words[0].get("start", seg_start)) * 1000) if words else int((seg_end - seg_start) * 1000)
         last_word_dur = int((words[-1].get("end", seg_end) - words[-1].get("start", seg_end)) * 1000) if words else int((seg_end - seg_start) * 1000)
@@ -252,16 +254,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 word_start = target_word.get("start", target_word.get("end", seg_start))
                 word_end = target_word.get("end", target_word.get("start", seg_end))
                 
-                event_start = format_ass_time(word_start)
+                event_start_s = seg_start if i == 0 else word_start
+                event_start = format_ass_time(event_start_s)
                 
                 if i < len(words) - 1:
                     next_word_start = words[i+1].get("start", word_end)
-                    event_end_s = next_word_start
+                    event_end_s = max(word_end, next_word_start)
                 else:
                     event_end_s = seg_end
                 event_end = format_ass_time(event_end_s)
                 
-                if word_start == word_end and i < len(words) - 1:
+                if event_end_s <= event_start_s:
                     continue
                 
                 line_parts = []
@@ -272,7 +275,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     else:
                         line_parts.append(clean_word)
                 
-                event_dur = int((event_end_s - word_start) * 1000)
+                event_dur = int((event_end_s - event_start_s) * 1000)
                 prefix = get_prefix_tags(i == 0, i == len(words) - 1, event_dur)
                 full_text = prefix + f"{{\\alpha&HFF&}}" + " ".join(line_parts)
                 events.append(f"Dialogue: 0,{event_start},{event_end},Default,,0,0,0,,{full_text}") # keep direct append for background box
@@ -283,16 +286,17 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             word_start = target_word.get("start", target_word.get("end", seg_start))
             word_end = target_word.get("end", target_word.get("start", seg_end))
             
-            event_start = format_ass_time(word_start)
+            event_start_s = seg_start if i == 0 else word_start
+            event_start = format_ass_time(event_start_s)
             
             if i < len(words) - 1:
                 next_word_start = words[i+1].get("start", word_end)
-                event_end_s = next_word_start
+                event_end_s = max(word_end, next_word_start)
             else:
                 event_end_s = seg_end
             event_end = format_ass_time(event_end_s)
             
-            if word_start == word_end and i < len(words) - 1:
+            if event_end_s <= event_start_s:
                 continue
 
             line_parts = []

@@ -3,43 +3,49 @@ import { DragTarget } from "../app/types";
 
 function adjustWordsOnStartChange(words: any[], newStart: number) {
   if (!words || words.length === 0) return words;
-  const updatedWords = words.map((w: any) => ({ ...w }));
-  updatedWords[0] = { ...updatedWords[0], start: newStart };
-  if (updatedWords[0].end < newStart) {
-    updatedWords[0].end = newStart + 0.05;
-  }
-  for (let i = 0; i < updatedWords.length; i++) {
-    if (i > 0) {
-      if (updatedWords[i].start < updatedWords[i - 1].end) {
-        updatedWords[i].start = updatedWords[i - 1].end;
+  const EPSILON = 0.01;
+  const result: any[] = [];
+  
+  for (const w of words) {
+    if (w.end <= newStart + EPSILON) continue; // Drop word entirely outside
+    
+    if (w.start >= newStart - EPSILON) {
+      result.push({ ...w });
+    } else {
+      const clamped = { ...w, start: newStart };
+      if (clamped.end - clamped.start > EPSILON) {
+        result.push(clamped);
       }
     }
-    if (updatedWords[i].end < updatedWords[i].start) {
-      updatedWords[i].end = updatedWords[i].start + 0.05;
-    }
   }
-  return updatedWords;
+  return result;
 }
 
 function adjustWordsOnEndChange(words: any[], newEnd: number) {
   if (!words || words.length === 0) return words;
-  const updatedWords = words.map((w: any) => ({ ...w }));
-  const lastIdx = updatedWords.length - 1;
-  updatedWords[lastIdx] = { ...updatedWords[lastIdx], end: newEnd };
-  if (updatedWords[lastIdx].start > newEnd) {
-    updatedWords[lastIdx].start = Math.max(0, newEnd - 0.05);
-  }
-  for (let i = lastIdx; i >= 0; i--) {
-    if (i < lastIdx) {
-      if (updatedWords[i].end > updatedWords[i + 1].start) {
-        updatedWords[i].end = updatedWords[i + 1].start;
+  const EPSILON = 0.01;
+  const result: any[] = [];
+  
+  for (const w of words) {
+    if (w.start >= newEnd - EPSILON) continue; // Drop word entirely outside
+    
+    if (w.end <= newEnd + EPSILON) {
+      result.push({ ...w });
+    } else {
+      const clamped = { ...w, end: newEnd };
+      if (clamped.end - clamped.start > EPSILON) {
+        result.push(clamped);
       }
     }
-    if (updatedWords[i].start > updatedWords[i].end) {
-      updatedWords[i].start = Math.max(0, updatedWords[i].end - 0.05);
-    }
   }
-  return updatedWords;
+  return result;
+}
+
+function rebuildText(words: any[] | undefined, fallbackText: string): string {
+  if (!words || words.length === 0) return fallbackText;
+  const spoken = words.filter((w: any) => !w.isGap && !w.deleted);
+  if (spoken.length === 0) return fallbackText;
+  return spoken.map((w: any) => w.word || w.text || '').join(' ');
 }
 
 export function useTimelineDragging({
@@ -215,6 +221,7 @@ export function useTimelineDragging({
             const seg = { ...currSegment, start: newTime };
             if (seg.words && seg.words.length > 0) {
               seg.words = adjustWordsOnStartChange(seg.words, newTime);
+              seg.text = rebuildText(seg.words, seg.text);
             }
             newSegments[index] = seg;
 
@@ -223,6 +230,7 @@ export function useTimelineDragging({
               const prevSeg = { ...prevSegment, end: newTime };
               if (prevSeg.words && prevSeg.words.length > 0) {
                 prevSeg.words = adjustWordsOnEndChange(prevSeg.words, newTime);
+                prevSeg.text = rebuildText(prevSeg.words, prevSeg.text);
               }
               newSegments[index - 1] = prevSeg;
             }
@@ -236,6 +244,7 @@ export function useTimelineDragging({
             const seg = { ...currSegment, end: newTime };
             if (seg.words && seg.words.length > 0) {
               seg.words = adjustWordsOnEndChange(seg.words, newTime);
+              seg.text = rebuildText(seg.words, seg.text);
             }
             newSegments[index] = seg;
 
@@ -244,6 +253,7 @@ export function useTimelineDragging({
               const pushed = { ...nextSeg, start: newTime };
               if (pushed.words && pushed.words.length > 0) {
                 pushed.words = adjustWordsOnStartChange(pushed.words, newTime);
+                pushed.text = rebuildText(pushed.words, pushed.text);
               }
               newSegments[index + 1] = pushed;
             }
@@ -280,10 +290,12 @@ export function useTimelineDragging({
 
             if (currSegment.words && currSegment.words.length > 0) {
               currSegment.words = adjustWordsOnEndChange(currSegment.words, newTime);
+              currSegment.text = rebuildText(currSegment.words, currSegment.text);
             }
 
             if (nextSegment.words && nextSegment.words.length > 0) {
               nextSegment.words = adjustWordsOnStartChange(nextSegment.words, newTime);
+              nextSegment.text = rebuildText(nextSegment.words, nextSegment.text);
             }
 
             newSegments[index] = currSegment;

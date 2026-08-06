@@ -545,13 +545,29 @@ function EditorContent() {
   };
 
   const generateSRT = () => {
-    if (!editableSegments || editableSegments.length === 0) return "";
     let srt = "";
+    
+    const toTimelineTime = (mediaTime: number) => {
+      const activeSeg = videoSegments.find(s => mediaTime >= s.sourceStart && mediaTime <= s.sourceEnd && !s.deleted);
+      if (activeSeg) {
+        return activeSeg.timelineStart + (mediaTime - activeSeg.sourceStart);
+      }
+      const closest = [...videoSegments].filter(s => !s.deleted).sort((a, b) => Math.abs(a.sourceStart - mediaTime) - Math.abs(b.sourceStart - mediaTime))[0];
+      if (closest) {
+        return closest.timelineStart + (mediaTime - closest.sourceStart);
+      }
+      return mediaTime;
+    };
+
     editableSegments.forEach((seg, idx) => {
       const realWords = seg.words ? seg.words.filter((w: any) => !w.deleted && !w.isGap) : [];
       if (realWords.length === 0 && seg.words && seg.words.length > 0) return;
       const text = realWords.length > 0 ? realWords.map((w: any) => w.word).join(" ") : seg.text;
-      srt += `${idx + 1}\n${formatSrtTime(seg.start)} --> ${formatSrtTime(seg.end)}\n${text}\n\n`;
+      
+      const tlStart = toTimelineTime(seg.start);
+      const tlEnd = toTimelineTime(seg.end);
+      
+      srt += `${idx + 1}\n${formatSrtTime(tlStart)} --> ${formatSrtTime(tlEnd)}\n${text}\n\n`;
     });
     return srt;
   };

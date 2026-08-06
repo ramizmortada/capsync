@@ -361,6 +361,24 @@ async def burn_subtitles(
         if not kept_ranges:
             kept_ranges = [(0.0, total_duration)]
 
+        # Merge adjacent or overlapping ranges to prevent unnecessary FFmpeg splicing desync
+        merged_ranges = []
+        if kept_ranges:
+            kept_ranges.sort(key=lambda x: x[0])
+            curr_start, curr_end = kept_ranges[0]
+            for r_start, r_end in kept_ranges[1:]:
+                if r_start <= curr_end + 0.05:
+                    curr_end = max(curr_end, r_end)
+                else:
+                    merged_ranges.append((curr_start, curr_end))
+                    curr_start, curr_end = r_start, r_end
+            merged_ranges.append((curr_start, curr_end))
+        kept_ranges = merged_ranges
+
+        print(f"DEBUG BURN: Total duration = {total_duration}", flush=True)
+        print(f"DEBUG BURN: Raw videoSegments count = {len(parsed_video_segments)}", flush=True)
+        print(f"DEBUG BURN: kept_ranges = {kept_ranges}", flush=True)
+
         # Shift subtitle timestamps to match spliced video output timeline
         def map_source_to_timeline(source_time: float) -> float:
             timeline_offset = 0.0
@@ -373,19 +391,57 @@ async def burn_subtitles(
             return timeline_offset
 
         shifted_segments = []
+
         for seg in parsed_segments:
-            new_seg = dict(seg)
-            new_seg["start"] = map_source_to_timeline(seg.get("start", 0.0))
-            new_seg["end"] = map_source_to_timeline(seg.get("end", 0.0))
-            if "words" in seg:
-                new_words = []
-                for w in seg["words"]:
-                    nw = dict(w)
-                    nw["start"] = map_source_to_timeline(w.get("start", 0.0))
-                    nw["end"] = map_source_to_timeline(w.get("end", 0.0))
-                    new_words.append(nw)
-                new_seg["words"] = new_words
-            shifted_segments.append(new_seg)
+            words = seg.get("words", [])
+            if words:
+                for src_start, src_end in kept_ranges:
+                    range_words = []
+                    for w in words:
+                        w_start = float(w.get("start", 0))
+                        w_end = float(w.get("end", 0))
+                        if w_end > src_start + 0.01 and w_start < src_end - 0.01:
+                            nw = dict(w)
+                            nw["start"] = max(w_start, src_start)
+                            nw["end"] = min(w_end, src_end)
+                            range_words.append(nw)
+                    
+                    if not range_words:
+                        continue
+
+                    mapped_words = []
+                    for w in range_words:
+                        nw = dict(w)
+                        nw["start"] = map_source_to_timeline(w["start"])
+                        nw["end"] = map_source_to_timeline(w["end"])
+                        mapped_words.append(nw)
+
+                    seg_start = mapped_words[0]["start"]
+                    seg_end = mapped_words[-1]["end"]
+                    seg_text = " ".join([w.get("word", w.get("text", "")) for w in mapped_words if not w.get("deleted") and not w.get("isGap")])
+
+                    if seg_text.strip():
+                        new_seg = dict(seg)
+                        new_seg["start"] = seg_start
+                        new_seg["end"] = seg_end
+                        new_seg["text"] = seg_text
+                        new_seg["words"] = mapped_words
+                        shifted_segments.append(new_seg)
+            else:
+                seg_start_src = float(seg.get("start", 0))
+                seg_end_src = float(seg.get("end", 0))
+                for src_start, src_end in kept_ranges:
+                    if seg_end_src > src_start + 0.01 and seg_start_src < src_end - 0.01:
+                        c_start = max(seg_start_src, src_start)
+                        c_end = min(seg_end_src, src_end)
+                        new_seg = dict(seg)
+                        new_seg["start"] = map_source_to_timeline(c_start)
+                        new_seg["end"] = map_source_to_timeline(c_end)
+                        shifted_segments.append(new_seg)
+
+        print(f"DEBUG BURN: Shifted segments count = {len(shifted_segments)}", flush=True)
+        for idx, s in enumerate(shifted_segments[:5]):
+            print(f"DEBUG BURN Seg {idx}: start={s['start']:.2f}, end={s['end']:.2f}, text='{s['text']}'", flush=True)
 
         # 3. Generate ASS content using cleaned/shifted segments
         ass_content = generate_ass(shifted_segments, parsed_style, canvas_w, canvas_h)

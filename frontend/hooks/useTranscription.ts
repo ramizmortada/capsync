@@ -4,12 +4,10 @@ export function mapTranscriptionToTimeline(rawSegments: any[], videoSegments: an
   const activeSegs = (videoSegments || []).filter((s: any) => !s.deleted);
   if (activeSegs.length === 0) return rawSegments;
 
-  const mapTimeToTimeline = (sourceTime: number): number | null => {
-    const seg = activeSegs.find(
+  const isTimeInActiveRange = (sourceTime: number): boolean => {
+    return activeSegs.some(
       (s: any) => sourceTime >= s.sourceStart - 0.05 && sourceTime <= s.sourceEnd + 0.05
     );
-    if (!seg) return null;
-    return seg.timelineStart + Math.max(0, Math.min(seg.timelineEnd - seg.timelineStart, sourceTime - seg.sourceStart));
   };
 
   const processedSegments: any[] = [];
@@ -17,33 +15,20 @@ export function mapTranscriptionToTimeline(rawSegments: any[], videoSegments: an
   for (const seg of rawSegments) {
     let mappedWords: any[] = [];
     if (seg.words && seg.words.length > 0) {
-      mappedWords = seg.words
-        .map((w: any) => {
-          const wStart = mapTimeToTimeline(w.start);
-          const wEnd = mapTimeToTimeline(w.end);
-          if (wStart === null || wEnd === null) return null;
-          return {
-            ...w,
-            start: wStart,
-            end: wEnd,
-            word: w.word || w.text
-          };
-        })
-        .filter(Boolean);
-
+      mappedWords = seg.words.filter((w: any) => isTimeInActiveRange(w.start) && isTimeInActiveRange(w.end));
       if (mappedWords.length === 0) continue;
+    } else {
+      // If no words, check if the segment boundaries are in active range
+      if (!isTimeInActiveRange(seg.start) && !isTimeInActiveRange(seg.end)) {
+        continue;
+      }
     }
-
-    const mappedStart = mapTimeToTimeline(seg.start);
-    const mappedEnd = mapTimeToTimeline(seg.end);
-
-    if (mappedStart === null && mappedEnd === null && mappedWords.length === 0) continue;
 
     const firstWord = mappedWords[0];
     const lastWord = mappedWords[mappedWords.length - 1];
 
-    const finalStart = firstWord ? firstWord.start : (mappedStart ?? 0);
-    const finalEnd = lastWord ? lastWord.end : (mappedEnd ?? finalStart + 1);
+    const finalStart = firstWord ? firstWord.start : seg.start;
+    const finalEnd = lastWord ? lastWord.end : seg.end;
 
     const segmentText = mappedWords.length > 0
       ? mappedWords.map((w: any) => w.word || w.text).join(" ")
