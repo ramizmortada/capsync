@@ -28,6 +28,8 @@ interface InteractiveTimelineProps {
   handleLiftDelete: (indices: (number|string)[]) => void;
   handleRippleDelete: (indices: (number|string)[]) => void;
   handleRippleDeleteRange: (start: number, end: number) => void;
+  handleVideoDelete?: (ids: string[]) => void;
+  handleVideoRippleDelete?: (ids: string[]) => void;
   handleClearTrack: (trackType: 'subtitle' | 'video') => void;
   setDraggingBoundary: (val: DragTarget | null) => void;
   draggingBoundary: DragTarget | null;
@@ -62,8 +64,11 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   rippleDeletes,
   selectedIndexes,
   setSelectedIndexes,
+  handleLiftDelete,
   handleRippleDelete,
   handleRippleDeleteRange,
+  handleVideoDelete,
+  handleVideoRippleDelete,
   handleClearTrack,
   setDraggingBoundary,
   draggingBoundary,
@@ -308,18 +313,31 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
     const targetTimelineTime = percentage * timelineDuration;
     const mediaTime = toMediaTime(targetTimelineTime);
 
-    // Find boundaries of this empty space
     let prevSeg = null;
     let nextSeg = null;
     let isInsideSegment = false;
     
     for (const seg of editableSegments) {
-      if (mediaTime >= seg.start && mediaTime <= seg.end) {
+      const segTlStart = toTimelineTime(seg.start);
+      const segTlEnd = toTimelineTime(seg.end);
+      if (targetTimelineTime >= segTlStart && targetTimelineTime <= segTlEnd) {
         isInsideSegment = true;
         break;
       }
-      if (seg.end <= mediaTime) prevSeg = seg;
-      if (seg.start >= mediaTime && !nextSeg) nextSeg = seg;
+      if (seg.end <= mediaTime) {
+        if (!prevSeg || seg.end > prevSeg.end) prevSeg = seg;
+      }
+      if (seg.start >= mediaTime) {
+        if (!nextSeg || seg.start < nextSeg.start) nextSeg = seg;
+      }
+    }
+
+    for (const vSeg of videoSegments) {
+      if (vSeg.deleted) continue;
+      if (targetTimelineTime >= vSeg.timelineStart && targetTimelineTime <= vSeg.timelineEnd) {
+        isInsideSegment = true;
+        break;
+      }
     }
 
     if (isInsideSegment) return;
@@ -327,18 +345,17 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
     const gapStart = prevSeg ? prevSeg.end : 0;
     const gapEnd = nextSeg ? nextSeg.start : mediaDuration;
 
-    if (gapEnd - gapStart > 0.01) {
-      setContextMenu({
-        x: e.clientX,
-        y: e.clientY,
-        type: 'Empty Space',
-        segmentIdx: -1,
-        wordIdx: -1,
-        isDeleted: false,
-        gapStart,
-        gapEnd,
-      });
-    }
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      type: 'Empty Space',
+      segmentIdx: -1,
+      wordIdx: -1,
+      isDeleted: false,
+      gapStart,
+      gapEnd,
+      insertTime: mediaTime,
+    });
   };
 
 
@@ -516,6 +533,18 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                     : 'bg-indigo-900/40 border-indigo-500/50 text-indigo-200 z-10 hover:border-indigo-400 hover:z-20 cursor-grab active:cursor-grabbing'
                 }`}
                 style={{ left: `${left}%`, width: `${width}%` }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSelectedVideoIndexes([segment.id]);
+                  setSelectedIndexes([]);
+                  setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    type: 'Video Segment',
+                    videoSegmentId: segment.id,
+                  });
+                }}
                 onPointerDown={(e) => {
                   e.stopPropagation();
                   if (cursorMode === 'cut') {
@@ -591,11 +620,15 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
           {/* Subtitle Segments blocks */}
           {editableSegments.map((segment, index) => {
-            const tlStart = segment.start;
-            const tlEnd = segment.end;
+            const tlStart = toTimelineTime(segment.start);
+            const tlEnd = toTimelineTime(segment.end);
             if (tlStart >= tlEnd) return null;
+            if (!isInActiveVideoRange(segment.start, segment.end)) return null;
+
             const left = (tlStart / timelineDuration) * 100;
             const width = ((tlEnd - tlStart) / timelineDuration) * 100;
+            if (width <= 0) return null;
+
             const isActive = currentTime >= (tlStart - 0.05) && currentTime < (tlEnd - 0.05);
             
             const realWords = segment.words ? segment.words.filter((w: any) => !w.isGap) : [];
@@ -605,6 +638,18 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
             return (
               <div 
                 key={index}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setSelectedIndexes([index]);
+                  setSelectedVideoIndexes([]);
+                  setContextMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    type: 'Subtitle Segment',
+                    segmentIdx: index,
+                  });
+                }}
                 onPointerDown={(e) => {
                   if (zoomLevel >= 15) return; // Parent is intangible when zoomed in
                   e.stopPropagation();
@@ -635,7 +680,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                       index,
                       initialStart: segment.start,
                       initialEnd: segment.end,
-                      dragOffset: clickTimelineTime - segment.start
+                      dragOffset: toMediaTime(clickTimelineTime) - segment.start
                     });
                   }
                   if (e.shiftKey) {
@@ -682,11 +727,13 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           {zoomLevel >= 15 && editableSegments.map((segment, index) => {
             if (!segment.words || segment.words.length === 0) return null;
             return segment.words.map((word: any, wIdx: number) => {
-              const tlStart = word.start;
-              const tlEnd = word.end;
+              const tlStart = toTimelineTime(word.start);
+              const tlEnd = toTimelineTime(word.end);
               if (tlStart >= tlEnd) return null;
+              if (!isInActiveVideoRange(word.start, word.end)) return null;
               const left = (tlStart / timelineDuration) * 100;
               const width = ((tlEnd - tlStart) / timelineDuration) * 100;
+              if (width <= 0) return null;
               const isDeleted = word.deleted;
 
               const selectItem = (e: React.MouseEvent | React.PointerEvent) => {
@@ -772,7 +819,35 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           handleToggleWordDelete={handleToggleWordDelete}
           handleRippleDelete={handleRippleDelete}
           handleRippleDeleteRange={handleRippleDeleteRange}
+          handleVideoRippleDelete={handleVideoRippleDelete}
+          handleVideoDelete={handleVideoDelete}
+          handleLiftDelete={handleLiftDelete}
           handleClearTrack={handleClearTrack}
+          handleInsertSubtitle={(time: number) => {
+            setSegmentHistory((prev: any) => ({
+              past: [...prev.past, { segments: [...editableSegments], rippleDeletes: [...rippleDeletes], videoSegments: [...videoSegments] }].slice(-50),
+              future: [],
+            }));
+            const newSegment = {
+              start: time,
+              end: time + 1,
+              text: "New Subtitle",
+              words: [
+                {
+                  word: "New Subtitle",
+                  start: time,
+                  end: time + 1,
+                  deleted: false,
+                  isGap: false
+                }
+              ]
+            };
+            setEditableSegments((prev: any[]) => {
+              const newSegments = [...prev, newSegment];
+              newSegments.sort((a, b) => a.start - b.start);
+              return newSegments;
+            });
+          }}
         />
       )}
     </Card>

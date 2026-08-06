@@ -44,7 +44,7 @@ export const TimelineBoundaries = ({
         <div
           onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary('start'); }}
           className={`absolute top-[20px] h-8 w-8 -ml-4 z-30 flex justify-center items-center group ${cursorMode === 'cut' ? 'pointer-events-none' : ''}`}
-          style={{ left: `${(editableSegments[0].start / timelineDuration) * 100}%`, ...getCursorStyle('right') }}
+          style={{ left: `${(toTimelineTime(editableSegments[0].start) / timelineDuration) * 100}%`, ...getCursorStyle('right') }}
         >
           <div className={`w-0.5 h-full transition-colors ${draggingBoundary === 'start' ? 'bg-emerald-400 w-1' : 'bg-accent-blue/40 group-hover:bg-emerald-400 group-hover:w-1'}`} />
         </div>
@@ -61,7 +61,7 @@ export const TimelineBoundaries = ({
             
             // Boundary between current item and next item
             if (nextWord) {
-              const leftPercent = (word.end / timelineDuration) * 100;
+              const leftPercent = (toTimelineTime(word.end) / timelineDuration) * 100;
               const isDraggingThisBoth = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'both' && 'wordIdx' in draggingBoundary && draggingBoundary.wordIdx === wIdx;
               
               elements.push(
@@ -83,7 +83,7 @@ export const TimelineBoundaries = ({
 
           // Render parent segment boundary handles when zoomed in
           if (index < editableSegments.length - 1) {
-            const leftPercent = (segment.end / timelineDuration) * 100;
+            const leftPercent = (toTimelineTime(segment.end) / timelineDuration) * 100;
             const isDraggingThisBoth = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'both' && 'index' in draggingBoundary && draggingBoundary.index === index;
             
             elements.push(
@@ -101,7 +101,7 @@ export const TimelineBoundaries = ({
             );
           } else {
             // Last parent segment boundary handle
-            const leftPercent = (segment.end / timelineDuration) * 100;
+            const leftPercent = (toTimelineTime(segment.end) / timelineDuration) * 100;
             elements.push(
               <div 
                 key={`parent-end-${index}`} 
@@ -118,7 +118,7 @@ export const TimelineBoundaries = ({
           const isTouching = nextSegment.start - segment.end <= 0.05;
 
           if (isTouching) {
-            const leftPercent = (segment.end / timelineDuration) * 100;
+            const leftPercent = (toTimelineTime(segment.end) / timelineDuration) * 100;
             const isDraggingThisBoth = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'both' && 'index' in draggingBoundary && draggingBoundary.index === index;
             
             elements.push(
@@ -147,8 +147,8 @@ export const TimelineBoundaries = ({
               </div>
             );
           } else {
-            const leftPercent1 = (segment.end / timelineDuration) * 100;
-            const leftPercent2 = (nextSegment.start / timelineDuration) * 100;
+            const leftPercent1 = (toTimelineTime(segment.end) / timelineDuration) * 100;
+            const leftPercent2 = (toTimelineTime(nextSegment.start) / timelineDuration) * 100;
             
             elements.push(
               <div 
@@ -173,7 +173,7 @@ export const TimelineBoundaries = ({
             );
           }
         } else {
-          const leftPercent = (segment.end / timelineDuration) * 100;
+          const leftPercent = (toTimelineTime(segment.end) / timelineDuration) * 100;
           elements.push(
             <div 
               key={`end-${index}`} 

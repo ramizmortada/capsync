@@ -1,6 +1,47 @@
 import { useEffect } from "react";
 import { DragTarget } from "../app/types";
 
+function adjustWordsOnStartChange(words: any[], newStart: number) {
+  if (!words || words.length === 0) return words;
+  const updatedWords = words.map((w: any) => ({ ...w }));
+  updatedWords[0] = { ...updatedWords[0], start: newStart };
+  if (updatedWords[0].end < newStart) {
+    updatedWords[0].end = newStart + 0.05;
+  }
+  for (let i = 0; i < updatedWords.length; i++) {
+    if (i > 0) {
+      if (updatedWords[i].start < updatedWords[i - 1].end) {
+        updatedWords[i].start = updatedWords[i - 1].end;
+      }
+    }
+    if (updatedWords[i].end < updatedWords[i].start) {
+      updatedWords[i].end = updatedWords[i].start + 0.05;
+    }
+  }
+  return updatedWords;
+}
+
+function adjustWordsOnEndChange(words: any[], newEnd: number) {
+  if (!words || words.length === 0) return words;
+  const updatedWords = words.map((w: any) => ({ ...w }));
+  const lastIdx = updatedWords.length - 1;
+  updatedWords[lastIdx] = { ...updatedWords[lastIdx], end: newEnd };
+  if (updatedWords[lastIdx].start > newEnd) {
+    updatedWords[lastIdx].start = Math.max(0, newEnd - 0.05);
+  }
+  for (let i = lastIdx; i >= 0; i--) {
+    if (i < lastIdx) {
+      if (updatedWords[i].end > updatedWords[i + 1].start) {
+        updatedWords[i].end = updatedWords[i + 1].start;
+      }
+    }
+    if (updatedWords[i].start > updatedWords[i].end) {
+      updatedWords[i].start = Math.max(0, updatedWords[i].end - 0.05);
+    }
+  }
+  return updatedWords;
+}
+
 export function useTimelineDragging({
   draggingBoundary,
   setDraggingBoundary,
@@ -37,16 +78,33 @@ export function useTimelineDragging({
       const targetTimelineTime = percentage * timelineDuration;
 
       const toMediaTime = (tlTime: number) => {
-        const seg = activeSegs.find((s: any) => tlTime >= s.timelineStart && tlTime <= s.timelineEnd);
-        if (seg) return seg.sourceStart + (tlTime - seg.timelineStart);
-        const closest = [...activeSegs].sort((a: any, b: any) => Math.abs(a.timelineStart - tlTime) - Math.abs(b.timelineStart - tlTime))[0];
-        if (closest) {
-          return closest.sourceStart + (tlTime - closest.timelineStart);
+        if (!activeSegs || activeSegs.length === 0) return tlTime;
+
+        if (tlTime <= activeSegs[0].timelineStart) {
+          return Math.max(0, activeSegs[0].sourceStart + (tlTime - activeSegs[0].timelineStart));
         }
-        return tlTime;
+
+        for (let i = 0; i < activeSegs.length; i++) {
+          const seg = activeSegs[i];
+          if (tlTime >= seg.timelineStart && tlTime <= seg.timelineEnd) {
+            return seg.sourceStart + (tlTime - seg.timelineStart);
+          }
+          if (i < activeSegs.length - 1) {
+            const nextSeg = activeSegs[i + 1];
+            if (tlTime > seg.timelineEnd && tlTime < nextSeg.timelineStart) {
+              const gapDuration = nextSeg.timelineStart - seg.timelineEnd;
+              if (gapDuration <= 0.001) return seg.sourceEnd;
+              const ratio = (tlTime - seg.timelineEnd) / gapDuration;
+              return seg.sourceEnd + ratio * (nextSeg.sourceStart - seg.sourceEnd);
+            }
+          }
+        }
+
+        const last = activeSegs[activeSegs.length - 1];
+        return last.sourceEnd + (tlTime - last.timelineEnd);
       };
 
-      let newTime = targetTimelineTime;
+      let newTime = toMediaTime(targetTimelineTime);
       
       let newSegments = [...editableSegments];
       
@@ -55,20 +113,16 @@ export function useTimelineDragging({
         newTime = Math.max(0, Math.min(newTime, nextEnd - 0.1));
         const seg = { ...newSegments[0], start: newTime };
         if (seg.words && seg.words.length > 0) {
-          const words = [...seg.words];
-          words[0] = { ...words[0], start: newTime };
-          seg.words = words;
+          seg.words = adjustWordsOnStartChange(seg.words, newTime);
         }
         newSegments[0] = seg;
       } else if (draggingBoundary === 'end') {
         const prevStart = newSegments[newSegments.length - 1].start;
-        newTime = Math.max(prevStart + 0.1, Math.min(newTime, timelineDuration));
+        const maxMediaTime = toMediaTime(timelineDuration);
+        newTime = Math.max(prevStart + 0.1, Math.min(newTime, maxMediaTime));
         const seg = { ...newSegments[newSegments.length - 1], end: newTime };
         if (seg.words && seg.words.length > 0) {
-          const words = [...seg.words];
-          const lastIdx = words.length - 1;
-          words[lastIdx] = { ...words[lastIdx], end: newTime };
-          seg.words = words;
+          seg.words = adjustWordsOnEndChange(seg.words, newTime);
         }
         newSegments[newSegments.length - 1] = seg;
       } else {
@@ -107,7 +161,8 @@ export function useTimelineDragging({
           } else if (type === 'gap-ripple') {
             const gapWord = currWords[wordIdx];
             const oldEnd = gapWord.end;
-            newTime = Math.max(gapWord.start + 0.02, Math.min(newTime, timelineDuration));
+            const maxMediaTime = toMediaTime(timelineDuration);
+            newTime = Math.max(gapWord.start + 0.02, Math.min(newTime, maxMediaTime));
             const delta = newTime - oldEnd;
 
             if (Math.abs(delta) > 0.001) {
@@ -152,35 +207,30 @@ export function useTimelineDragging({
           const nextSegment = newSegments[index + 1];
 
           if (type === 'start') {
-            const prevEnd = index > 0 ? newSegments[index - 1].end : 0;
-            newTime = Math.max(prevEnd, Math.min(newTime, currSegment.end - 0.1));
+            const maxTime = currSegment.end - 0.1;
+            newTime = Math.max(0, Math.min(newTime, maxTime));
             const seg = { ...currSegment, start: newTime };
             if (seg.words && seg.words.length > 0) {
-              const words = [...seg.words];
-              words[0] = { ...words[0], start: newTime };
-              seg.words = words;
+              seg.words = adjustWordsOnStartChange(seg.words, newTime);
             }
             newSegments[index] = seg;
           } else if (type === 'end') {
-            const nextStart = index < newSegments.length - 1 ? newSegments[index + 1].start : timelineDuration;
-            newTime = Math.max(currSegment.start + 0.1, Math.min(newTime, nextStart));
+            const maxMediaTime = toMediaTime(timelineDuration);
+            const minTime = currSegment.start + 0.1;
+            newTime = Math.max(minTime, Math.min(newTime, maxMediaTime));
             const seg = { ...currSegment, end: newTime };
             if (seg.words && seg.words.length > 0) {
-              const words = [...seg.words];
-              const lastIdx = words.length - 1;
-              words[lastIdx] = { ...words[lastIdx], end: newTime };
-              seg.words = words;
+              seg.words = adjustWordsOnEndChange(seg.words, newTime);
             }
             newSegments[index] = seg;
           } else if (type === 'body') {
             const currSegment = { ...newSegments[index] };
             const duration = currSegment.end - currSegment.start;
             const dragOffset = boundary.dragOffset || 0;
-            const prevEnd = index > 0 ? newSegments[index - 1].end : 0;
-            const nextStart = index < newSegments.length - 1 ? newSegments[index + 1].start : timelineDuration;
+            const maxMediaTime = toMediaTime(timelineDuration);
 
-            let targetStart = targetTimelineTime - dragOffset;
-            targetStart = Math.max(prevEnd, Math.min(targetStart, nextStart - duration));
+            let targetStart = toMediaTime(targetTimelineTime) - dragOffset;
+            targetStart = Math.max(0, Math.min(targetStart, maxMediaTime - duration));
             const targetEnd = targetStart + duration;
             const delta = targetStart - currSegment.start;
 
@@ -205,16 +255,11 @@ export function useTimelineDragging({
             nextSegment.start = newTime;
 
             if (currSegment.words && currSegment.words.length > 0) {
-              const words = [...currSegment.words];
-              const lastWordIdx = words.length - 1;
-              words[lastWordIdx] = { ...words[lastWordIdx], end: newTime };
-              currSegment.words = words;
+              currSegment.words = adjustWordsOnEndChange(currSegment.words, newTime);
             }
 
             if (nextSegment.words && nextSegment.words.length > 0) {
-              const words = [...nextSegment.words];
-              words[0] = { ...words[0], start: newTime };
-              nextSegment.words = words;
+              nextSegment.words = adjustWordsOnStartChange(nextSegment.words, newTime);
             }
 
             newSegments[index] = currSegment;

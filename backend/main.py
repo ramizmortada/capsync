@@ -361,8 +361,34 @@ async def burn_subtitles(
         if not kept_ranges:
             kept_ranges = [(0.0, total_duration)]
 
+        # Shift subtitle timestamps to match spliced video output timeline
+        def map_source_to_timeline(source_time: float) -> float:
+            timeline_offset = 0.0
+            for src_start, src_end in kept_ranges:
+                if source_time < src_start:
+                    return timeline_offset
+                if src_start <= source_time <= src_end:
+                    return timeline_offset + (source_time - src_start)
+                timeline_offset += (src_end - src_start)
+            return timeline_offset
+
+        shifted_segments = []
+        for seg in parsed_segments:
+            new_seg = dict(seg)
+            new_seg["start"] = map_source_to_timeline(seg.get("start", 0.0))
+            new_seg["end"] = map_source_to_timeline(seg.get("end", 0.0))
+            if "words" in seg:
+                new_words = []
+                for w in seg["words"]:
+                    nw = dict(w)
+                    nw["start"] = map_source_to_timeline(w.get("start", 0.0))
+                    nw["end"] = map_source_to_timeline(w.get("end", 0.0))
+                    new_words.append(nw)
+                new_seg["words"] = new_words
+            shifted_segments.append(new_seg)
+
         # 3. Generate ASS content using cleaned/shifted segments
-        ass_content = generate_ass(parsed_segments, parsed_style, canvas_w, canvas_h)
+        ass_content = generate_ass(shifted_segments, parsed_style, canvas_w, canvas_h)
         
         # 4. Save ASS file
         temp_ass_path_fwd = temp_ass_path.replace("\\", "/")

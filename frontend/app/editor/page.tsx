@@ -746,6 +746,8 @@ function EditorContent() {
               handleMergeSegments={handleMergeSegments}
               handleLiftDelete={handleLiftDelete}
               handleRippleDelete={handleRippleDelete}
+              handleVideoDelete={handleVideoDelete}
+              handleVideoRippleDelete={handleVideoRippleDelete}
               silenceThreshold={silenceThreshold}
               setSilenceThreshold={setSilenceThreshold}
               safePadding={safePadding}
@@ -821,6 +823,8 @@ function EditorContent() {
           handleLiftDelete={handleLiftDelete}
           handleRippleDelete={handleRippleDelete}
           handleRippleDeleteRange={handleRippleDeleteRange}
+          handleVideoDelete={handleVideoDelete}
+          handleVideoRippleDelete={handleVideoRippleDelete}
           handleClearTrack={handleClearTrack}
           setDraggingBoundary={setDraggingBoundary}
           draggingBoundary={draggingBoundary}

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { TimelineContextMenu, ContextMenuData } from "./timeline/TimelineContextMenu";
 import { formatUiTime } from "@/lib/utils";
 
 function AutoResizeTextarea({ value, onChange, className, ...props }: any) {
@@ -34,6 +35,8 @@ interface SubtitleEditorProps {
   rippleDeletes: {start: number, end: number}[];
   handleLiftDelete: (indices: (number | string)[]) => void;
   handleRippleDelete: (indices: (number | string)[]) => void;
+  handleVideoDelete?: (ids: string[]) => void;
+  handleVideoRippleDelete?: (ids: string[]) => void;
   silenceThreshold: number;
   setSilenceThreshold: (val: number) => void;
   safePadding: number;
@@ -63,6 +66,8 @@ export function SubtitleEditor({
   rippleDeletes,
   handleLiftDelete,
   handleRippleDelete,
+  handleVideoDelete,
+  handleVideoRippleDelete,
   silenceThreshold,
   setSilenceThreshold,
   safePadding,
@@ -85,7 +90,14 @@ export function SubtitleEditor({
   selectedVideoIndexes,
 }: SubtitleEditorProps) {
   const [activeTab, setActiveTab] = useState<'subtitles' | 'video'>('subtitles');
+  const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
   const lastSelectedRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const handleWindowClick = () => setContextMenu(null);
+    window.addEventListener('pointerdown', handleWindowClick);
+    return () => window.removeEventListener('pointerdown', handleWindowClick);
+  }, []);
 
   // Toggle selection or range selection
   const handleSelection = (e: React.MouseEvent, index: number) => {
@@ -310,7 +322,18 @@ export function SubtitleEditor({
               <div key={index} className="relative group">
                 <div 
                   id={`subtitle-segment-${index}`}
-                  className={`flex gap-3 px-4 py-3 border-b transition-all duration-200 ${
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleSelection(e, index);
+                    setContextMenu({
+                      x: e.clientX,
+                      y: e.clientY,
+                      type: 'Subtitle Segment',
+                      segmentIdx: index,
+                    });
+                  }}
+                  className={`flex gap-3 px-4 py-3 border-b transition-all duration-200 cursor-context-menu ${
                     isSelected
                       ? 'bg-emerald-500/10 border-l-2 border-l-emerald-500 border-b-emerald-500/30'
                       : isActive 
@@ -730,6 +753,16 @@ export function SubtitleEditor({
             </div>
           </div>
         </ScrollArea>
+      )}
+      {contextMenu && (
+        <TimelineContextMenu
+          contextMenu={contextMenu}
+          setContextMenu={setContextMenu}
+          handleRippleDelete={handleRippleDelete}
+          handleVideoRippleDelete={handleVideoRippleDelete}
+          handleVideoDelete={handleVideoDelete}
+          handleLiftDelete={handleLiftDelete}
+        />
       )}
     </Card>
   );

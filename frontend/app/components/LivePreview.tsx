@@ -328,8 +328,17 @@ export function LivePreview({
               }}
             >
               {(() => {
+                const activeSourceTime = (mediaRef.current && !mediaRef.current.paused && mediaRef.current.currentTime > 0)
+                  ? mediaRef.current.currentTime
+                  : (videoSegments && videoSegments.length > 0
+                      ? (() => {
+                          const seg = videoSegments.find((s: any) => !s.deleted && localTime >= s.timelineStart && localTime < s.timelineEnd);
+                          return seg ? seg.sourceStart + (localTime - seg.timelineStart) : localTime;
+                        })()
+                      : localTime);
+
                 const activeSegment = editableSegments.find((s: any) => {
-                  const isCurrent = localTime >= s.start && localTime < s.end;
+                  const isCurrent = activeSourceTime >= s.start && activeSourceTime < s.end;
                   if (!isCurrent) return false;
                   if (s.words && s.words.length > 0) {
                     return s.words.some((w: any) => !w.deleted && !w.isGap);
@@ -386,7 +395,7 @@ export function LivePreview({
                 let segmentScale = 1;
 
                 if (subtitleStyle.animationIn && subtitleStyle.animationIn !== 'none') {
-                  const dtIn = localTime - activeSegment.start;
+                  const dtIn = activeSourceTime - activeSegment.start;
                   const segDur = activeSegment.end - activeSegment.start;
                   const animDur = Math.min(0.2, segDur / 2);
 
@@ -402,7 +411,7 @@ export function LivePreview({
                 }
 
                 if (subtitleStyle.animationOut && subtitleStyle.animationOut !== 'none') {
-                  const dtOut = activeSegment.end - localTime;
+                  const dtOut = activeSegment.end - activeSourceTime;
                   const segDur = activeSegment.end - activeSegment.start;
                   const animDur = Math.min(0.2, segDur / 2);
 
@@ -484,11 +493,11 @@ export function LivePreview({
                   return "";
                 }
 
-                const activeWordIndex = visibleWords.findIndex((w: any) => localTime >= w.start && localTime < w.end);
+                const activeWordIndex = visibleWords.findIndex((w: any) => activeSourceTime >= w.start && activeSourceTime < w.end);
 
                 return visibleWords.map((word: any, i: number) => {
                   const isActive = i === activeWordIndex;
-                  const isPast = activeWordIndex !== -1 ? i < activeWordIndex : localTime >= word.end;
+                  const isPast = activeWordIndex !== -1 ? i < activeWordIndex : activeSourceTime >= word.end;
                   
                   let wordStyle: React.CSSProperties = {
                     display: 'inline-block',

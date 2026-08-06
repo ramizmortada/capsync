@@ -507,7 +507,7 @@ export function useSubtitleState({
     const regionsToAdd: { start: number; end: number }[] = [];
     
     setSegmentHistory((prevHistory) => ({
-      past: [...prevHistory.past, { segments: editableSegments, rippleDeletes, videoSegments }].slice(-50),
+      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments)].slice(-50),
       future: [],
     }));
 
@@ -536,6 +536,16 @@ export function useSubtitleState({
 
     if (regionsToAdd.length > 0) {
       setRippleDeletes((prev) => [...prev, ...regionsToAdd]);
+      
+      // Filter out subtitle segments inside the deleted video regions
+      setEditableSegments((prevSegments) => {
+        return prevSegments.filter((seg) => {
+          const isCompletelyInside = regionsToAdd.some(
+            (region) => seg.start >= region.start - 0.01 && seg.end <= region.end + 0.01
+          );
+          return !isCompletelyInside;
+        });
+      });
     }
   };
 
