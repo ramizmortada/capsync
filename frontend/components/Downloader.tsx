@@ -359,13 +359,13 @@ export default function Downloader({
             transition={{ type: "spring", stiffness: 250, damping: 25 }}
             className="flex-1 overflow-hidden flex flex-col min-h-0"
           >
-            <Card className="p-3.5 sm:p-4 gap-4 rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-950 border border-zinc-800 shadow-xl flex flex-col md:flex-row max-h-full shrink min-h-0 overflow-y-auto">
+            <Card className="p-4 sm:p-5 gap-5 rounded-2xl sm:rounded-3xl overflow-hidden bg-zinc-950 border border-zinc-800 shadow-xl flex flex-col max-h-full shrink min-h-0 overflow-y-auto">
               
-              {/* Left Column: YouTube Preview Player & Timestamp Capture */}
+              {/* Top Section: Wide YouTube Preview Player */}
               {info.id && (
-                <div className="w-full md:w-1/2 flex flex-col gap-2.5 shrink-0">
+                <div className="w-full flex flex-col gap-2.5 shrink-0">
                   <div className="flex flex-col">
-                    <h2 className="text-sm sm:text-base font-semibold line-clamp-1 leading-tight text-zinc-100">{info.title}</h2>
+                    <h2 className="text-base sm:text-lg font-bold line-clamp-1 leading-tight text-zinc-100">{info.title}</h2>
                     <p className="text-zinc-400 text-xs font-medium mt-0.5">{info.channel || info.uploader}</p>
                   </div>
                   <YouTubePreviewPlayer
@@ -379,83 +379,86 @@ export default function Downloader({
                 </div>
               )}
 
-              {/* Right Column: Controls & Download Options */}
-              <div className="w-full md:w-1/2 flex flex-col gap-3.5 overflow-y-auto shrink min-h-0 scrollbar-none">
+              {/* Bottom Section: Controls & Options in 2 Columns */}
+              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-5 pt-3 border-t border-zinc-800/80">
                 
-                {/* Format Toggle */}
-                <div className="flex bg-zinc-900 border border-zinc-800 rounded-xl p-1 w-full shrink-0">
-                  <button 
-                    onClick={() => setIsAudio(false)}
-                    className={`flex-1 px-3 py-1 rounded-lg font-medium text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 ${!isAudio ? 'bg-white text-black shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}
-                  >
-                    <Video className="w-3.5 h-3.5" /> Video
-                  </button>
-                  <button 
-                    onClick={() => setIsAudio(true)}
-                    className={`flex-1 px-3 py-1 rounded-lg font-medium text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 ${isAudio ? 'bg-white text-black shadow-sm' : 'text-zinc-400 hover:text-zinc-200'}`}
-                  >
-                    <Music className="w-3.5 h-3.5" /> Audio Only
-                  </button>
+                {/* Column 1: Format Toggle & Quality Options */}
+                <div className="flex flex-col gap-3.5">
+                  <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest ml-1">Format & Quality</p>
+
+                  {/* Format Toggle */}
+                  <div className="flex bg-zinc-900 border border-zinc-800 rounded-xl p-1 w-full shrink-0">
+                    <button 
+                      onClick={() => setIsAudio(false)}
+                      className={`flex-1 px-3 py-1.5 rounded-lg font-medium text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 ${!isAudio ? 'bg-white text-black shadow-sm font-bold' : 'text-zinc-400 hover:text-zinc-200'}`}
+                    >
+                      <Video className="w-3.5 h-3.5" /> Video
+                    </button>
+                    <button 
+                      onClick={() => setIsAudio(true)}
+                      className={`flex-1 px-3 py-1.5 rounded-lg font-medium text-xs sm:text-sm transition-all flex items-center justify-center gap-1.5 ${isAudio ? 'bg-white text-black shadow-sm font-bold' : 'text-zinc-400 hover:text-zinc-200'}`}
+                    >
+                      <Music className="w-3.5 h-3.5" /> Audio Only
+                    </button>
+                  </div>
+
+                  {/* Quality Selection Grid */}
+                  <AnimatePresence>
+                    {!isAudio && (
+                      <motion.div 
+                        initial={{ opacity: 0, height: 0 }} 
+                        animate={{ opacity: 1, height: 'auto' }} 
+                        exit={{ opacity: 0, height: 0 }} 
+                        className="w-full flex flex-col gap-1.5 shrink-0"
+                      >
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { val: '2160', label: '4K', labelFull: '2160p' },
+                            { val: '1440', label: '2K', labelFull: '1440p' },
+                            { val: '1080', label: 'FHD', labelFull: '1080p' },
+                            { val: '720', label: 'HD', labelFull: '720p' },
+                            { val: '480', label: 'SD', labelFull: '480p' },
+                            { val: '360', label: 'Low', labelFull: '360p' }
+                          ].map(opt => {
+                            const isAvailable = Boolean(info.sizes?.[opt.val]);
+                            const size = info.sizes?.[opt.val] ? `${(info.sizes[opt.val] / 1024 / 1024).toFixed(1)} MB` : '';
+                            const isActive = quality === opt.val;
+                            return (
+                              <button
+                                key={opt.val}
+                                disabled={!isAvailable}
+                                onClick={() => setQuality(opt.val)}
+                                className={`flex flex-col items-center justify-center py-2 px-1 rounded-xl border transition-all ${
+                                  !isAvailable
+                                    ? 'bg-zinc-950/40 border-zinc-900/60 text-zinc-700 cursor-not-allowed opacity-40'
+                                    : isActive 
+                                      ? 'bg-zinc-800 border-zinc-500 text-zinc-100 shadow-sm font-bold' 
+                                      : 'bg-zinc-900/50 border-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:border-zinc-700 hover:text-zinc-200'
+                                }`}
+                              >
+                                <span className="font-semibold text-xs">{opt.labelFull}</span>
+                                <span className="text-[9px] opacity-75 mt-0.5 min-h-[14px]">
+                                  {isAvailable ? size : 'Unavailable'}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
-                {/* Quality Selection Grid */}
-                <AnimatePresence>
-                  {!isAudio && (
-                    <motion.div 
-                      initial={{ opacity: 0, height: 0 }} 
-                      animate={{ opacity: 1, height: 'auto' }} 
-                      exit={{ opacity: 0, height: 0 }} 
-                      className="w-full flex flex-col gap-1.5 shrink-0"
-                    >
-                      <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest ml-1">Quality</p>
-                      <div className="grid grid-cols-3 gap-1.5">
-                        {[
-                          { val: '2160', label: '4K', labelFull: '2160p' },
-                          { val: '1440', label: '2K', labelFull: '1440p' },
-                          { val: '1080', label: 'FHD', labelFull: '1080p' },
-                          { val: '720', label: 'HD', labelFull: '720p' },
-                          { val: '480', label: 'SD', labelFull: '480p' },
-                          { val: '360', label: 'Low', labelFull: '360p' }
-                        ].map(opt => {
-                          const isAvailable = Boolean(info.sizes?.[opt.val]);
-                          const size = info.sizes?.[opt.val] ? `${(info.sizes[opt.val] / 1024 / 1024).toFixed(1)} MB` : '';
-                          const isActive = quality === opt.val;
-                          return (
-                            <button
-                              key={opt.val}
-                              disabled={!isAvailable}
-                              onClick={() => setQuality(opt.val)}
-                              className={`flex flex-col items-center justify-center py-1.5 px-1 rounded-lg border transition-all ${
-                                !isAvailable
-                                  ? 'bg-zinc-950/40 border-zinc-900/60 text-zinc-700 cursor-not-allowed opacity-40'
-                                  : isActive 
-                                    ? 'bg-zinc-800 border-zinc-500 text-zinc-100 shadow-sm' 
-                                    : 'bg-zinc-900/50 border-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:border-zinc-700 hover:text-zinc-200'
-                              }`}
-                            >
-                              <span className="font-medium text-xs">{opt.labelFull}</span>
-                              <span className="text-[9px] opacity-75 mt-0.5 min-h-[14px]">
-                                {isAvailable ? size : 'Unavailable'}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Segment Clipping Section (Always Visible) */}
-                <div className="w-full flex flex-col gap-2 shrink-0 border-t border-zinc-800/80 pt-3">
+                {/* Column 2: Clip Range & Action Buttons */}
+                <div className="flex flex-col gap-3.5">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300 flex-wrap">
                       <Scissors className={`w-3.5 h-3.5 ${isClipping ? 'text-amber-400' : 'text-zinc-500'}`} />
-                      <span>Clip</span>
+                      <span>Clip Segment</span>
                       {endSeconds > startSeconds && (
                         <span className="ml-1 text-[11px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-400/10 text-amber-400 border border-amber-400/30 flex items-center gap-1">
                           <span>Length:</span>
                           <span>{formatDurationBadge(endSeconds - startSeconds)}</span>
-                          <span className="text-amber-400/70 font-normal">({formatSecondsToHHMMSS(endSeconds - startSeconds)})</span>
                         </span>
                       )}
                     </div>
@@ -520,118 +523,112 @@ export default function Downloader({
                       </p>
                     )}
                   </div>
-                </div>
 
-                {/* Cache Status Banner & Download Action Buttons */}
-                <div className="flex flex-col gap-2.5 shrink-0">
-                  {isCached && !downloading && (
-                    <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl text-xs text-emerald-400 font-medium">
-                      <div className="flex items-center gap-1.5">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        <span>Available in Cache Storage {cachedSizeMb ? `(${cachedSizeMb} MB)` : ''}</span>
-                      </div>
-                      <span className="text-[10px] font-mono bg-emerald-500/20 px-2 py-0.5 rounded text-emerald-300">Fast Clip Ready</span>
-                    </div>
-                  )}
-
-                  {isCached && !downloading ? (
-                    <div className="flex flex-col gap-2">
-                      <div className="grid grid-cols-2 gap-2">
-                        {/* Button 1: Save/Extract Clip */}
-                        <Button 
-                          onClick={() => startDownload('download')} 
-                          disabled={isClipping && Boolean(clippingError)}
-                          className="bg-emerald-500 hover:bg-emerald-600 text-black font-bold h-11 text-xs sm:text-sm rounded-xl shadow-md gap-1.5"
-                        >
-                          <Scissors className="w-4 h-4" />
-                          <span>Save Clip</span>
-                        </Button>
-
-                        {/* Button 2: Open Location */}
-                        <Button 
-                          onClick={async () => {
-                            if (cachedFilePath) {
-                              fetch('/api/open-location', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ filepath: cachedFilePath })
-                              }).catch(() => {});
-                              window.open('/api/serve?file=' + encodeURIComponent(cachedFilePath), '_blank');
-                            } else {
-                              startDownload('download');
-                            }
-                          }}
-                          variant="outline"
-                          className="bg-zinc-900 border-zinc-700 hover:bg-zinc-800 text-white font-bold h-11 text-xs sm:text-sm rounded-xl shadow-md gap-1.5"
-                        >
-                          <Folder className="w-4 h-4 text-amber-400" />
-                          <span>Open Location</span>
-                        </Button>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsCached(false);
-                          startDownload('download');
-                        }}
-                        className="text-[11px] text-zinc-500 hover:text-zinc-300 underline transition-colors self-center mt-0.5"
-                      >
-                        Re-download fresh from YouTube
-                      </button>
-                    </div>
-                  ) : (
-                    <Button 
-                      onClick={() => startDownload('download')} 
-                      disabled={(!downloading && loading) || (!downloading && isClipping && Boolean(clippingError))}
-                      className={`w-full rounded-xl h-11 text-sm font-bold transition-colors relative overflow-hidden disabled:opacity-50 ${
-                        downloading 
-                          ? 'bg-zinc-800 text-zinc-100 hover:bg-zinc-700 border border-zinc-700' 
-                          : 'bg-white text-black hover:bg-zinc-200 shadow-md'
-                      }`}
-                    >
-                      <span className="relative z-10 flex items-center justify-center gap-2">
-                        {downloading 
-                          ? 'Cancel Download' 
-                          : (isClipping ? 'Download & Save Clip' : 'Download Full Video')
-                        } 
-                        {downloading 
-                          ? <div className="w-3 h-3 bg-current rounded-sm" /> 
-                          : <Download className="w-4 h-4" />
-                        }
-                      </span>
-                    </Button>
-                  )}
-
-                  {/* Progress Indicators */}
-                  <AnimatePresence>
-                    {downloading && (
-                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="space-y-1.5">
-                        <div className="flex justify-between text-[11px] text-zinc-400 font-medium px-1">
-                          <span>{statusText}</span>
-                          <span className="text-zinc-100">{progress > 0 ? `${progress.toFixed(1)}%` : 'Fetching stream...'}</span>
+                  {/* Cache Status Banner & Download Action Buttons */}
+                  <div className="flex flex-col gap-2.5 mt-auto pt-1">
+                    {isCached && !downloading && (
+                      <div className="flex items-center justify-between bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-xl text-xs text-emerald-400 font-medium">
+                        <div className="flex items-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>Available in Cache Storage {cachedSizeMb ? `(${cachedSizeMb} MB)` : ''}</span>
                         </div>
-                        <div className="h-1.5 w-full rounded-full bg-zinc-900 border border-zinc-800 overflow-hidden relative">
-                          {progress > 0 ? (
-                            <div 
-                              className="h-full bg-white transition-all duration-300 rounded-full" 
-                              style={{ width: `${progress}%` }} 
-                            />
-                          ) : (
-                            <div className="h-full w-full bg-gradient-to-r from-amber-500/20 via-amber-400 to-amber-500/20 animate-pulse rounded-full" />
-                          )}
-                        </div>
-                      </motion.div>
+                        <span className="text-[10px] font-mono bg-emerald-500/20 px-2 py-0.5 rounded text-emerald-300">Fast Clip Ready</span>
+                      </div>
                     )}
-                  </AnimatePresence>
-                </div>
-                
-                {children && (
-                  <div className="w-full mt-4 pt-4 border-t border-zinc-800">
-                    {children}
+
+                    {isCached && !downloading ? (
+                      <div className="flex flex-col gap-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          {/* Button 1: Save/Extract Clip */}
+                          <Button 
+                            onClick={() => startDownload('download')} 
+                            disabled={isClipping && Boolean(clippingError)}
+                            className="bg-emerald-500 hover:bg-emerald-600 text-black font-bold h-11 text-xs sm:text-sm rounded-xl shadow-md gap-1.5"
+                          >
+                            <Scissors className="w-4 h-4" />
+                            <span>Save Clip</span>
+                          </Button>
+
+                          {/* Button 2: Open Location */}
+                          <Button 
+                            onClick={async () => {
+                              if (cachedFilePath) {
+                                fetch('/api/open-location', {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ filepath: cachedFilePath })
+                                }).catch(() => {});
+                                window.open('/api/serve?file=' + encodeURIComponent(cachedFilePath), '_blank');
+                              } else {
+                                startDownload('download');
+                              }
+                            }}
+                            variant="outline"
+                            className="bg-zinc-900 border-zinc-700 hover:bg-zinc-800 text-white font-bold h-11 text-xs sm:text-sm rounded-xl shadow-md gap-1.5"
+                          >
+                            <Folder className="w-4 h-4 text-amber-400" />
+                            <span>Open Location</span>
+                          </Button>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCached(false);
+                            startDownload('download');
+                          }}
+                          className="text-[11px] text-zinc-500 hover:text-zinc-300 underline transition-colors self-center mt-0.5"
+                        >
+                          Re-download fresh from YouTube
+                        </button>
+                      </div>
+                    ) : (
+                      <Button 
+                        onClick={() => startDownload('download')} 
+                        disabled={(!downloading && loading) || (!downloading && isClipping && Boolean(clippingError))}
+                        className={`w-full rounded-xl h-11 text-sm font-bold transition-colors relative overflow-hidden disabled:opacity-50 ${
+                          downloading 
+                            ? 'bg-zinc-800 text-zinc-100 hover:bg-zinc-700 border border-zinc-700' 
+                            : 'bg-white text-black hover:bg-zinc-200 shadow-md'
+                        }`}
+                      >
+                        <span className="relative z-10 flex items-center justify-center gap-2">
+                          {downloading 
+                            ? 'Cancel Download' 
+                            : (isClipping ? 'Download & Save Clip' : 'Download Full Video')
+                          } 
+                          {downloading 
+                            ? <div className="w-3 h-3 bg-current rounded-sm" /> 
+                            : <Download className="w-4 h-4" />
+                          }
+                        </span>
+                      </Button>
+                    )}
+
+                    {/* Progress Indicators */}
+                    <AnimatePresence>
+                      {downloading && (
+                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="space-y-1.5">
+                          <div className="flex justify-between text-[11px] text-zinc-400 font-medium px-1">
+                            <span>{statusText}</span>
+                            <span className="text-zinc-100">{progress > 0 ? `${progress.toFixed(1)}%` : 'Fetching stream...'}</span>
+                          </div>
+                          <div className="h-1.5 w-full rounded-full bg-zinc-900 border border-zinc-800 overflow-hidden relative">
+                            {progress > 0 ? (
+                              <div 
+                                className="h-full bg-white transition-all duration-300 rounded-full" 
+                                style={{ width: `${progress}%` }} 
+                              />
+                            ) : (
+                              <div className="h-full w-full bg-gradient-to-r from-amber-500/20 via-amber-400 to-amber-500/20 animate-pulse rounded-full" />
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
-                )}
-                
+                </div>
+
               </div>
             </Card>
           </motion.div>
