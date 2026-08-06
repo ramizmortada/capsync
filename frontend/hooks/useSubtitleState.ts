@@ -40,7 +40,7 @@ export function useSubtitleState({
   
   const [videoSegments, setVideoSegments] = useState<VideoSegment[]>([]);
   const [selectedVideoIndexes, setSelectedVideoIndexes] = useState<string[]>([]);
-  const [cursorMode, setCursorMode] = useState<'select' | 'cut'>('select');
+  const [cursorMode, setCursorMode] = useState<'select' | 'cut' | 'resize'>('select');
 
   const [rippleDeletes, setRippleDeletes] = useState<{ start: number; end: number }[]>([]);
   const [segmentHistory, setSegmentHistory] = useState<{ past: HistoryState[]; future: HistoryState[] }>({
@@ -547,6 +547,32 @@ export function useSubtitleState({
     }
   };
 
+  const handleSubtitleCutAtTime = (mediaTime: number) => {
+    updateSegments((prev) => {
+      const targetIndex = prev.findIndex(s => mediaTime > s.start && mediaTime < s.end);
+      if (targetIndex === -1) return prev;
+      const target = prev[targetIndex];
+
+      let firstWords = target.words;
+      let secondWords = target.words;
+
+      if (target.words && target.words.length > 0) {
+        firstWords = target.words.filter((w: any) => (w.end || w.start || 0) <= mediaTime);
+        secondWords = target.words.filter((w: any) => (w.start || w.end || 0) > mediaTime);
+      }
+
+      const firstText = firstWords ? firstWords.map((w: any) => w.text || w.word).join(" ") : target.text;
+      const secondText = secondWords ? secondWords.map((w: any) => w.text || w.word).join(" ") : target.text;
+
+      const firstHalf = { ...target, end: mediaTime, text: firstText || target.text, words: firstWords };
+      const secondHalf = { ...target, start: mediaTime, text: secondText || target.text, words: secondWords, id: Math.random().toString(36).substr(2, 9) };
+
+      const newSegments = [...prev];
+      newSegments.splice(targetIndex, 1, firstHalf, secondHalf);
+      return newSegments;
+    });
+  };
+
   return {
     editableSegments,
     setEditableSegments,
@@ -578,6 +604,7 @@ export function useSubtitleState({
     handleRippleDeleteRange,
     handleDuplicateSegment,
     handleOffsetSegments,
+    handleSubtitleCutAtTime,
     handleVideoCut,
     handleVideoDelete,
     handleVideoRippleDelete,

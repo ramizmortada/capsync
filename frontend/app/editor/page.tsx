@@ -27,7 +27,7 @@ import { useTimelineDragging } from "../../hooks/useTimelineDragging";
 import { useCutZones } from "../../hooks/useCutZones";
 import { usePlaybackSync } from "../../hooks/usePlaybackSync";
 import { useProjectPersistence } from "../../hooks/useProjectPersistence";
-import { renameTimeline, getTimeline, getAllProjects, duplicateTimeline, deleteTimeline } from "@/lib/timelineStorage";
+import { renameTimeline, getTimeline, getAllProjects, duplicateTimeline, deleteTimeline, getAllTimelines } from "@/lib/timelineStorage";
 
 export type { SubtitleStyle, StylePreset, DragTarget };
 export { DEFAULT_PRESETS };
@@ -155,6 +155,7 @@ function EditorContent() {
     setSelectedVideoIndexes,
     cursorMode,
     setCursorMode,
+    handleSubtitleCutAtTime,
     handleVideoCut,
     handleVideoDelete,
     handleVideoRippleDelete,
@@ -372,6 +373,17 @@ function EditorContent() {
           isPlayingRef.current = true;
           return;
         }
+
+        // Align hardware clock to current master timeline position before starting playback
+        const activeSeg = videoSegments.find(s => !s.deleted && masterTime >= s.timelineStart && masterTime < s.timelineEnd) 
+          || videoSegments.find(s => !s.deleted);
+        if (activeSeg) {
+          const expectedSourceTime = activeSeg.sourceStart + Math.max(0, masterTime - activeSeg.timelineStart);
+          if (Math.abs(mediaRef.current.currentTime - expectedSourceTime) > 0.05) {
+            mediaRef.current.currentTime = expectedSourceTime;
+          }
+        }
+
         mediaRef.current.play().catch(e => {
           if (e.name !== 'AbortError') console.error(e);
         });
@@ -469,6 +481,18 @@ function EditorContent() {
         if (selectedVideoIndexes.length > 0) {
           handleVideoRippleDelete(selectedVideoIndexes);
         }
+      } else if (e.code === 'KeyC' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (setCursorMode) setCursorMode(prev => prev === 'cut' ? 'select' : 'cut');
+      } else if (e.code === 'KeyV' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (setCursorMode) setCursorMode('select');
+      } else if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (setCursorMode) setCursorMode('resize');
       } else if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         e.stopPropagation();
@@ -490,8 +514,21 @@ function EditorContent() {
     };
   }, [editableSegments, togglePlay, setEditableSegments, setRippleDeletes, setSegmentHistory, rippleDeletes, setCursorMode, selectedVideoIndexes, handleVideoDelete, handleVideoRippleDelete, setSelectedVideoIndexes, videoSegments, setVideoSegments, selectedIndexes, handleRippleDelete, handleLiftDelete, undo, redo]);
 
-  // Clear current project
+  // Clear current project and persistent storage
   const clearProject = async () => {
+    try {
+      if (timelineId) {
+        await deleteTimeline(timelineId);
+      } else {
+        const timelines = await getAllTimelines();
+        for (const t of timelines) {
+          await deleteTimeline(t.id);
+        }
+      }
+      await del('capsync_project');
+    } catch (e) {
+      console.error('Failed to clear timelines from storage', e);
+    }
     setFile(null);
     setStatus("idle");
     setResult(null);
@@ -813,7 +850,9 @@ function EditorContent() {
           selectedVideoIndexes={selectedVideoIndexes}
           setSelectedVideoIndexes={setSelectedVideoIndexes}
           cursorMode={cursorMode}
+          setCursorMode={setCursorMode}
           handleVideoCut={handleVideoCut}
+          handleSubtitleCutAtTime={handleSubtitleCutAtTime}
           setEditableSegments={setEditableSegments}
           setSegmentHistory={setSegmentHistory}
         />

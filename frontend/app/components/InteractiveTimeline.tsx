@@ -37,8 +37,10 @@ interface InteractiveTimelineProps {
   setVideoSegments: React.Dispatch<React.SetStateAction<VideoSegment[]>>;
   selectedVideoIndexes: string[];
   setSelectedVideoIndexes: React.Dispatch<React.SetStateAction<string[]>>;
-  cursorMode: 'select' | 'cut';
+  cursorMode: 'select' | 'cut' | 'resize';
+  setCursorMode?: (mode: 'select' | 'cut' | 'resize') => void;
   handleVideoCut: (time: number) => void;
+  handleSubtitleCutAtTime?: (time: number) => void;
   setEditableSegments: React.Dispatch<React.SetStateAction<any[]>>;
   setSegmentHistory: React.Dispatch<React.SetStateAction<{ past: any[], future: any[] }>>;
 }
@@ -72,7 +74,9 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   selectedVideoIndexes,
   setSelectedVideoIndexes,
   cursorMode,
+  setCursorMode,
   handleVideoCut,
+  handleSubtitleCutAtTime,
   setEditableSegments,
   setSegmentHistory,
 }: InteractiveTimelineProps) {
@@ -401,10 +405,14 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
         mediaDuration={timelineDuration}
         zoomLevel={zoomLevel}
         setZoomLevel={setZoomLevel}
+        cursorMode={cursorMode}
+        setCursorMode={setCursorMode}
       />
 
       {/* Scrollable Timeline Container with Headers */}
-      <div className={`flex bg-background rounded-xl overflow-hidden h-[120px] ${cursorMode === 'cut' ? 'cursor-none [&_*]:cursor-none' : ''}`}>
+      <div className={`flex bg-background rounded-xl overflow-hidden h-[120px] ${
+        cursorMode === 'cut' ? 'cursor-none [&_*]:cursor-none' : cursorMode === 'resize' ? 'cursor-ew-resize [&_*]:cursor-ew-resize' : ''
+      }`}>
         
         {/* Track Headers (Left Panel) */}
         <div className="w-12 shrink-0 bg-neutral-900/50 border-r border-neutral-800 flex flex-col relative z-10 select-none">
@@ -472,12 +480,20 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           {/* Time Ticks */}
           <div className="absolute inset-0 pointer-events-none opacity-20 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PHBhdGggZD0iTTAgMGgwLjV2NDBIMHoiIGZpbGw9IiNmZmYiLz48L3N2Zz4=')] bg-repeat-x" />
 
-          {/* Thin red line for cut mode cursor */}
+          {/* Floating red line & Scissor Icon badge for cut mode */}
           {cursorMode === 'cut' && hoverX !== null && (
-            <div 
-              className="absolute top-0 bottom-0 w-[1px] bg-red-500 z-50 pointer-events-none"
-              style={{ left: `${hoverX}px` }}
-            />
+            <>
+              <div 
+                className="absolute top-0 bottom-0 w-[1.5px] bg-red-500 z-50 pointer-events-none shadow-[0_0_8px_rgba(239,68,68,0.8)]"
+                style={{ left: `${hoverX}px` }}
+              />
+              <div 
+                className="absolute top-1 z-50 pointer-events-none -ml-3 bg-red-600 text-white p-1 rounded-full shadow-lg border border-white/40 ring-2 ring-red-500/50"
+                style={{ left: `${hoverX}px` }}
+              >
+                <Scissors className="w-3.5 h-3.5 -rotate-90" />
+              </div>
+            </>
           )}
 
           {/* Dynamic Time Ruler */}
@@ -513,7 +529,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                     }
                     const percentage = clickX / rect.width;
                     const targetTimelineTime = percentage * timelineDuration;
-                    handleVideoCut(toMediaTime(targetTimelineTime));
+                    handleVideoCut(targetTimelineTime);
                   } else {
                     if (e.shiftKey || e.ctrlKey || e.metaKey) {
                       setSelectedVideoIndexes(prev => prev.includes(segment.id) ? prev.filter(i => i !== segment.id) : [...prev, segment.id]);
@@ -594,6 +610,22 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                 onPointerDown={(e) => {
                   if (zoomLevel >= 15) return; // Parent is intangible when zoomed in
                   e.stopPropagation();
+                  if (cursorMode === 'cut') {
+                    if (trackRef.current && timelineDuration > 0) {
+                      const rect = trackRef.current.getBoundingClientRect();
+                      let clickX = e.clientX - rect.left;
+                      const playheadX = (currentTime / timelineDuration) * rect.width;
+                      if (Math.abs(clickX - playheadX) < 15) {
+                        clickX = playheadX;
+                      }
+                      const percentage = clickX / rect.width;
+                      const targetTimelineTime = percentage * timelineDuration;
+                      if (handleSubtitleCutAtTime) {
+                        handleSubtitleCutAtTime(targetTimelineTime);
+                      }
+                    }
+                    return;
+                  }
                   // Clear video selection when selecting subtitle segments
                   setSelectedVideoIndexes([]);
                   if (e.shiftKey) {

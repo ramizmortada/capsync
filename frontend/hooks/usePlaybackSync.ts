@@ -59,6 +59,19 @@ export function usePlaybackSync({
     }
   }, [mediaDuration, timelineRef, trackRef, mediaRef]);
 
+  // Ensure media currentTime is aligned on initial load or segment changes when paused
+  useEffect(() => {
+    if (mediaRef.current && !isPlayingRef.current && timelineMapRef.current.length > 0) {
+      const activeSeg = timelineMapRef.current.find(s => masterTime >= s.timelineStart && masterTime < s.timelineEnd) || timelineMapRef.current[0];
+      if (activeSeg) {
+        const expectedSourceTime = activeSeg.sourceStart + Math.max(0, masterTime - activeSeg.timelineStart);
+        if (Math.abs(mediaRef.current.currentTime - expectedSourceTime) > 0.05) {
+          mediaRef.current.currentTime = expectedSourceTime;
+        }
+      }
+    }
+  }, [videoSegments, mediaDuration, mediaRef, masterTime, isPlayingRef]);
+
   const [currentSourceTime, setCurrentSourceTime] = useState(0);
 
   useEffect(() => {
@@ -83,12 +96,21 @@ export function usePlaybackSync({
         const mediaTime = mediaRef.current.currentTime;
 
         const activeSegment = timelineMap.find(s => 
-          mediaTime >= s.sourceStart - 0.01 && mediaTime < s.sourceEnd
-        ) || timelineMap.find(s => 
           currentMaster >= s.timelineStart && currentMaster < s.timelineEnd
+        ) || timelineMap.find(s => 
+          mediaTime >= s.sourceStart - 0.01 && mediaTime < s.sourceEnd
         );
 
         if (activeSegment) {
+          const expectedSourceTime = activeSegment.sourceStart + Math.max(0, currentMaster - activeSegment.timelineStart);
+
+          // If media hardware clock is out of sync with current master timeline position (e.g. initial load after refresh), seek media hardware clock to expected source position!
+          if (Math.abs(mediaTime - expectedSourceTime) > 0.15) {
+            mediaRef.current.currentTime = expectedSourceTime;
+            animationFrameId = requestAnimationFrame(smoothSync);
+            return;
+          }
+
           // Derive master timeline position directly from video element hardware clock
           currentMaster = activeSegment.timelineStart + Math.max(0, mediaTime - activeSegment.sourceStart);
 

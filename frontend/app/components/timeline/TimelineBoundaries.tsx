@@ -23,7 +23,7 @@ interface TimelineBoundariesProps {
   timelineDuration: number;
   draggingBoundary: DragTarget | null;
   setDraggingBoundary: (val: DragTarget | null) => void;
-  cursorMode: 'select' | 'cut';
+  cursorMode: 'select' | 'cut' | 'resize';
 }
 
 export const TimelineBoundaries = ({

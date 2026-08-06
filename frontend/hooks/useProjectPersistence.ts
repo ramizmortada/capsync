@@ -52,6 +52,7 @@ export function useProjectPersistence({
   setMaxWords,
   mediaRef
 }: UseProjectPersistenceProps) {
+  const [activeId, setActiveId] = useState<string>(timelineId || 'main_timeline');
   const [isProjectLoaded, setIsProjectLoaded] = useState(false);
   const [isStyleLoaded, setIsStyleLoaded] = useState(false);
 
@@ -59,16 +60,20 @@ export function useProjectPersistence({
   useEffect(() => {
     async function loadProject() {
       try {
-        let activeId = timelineId;
-        if (!activeId) {
+        let currentId = timelineId;
+        if (!currentId) {
           const timelines = await getAllTimelines();
           if (timelines.length > 0) {
-            activeId = timelines[0].id;
+            currentId = timelines[0].id;
+          } else {
+            currentId = 'main_timeline';
           }
         }
 
-        if (activeId) {
-          const savedProject = await getTimeline(activeId);
+        setActiveId(currentId);
+
+        if (currentId) {
+          const savedProject = await getTimeline(currentId);
           if (savedProject) {
             if (savedProject.name && setTimelineName) setTimelineName(savedProject.name);
             if (savedProject.file) setFile(savedProject.file);
@@ -126,9 +131,9 @@ export function useProjectPersistence({
 
   // Save project to IndexedDB
   useEffect(() => {
-    if (isProjectLoaded && timelineId) {
+    if (isProjectLoaded && activeId) {
       saveTimeline({
-        id: timelineId,
+        id: activeId,
         name: timelineName || 'Timeline',
         createdAt: Date.now(),
         updatedAt: Date.now(),
@@ -142,7 +147,7 @@ export function useProjectPersistence({
         subtitleStyle,
       }).catch(console.error);
     }
-  }, [isProjectLoaded, timelineId, timelineName, file, status, result, editableSegments, rippleDeletes, videoSegments, videoCanvas, subtitleStyle]);
+  }, [isProjectLoaded, activeId, timelineName, file, status, result, editableSegments, rippleDeletes, videoSegments, videoCanvas, subtitleStyle]);
 
   // Save subtitle style to localStorage
   useEffect(() => {
