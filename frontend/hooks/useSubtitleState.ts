@@ -54,6 +54,135 @@ export function useSubtitleState({
     videoSegments: JSON.parse(JSON.stringify(videoSegs || [])),
   });
 
+  /**
+   * Trims, splits, or removes subtitle segments that overlap with deleted regions.
+   * - Full overlap: segment is removed entirely.
+   * - Partial overlap (tail): segment.end is trimmed to region.start.
+   * - Partial overlap (head): segment.start is trimmed to region.end.
+   * - Bridge (segment spans across the region): segment is split into two pieces.
+   * Word-level timestamps are also trimmed/filtered accordingly.
+   */
+  const trimSubtitlesByRegions = (segments: any[], regions: { start: number; end: number }[]): any[] => {
+    if (!regions || regions.length === 0) return segments;
+
+    let result = [...segments];
+
+    for (const region of regions) {
+      const trimmed: any[] = [];
+
+      for (const seg of result) {
+        const EPSILON = 0.01;
+
+        // No overlap at all — keep as-is
+        if (seg.end <= region.start + EPSILON || seg.start >= region.end - EPSILON) {
+          trimmed.push(seg);
+          continue;
+        }
+
+        // Full overlap — segment is entirely inside the deleted region
+        if (seg.start >= region.start - EPSILON && seg.end <= region.end + EPSILON) {
+          // Remove it entirely (don't push)
+          continue;
+        }
+
+        // Bridge — segment spans across the entire deleted region
+        // Split into two: [seg.start..region.start] and [region.end..seg.end]
+        if (seg.start < region.start - EPSILON && seg.end > region.end + EPSILON) {
+          const leftPart = { ...seg };
+          leftPart.end = region.start;
+          if (leftPart.words) {
+            leftPart.words = trimWordsToRange(leftPart.words, leftPart.start, region.start);
+          }
+          leftPart.text = rebuildText(leftPart.words, leftPart.text);
+          if (leftPart.end - leftPart.start > EPSILON) {
+            trimmed.push(leftPart);
+          }
+
+          const rightPart = { ...seg };
+          rightPart.start = region.end;
+          if (rightPart.words) {
+            rightPart.words = trimWordsToRange(rightPart.words, region.end, rightPart.end);
+          }
+          rightPart.text = rebuildText(rightPart.words, rightPart.text);
+          if (rightPart.end - rightPart.start > EPSILON) {
+            trimmed.push(rightPart);
+          }
+          continue;
+        }
+
+        // Partial overlap — tail extends into region (seg.start < region.start, seg.end inside region)
+        if (seg.start < region.start - EPSILON) {
+          const trimmedSeg = { ...seg, end: region.start };
+          if (trimmedSeg.words) {
+            trimmedSeg.words = trimWordsToRange(trimmedSeg.words, trimmedSeg.start, region.start);
+          }
+          trimmedSeg.text = rebuildText(trimmedSeg.words, trimmedSeg.text);
+          if (trimmedSeg.end - trimmedSeg.start > EPSILON) {
+            trimmed.push(trimmedSeg);
+          }
+          continue;
+        }
+
+        // Partial overlap — head starts inside region (seg.start inside region, seg.end > region.end)
+        if (seg.end > region.end + EPSILON) {
+          const trimmedSeg = { ...seg, start: region.end };
+          if (trimmedSeg.words) {
+            trimmedSeg.words = trimWordsToRange(trimmedSeg.words, region.end, trimmedSeg.end);
+          }
+          trimmedSeg.text = rebuildText(trimmedSeg.words, trimmedSeg.text);
+          if (trimmedSeg.end - trimmedSeg.start > EPSILON) {
+            trimmed.push(trimmedSeg);
+          }
+          continue;
+        }
+
+        // Fallback — shouldn't reach here, but keep it
+        trimmed.push(seg);
+      }
+
+      result = trimmed;
+    }
+
+    return result;
+  };
+
+  /** Filter and clamp words to only those within [rangeStart, rangeEnd] */
+  const trimWordsToRange = (words: any[], rangeStart: number, rangeEnd: number): any[] => {
+    const EPSILON = 0.01;
+    const result: any[] = [];
+
+    for (const w of words) {
+      // Word is entirely outside the range — drop it
+      if (w.end <= rangeStart + EPSILON || w.start >= rangeEnd - EPSILON) {
+        continue;
+      }
+
+      // Word is entirely inside the range — keep as-is
+      if (w.start >= rangeStart - EPSILON && w.end <= rangeEnd + EPSILON) {
+        result.push({ ...w });
+        continue;
+      }
+
+      // Word partially overlaps — clamp its boundaries
+      const clampedWord = { ...w };
+      clampedWord.start = Math.max(w.start, rangeStart);
+      clampedWord.end = Math.min(w.end, rangeEnd);
+      if (clampedWord.end - clampedWord.start > EPSILON) {
+        result.push(clampedWord);
+      }
+    }
+
+    return result;
+  };
+
+  /** Rebuild the text property from surviving non-deleted, non-gap words */
+  const rebuildText = (words: any[] | undefined, fallbackText: string): string => {
+    if (!words || words.length === 0) return fallbackText;
+    const spoken = words.filter((w: any) => !w.isGap && !w.deleted);
+    if (spoken.length === 0) return fallbackText;
+    return spoken.map((w: any) => w.word || w.text || '').join(' ');
+  };
+
   const updateSegments = (newSegments: any[] | ((prev: any[]) => any[])) => {
     setEditableSegments((prevSegments) => {
       const updated = typeof newSegments === "function" ? newSegments(prevSegments) : newSegments;
@@ -386,6 +515,8 @@ export function useSubtitleState({
       future: [],
     }));
     
+    // Trim remaining subtitles that partially overlap the deleted regions
+    newSegments = trimSubtitlesByRegions(newSegments, regionsToAdd);
     setEditableSegments(newSegments);
     setRippleDeletes(newRippleDeletes);
     recalcVideoTimeline(newRippleDeletes);
@@ -397,6 +528,9 @@ export function useSubtitleState({
       past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments)].slice(-50),
       future: [],
     }));
+    // Trim subtitles that overlap the deleted range
+    const trimmedSegments = trimSubtitlesByRegions(editableSegments, [{ start, end }]);
+    setEditableSegments(trimmedSegments);
     setRippleDeletes(newRippleDeletes);
     recalcVideoTimeline(newRippleDeletes);
   };
@@ -504,22 +638,24 @@ export function useSubtitleState({
   };
 
   const handleVideoRippleDelete = (ids: string[]) => {
-    const regionsToAdd: { start: number; end: number }[] = [];
-    
+    // Collect regions eagerly from the current videoSegments closure value
+    // (not inside a setState callback, to avoid React batching timing issues)
+    const regionsToAdd = videoSegments
+      .filter(s => ids.includes(s.id) && !s.deleted)
+      .map(s => ({ start: s.sourceStart, end: s.sourceEnd }));
+
+    if (regionsToAdd.length === 0) return;
+
     setSegmentHistory((prevHistory) => ({
       past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments)].slice(-50),
       future: [],
     }));
 
     setVideoSegments((prev) => {
-      // Mark targeted segments as deleted and collect their regions
-      const updated = prev.map(s => {
-        if (ids.includes(s.id)) {
-          regionsToAdd.push({ start: s.sourceStart, end: s.sourceEnd });
-          return { ...s, deleted: true };
-        }
-        return s;
-      });
+      // Mark targeted segments as deleted
+      const updated = prev.map(s =>
+        ids.includes(s.id) ? { ...s, deleted: true } : s
+      );
 
       // Recalculate timeline positions: only active (non-deleted) segments get timeline space
       const active = updated.filter(s => !s.deleted).sort((a, b) => a.timelineStart - b.timelineStart);
@@ -534,19 +670,12 @@ export function useSubtitleState({
       return updated;
     });
 
-    if (regionsToAdd.length > 0) {
-      setRippleDeletes((prev) => [...prev, ...regionsToAdd]);
-      
-      // Filter out subtitle segments inside the deleted video regions
-      setEditableSegments((prevSegments) => {
-        return prevSegments.filter((seg) => {
-          const isCompletelyInside = regionsToAdd.some(
-            (region) => seg.start >= region.start - 0.01 && seg.end <= region.end + 0.01
-          );
-          return !isCompletelyInside;
-        });
-      });
-    }
+    setRippleDeletes((prev) => [...prev, ...regionsToAdd]);
+
+    // Trim/split/remove subtitle segments that overlap the deleted video regions
+    setEditableSegments((prevSegments) => {
+      return trimSubtitlesByRegions(prevSegments, regionsToAdd);
+    });
   };
 
   const handleClearTrack = (trackType: 'subtitle' | 'video') => {

@@ -207,22 +207,46 @@ export function useTimelineDragging({
           const nextSegment = newSegments[index + 1];
 
           if (type === 'start') {
+            const prevSegment = index > 0 ? newSegments[index - 1] : null;
             const maxTime = currSegment.end - 0.1;
-            newTime = Math.max(0, Math.min(newTime, maxTime));
+            const minTime = prevSegment ? prevSegment.start + 0.1 : 0;
+            newTime = Math.max(minTime, Math.min(newTime, maxTime));
+
             const seg = { ...currSegment, start: newTime };
             if (seg.words && seg.words.length > 0) {
               seg.words = adjustWordsOnStartChange(seg.words, newTime);
             }
             newSegments[index] = seg;
+
+            // Push the previous segment's end if we reached it
+            if (prevSegment && newTime <= prevSegment.end) {
+              const prevSeg = { ...prevSegment, end: newTime };
+              if (prevSeg.words && prevSeg.words.length > 0) {
+                prevSeg.words = adjustWordsOnEndChange(prevSeg.words, newTime);
+              }
+              newSegments[index - 1] = prevSeg;
+            }
           } else if (type === 'end') {
+            const nextSeg = index < newSegments.length - 1 ? newSegments[index + 1] : null;
             const maxMediaTime = toMediaTime(timelineDuration);
             const minTime = currSegment.start + 0.1;
-            newTime = Math.max(minTime, Math.min(newTime, maxMediaTime));
+            const maxTime = nextSeg ? nextSeg.end - 0.1 : maxMediaTime;
+            newTime = Math.max(minTime, Math.min(newTime, maxTime));
+
             const seg = { ...currSegment, end: newTime };
             if (seg.words && seg.words.length > 0) {
               seg.words = adjustWordsOnEndChange(seg.words, newTime);
             }
             newSegments[index] = seg;
+
+            // Push the next segment's start if we reached it
+            if (nextSeg && newTime >= nextSeg.start) {
+              const pushed = { ...nextSeg, start: newTime };
+              if (pushed.words && pushed.words.length > 0) {
+                pushed.words = adjustWordsOnStartChange(pushed.words, newTime);
+              }
+              newSegments[index + 1] = pushed;
+            }
           } else if (type === 'body') {
             const currSegment = { ...newSegments[index] };
             const duration = currSegment.end - currSegment.start;

@@ -6,6 +6,7 @@ export interface ContextMenuData {
   videoSegmentId?: string;
   isDeleted?: boolean;
   type: 'Empty Space' | 'Silence' | 'Word' | 'Subtitle Segment' | 'Video Segment' | 'Subtitle Track' | 'Video Track';
+  gapStart?: number;
   gapEnd?: number;
   insertTime?: number;
 }
