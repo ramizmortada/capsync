@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { del } from "idb-keyval";
-import { ArrowLeft, Edit2, Check, Film, Folder, Copy, Trash2, Download, Video } from "lucide-react";
+import { ArrowLeft, Edit2, Check, Film, Folder, Copy, Trash2, Download, Video, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { 
@@ -42,6 +42,8 @@ function EditorContent() {
   const [projectName, setProjectName] = useState<string | null>(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInput, setTitleInput] = useState("");
+  const [isGeneratingTitle, setIsGeneratingTitle] = useState(false);
+  const [isCopiedTitle, setIsCopiedTitle] = useState(false);
 
   useEffect(() => {
     async function loadProjectInfo() {
@@ -163,6 +165,43 @@ function EditorContent() {
     redo,
     handleClearTrack,
   } = subtitleState;
+
+  const handleGenerateAiTitle = async () => {
+    const fullText = (editableSegments || [])
+      .map((s: any) => s.text)
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    if (!fullText) return;
+
+    setIsGeneratingTitle(true);
+    try {
+      const res = await fetch("/api/ai/generate-title", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript: fullText }),
+      });
+      const data = await res.json();
+      if (data.title) {
+        setTimelineName(data.title);
+        if (timelineId) {
+          await renameTimeline(timelineId, data.title);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to generate AI title:", err);
+    } finally {
+      setIsGeneratingTitle(false);
+    }
+  };
+
+  const handleCopyTitle = () => {
+    if (!timelineName) return;
+    navigator.clipboard.writeText(timelineName);
+    setIsCopiedTitle(true);
+    setTimeout(() => setIsCopiedTitle(false), 2000);
+  };
 
   const [videoCanvas, setVideoCanvas] = useState<any>({ type: 'auto' });
 
@@ -656,6 +695,41 @@ function EditorContent() {
               <Edit2 className="w-3 h-3 text-neutral-500 opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
           )}
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleGenerateAiTitle();
+            }}
+            disabled={isGeneratingTitle || editableSegments.length === 0}
+            className="h-7 w-7 text-purple-400 hover:text-purple-300 hover:bg-purple-950/50 rounded-md transition-colors shrink-0"
+            title="Generate AI Title from Transcription (Gemini)"
+          >
+            {isGeneratingTitle ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
+            ) : (
+              <Sparkles className="w-3.5 h-3.5" />
+            )}
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCopyTitle();
+            }}
+            className="h-7 w-7 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-md transition-colors shrink-0"
+            title="Copy Title to Clipboard"
+          >
+            {isCopiedTitle ? (
+              <Check className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <Copy className="w-3.5 h-3.5" />
+            )}
+          </Button>
         </div>
 
         {/* Action Buttons in Header */}
@@ -859,6 +933,8 @@ function EditorContent() {
           handleSubtitleCutAtTime={handleSubtitleCutAtTime}
           setEditableSegments={setEditableSegments}
           setSegmentHistory={setSegmentHistory}
+          onGenerateTitle={handleGenerateAiTitle}
+          isGeneratingTitle={isGeneratingTitle}
         />
       </div>
     </div>

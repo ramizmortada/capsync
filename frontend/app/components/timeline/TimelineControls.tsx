@@ -1,4 +1,4 @@
-import { ZoomIn, ZoomOut, Play, Pause, Square, MousePointer, Scissors, MoveHorizontal } from "lucide-react";
+import { ZoomIn, ZoomOut, Play, Pause, Square, MousePointer, Scissors, MoveHorizontal, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatUiTime } from "@/lib/utils";
 
@@ -12,6 +12,8 @@ interface TimelineControlsProps {
   setZoomLevel: (zoom: number) => void;
   cursorMode?: 'select' | 'cut' | 'resize';
   setCursorMode?: (mode: 'select' | 'cut' | 'resize') => void;
+  onGenerateTitle?: () => void;
+  isGeneratingTitle?: boolean;
 }
 
 export const TimelineControls = ({
@@ -24,6 +26,8 @@ export const TimelineControls = ({
   setZoomLevel,
   cursorMode = 'select',
   setCursorMode,
+  onGenerateTitle,
+  isGeneratingTitle = false,
 }: TimelineControlsProps) => {
   return (
     <div className="flex items-center justify-between px-2 mb-2 gap-4 select-none">
@@ -50,6 +54,24 @@ export const TimelineControls = ({
         <div className="ml-2 text-xs font-mono text-muted-foreground bg-background px-3 py-1 rounded-lg border border-border tracking-widest hidden sm:block">
           {formatUiTime(currentTime)} / {formatUiTime(mediaDuration)}
         </div>
+
+        {onGenerateTitle && (
+          <Button
+            onClick={onGenerateTitle}
+            disabled={isGeneratingTitle}
+            variant="ghost"
+            size="sm"
+            className="ml-1.5 h-7 px-2 gap-1.5 text-xs font-medium text-purple-400 hover:text-purple-300 hover:bg-purple-950/40 border border-purple-800/40 rounded-lg transition-all"
+            title="Generate AI Title from Transcription (Gemini)"
+          >
+            {isGeneratingTitle ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
+            ) : (
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+            )}
+            <span className="hidden sm:inline">AI Title</span>
+          </Button>
+        )}
       </div>
 
       {/* Tool Mode Buttons (Select, Cut, Resize) */}
@@ -119,3 +141,4 @@ export const TimelineControls = ({
     </div>
   );
 };
+

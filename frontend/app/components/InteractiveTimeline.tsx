@@ -45,6 +45,8 @@ interface InteractiveTimelineProps {
   handleSubtitleCutAtTime?: (time: number) => void;
   setEditableSegments: React.Dispatch<React.SetStateAction<any[]>>;
   setSegmentHistory: React.Dispatch<React.SetStateAction<{ past: any[], future: any[] }>>;
+  onGenerateTitle?: () => void;
+  isGeneratingTitle?: boolean;
 }
 
 export const InteractiveTimeline = memo(function InteractiveTimeline({
@@ -84,6 +86,8 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   handleSubtitleCutAtTime,
   setEditableSegments,
   setSegmentHistory,
+  onGenerateTitle,
+  isGeneratingTitle,
 }: InteractiveTimelineProps) {
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
   const [hoverX, setHoverX] = useState<number | null>(null);
@@ -484,6 +488,8 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
         setZoomLevel={setZoomLevel}
         cursorMode={cursorMode}
         setCursorMode={setCursorMode}
+        onGenerateTitle={onGenerateTitle}
+        isGeneratingTitle={isGeneratingTitle}
       />
 
       {/* Scrollable Timeline Container with Headers */}
