@@ -588,7 +588,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                 <div className="truncate relative z-20 pointer-events-none">Video Clip</div>
                 
                 {/* Drag handles for soft cuts */}
-                {cursorMode === 'select' && !segment.deleted && (
+                {cursorMode === 'resize' && !segment.deleted && (
                   <>
                     <div 
                       className="absolute top-0 bottom-0 left-0 w-2 cursor-w-resize z-30 hover:bg-white/20 transition-colors"

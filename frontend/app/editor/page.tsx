@@ -493,10 +493,10 @@ function EditorContent() {
         e.preventDefault();
         e.stopPropagation();
         if (setCursorMode) setCursorMode('select');
-      } else if (e.code === 'KeyR' && !e.ctrlKey && !e.metaKey) {
+      } else if (e.code === 'KeyS' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         e.stopPropagation();
-        if (setCursorMode) setCursorMode('resize');
+        if (setCursorMode) setCursorMode(prev => prev === 'resize' ? 'select' : 'resize');
       } else if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         e.stopPropagation();

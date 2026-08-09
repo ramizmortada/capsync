@@ -94,10 +94,10 @@ export const TimelineControls = ({
                 ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30 shadow-sm' 
                 : 'text-muted-foreground hover:text-foreground'
             }`}
-            title="Resize / Trim Tool (Press key R)"
+            title="Resize / Trim Tool (Press key S)"
           >
             <MoveHorizontal className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Resize (R)</span>
+            <span className="hidden sm:inline">Resize (S)</span>
           </Button>
         </div>
       )}
