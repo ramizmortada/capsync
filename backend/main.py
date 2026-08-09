@@ -476,13 +476,39 @@ async def burn_subtitles(
         
         # 6. Build and execute splicing command or direct burn command
         def get_clip_settings_for_time(t, segments):
+            if not segments:
+                return {"x": 0, "y": 0, "scale": 1}, {"top": 0, "bottom": 0, "left": 0, "right": 0}, {"enabled": False, "direction": "bottom", "length": 30}
+            
+            # 1. Match by sourceStart / sourceEnd
             for seg in segments:
                 if seg.get("deleted"): continue
-                if seg.get("sourceStart", 0) <= t + 0.01 and t - 0.01 <= seg.get("sourceEnd", 999999):
+                s_start = float(seg.get("sourceStart", seg.get("timelineStart", 0)))
+                s_end = float(seg.get("sourceEnd", seg.get("timelineEnd", 999999)))
+                if s_start <= t + 0.05 and t - 0.05 <= s_end:
                     transform = seg.get("transform", {"x": 0, "y": 0, "scale": 1})
                     crop = seg.get("crop", {"top": 0, "bottom": 0, "left": 0, "right": 0})
                     gradient_mask = seg.get("gradientMask", {"enabled": False, "direction": "bottom", "length": 30})
                     return transform, crop, gradient_mask
+
+            # 2. Match by timelineStart / timelineEnd
+            for seg in segments:
+                if seg.get("deleted"): continue
+                t_start = float(seg.get("timelineStart", 0))
+                t_end = float(seg.get("timelineEnd", 999999))
+                if t_start <= t + 0.05 and t - 0.05 <= t_end:
+                    transform = seg.get("transform", {"x": 0, "y": 0, "scale": 1})
+                    crop = seg.get("crop", {"top": 0, "bottom": 0, "left": 0, "right": 0})
+                    gradient_mask = seg.get("gradientMask", {"enabled": False, "direction": "bottom", "length": 30})
+                    return transform, crop, gradient_mask
+
+            # 3. Fallback to first active segment
+            for seg in segments:
+                if not seg.get("deleted"):
+                    transform = seg.get("transform", {"x": 0, "y": 0, "scale": 1})
+                    crop = seg.get("crop", {"top": 0, "bottom": 0, "left": 0, "right": 0})
+                    gradient_mask = seg.get("gradientMask", {"enabled": False, "direction": "bottom", "length": 30})
+                    return transform, crop, gradient_mask
+
             return {"x": 0, "y": 0, "scale": 1}, {"top": 0, "bottom": 0, "left": 0, "right": 0}, {"enabled": False, "direction": "bottom", "length": 30}
 
         filter_complex = []
@@ -522,19 +548,21 @@ async def burn_subtitles(
             g_len_pct = float(gradient_mask.get("length", 30))
             g_len = max(0.01, min(1.0, g_len_pct / 100.0))
 
+            print(f"DEBUG BURN Clip {idx}: gradientMask enabled={g_enabled}, dir={g_dir}, len={g_len_pct}%", flush=True)
+
             if g_enabled and g_len > 0:
                 if g_dir == "bottom":
-                    t = f"((H-Y)/(H*{g_len:.4f}))"
-                    a_expr = f"if(gt(Y,H*(1-{g_len:.4f})),255*(3*{t}^2-2*{t}^3),255)"
+                    t_str = f"((H-Y)/(H*{g_len:.4f}))"
+                    a_expr = f"if(gt(Y,H*(1-{g_len:.4f})),255*{t_str}*{t_str}*(3-2*{t_str}),255)"
                 elif g_dir == "top":
-                    t = f"(Y/(H*{g_len:.4f}))"
-                    a_expr = f"if(lt(Y,H*{g_len:.4f}),255*(3*{t}^2-2*{t}^3),255)"
+                    t_str = f"(Y/(H*{g_len:.4f}))"
+                    a_expr = f"if(lt(Y,H*{g_len:.4f}),255*{t_str}*{t_str}*(3-2*{t_str}),255)"
                 elif g_dir == "right":
-                    t = f"((W-X)/(W*{g_len:.4f}))"
-                    a_expr = f"if(gt(X,W*(1-{g_len:.4f})),255*(3*{t}^2-2*{t}^3),255)"
+                    t_str = f"((W-X)/(W*{g_len:.4f}))"
+                    a_expr = f"if(gt(X,W*(1-{g_len:.4f})),255*{t_str}*{t_str}*(3-2*{t_str}),255)"
                 elif g_dir == "left":
-                    t = f"(X/(W*{g_len:.4f}))"
-                    a_expr = f"if(lt(X,W*{g_len:.4f}),255*(3*{t}^2-2*{t}^3),255)"
+                    t_str = f"(X/(W*{g_len:.4f}))"
+                    a_expr = f"if(lt(X,W*{g_len:.4f}),255*{t_str}*{t_str}*(3-2*{t_str}),255)"
                 else:
                     a_expr = "255"
 

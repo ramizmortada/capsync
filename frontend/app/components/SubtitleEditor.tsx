@@ -97,6 +97,18 @@ export function SubtitleEditor({
   const prevActiveIndexRef = useRef<number | null>(null);
   const scrollAnimRef = useRef<number | null>(null);
 
+  const selectedTargetIds = useMemo(() => {
+    return (selectedVideoIndexes && selectedVideoIndexes.length > 0)
+      ? selectedVideoIndexes
+      : (videoSegments?.filter(s => !s.deleted).map(s => s.id) || []);
+  }, [selectedVideoIndexes, videoSegments]);
+
+  const activeVideoSeg = useMemo(() => {
+    return videoSegments?.find(s => selectedTargetIds.includes(s.id))
+      || videoSegments?.find(s => !s.deleted)
+      || videoSegments?.[0];
+  }, [videoSegments, selectedTargetIds]);
+
   useEffect(() => {
     const handleWindowClick = () => setContextMenu(null);
     window.addEventListener('pointerdown', handleWindowClick);
@@ -590,59 +602,52 @@ export function SubtitleEditor({
 
             {/* Transform Settings */}
             <div className="flex flex-col gap-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-                  <Video className="w-4 h-4 text-purple-500" /> Selected Clip Transform
-                </h3>
-                {selectedVideoIndexes && selectedVideoIndexes.length > 0 && (
-                  <span className="text-xs font-bold bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30 min-w-[22px] text-center inline-block">
-                    {selectedVideoIndexes.length}
-                  </span>
-                )}
-              </div>
-              
-              {(!selectedVideoIndexes || selectedVideoIndexes.length === 0) ? (
-                <div className="text-sm text-muted-foreground/60 p-6 text-center border border-dashed border-border rounded-lg bg-card/50">
-                  Select one or more video clips in the timeline to edit their transform.
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-6 bg-card border border-border rounded-lg p-5">
-                  <div className="flex flex-col gap-3">
-                    <label className="text-xs font-medium text-muted-foreground flex justify-between">
-                      <span>Position X</span>
-                      <span className="font-mono text-purple-400">
-                        {Number(videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.transform?.x || 0).toFixed(1)}%
-                      </span>
-                    </label>
-                    <input 
-                      type="range" min="-100" max="100" step="0.1"
-                      value={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.transform?.x || 0}
-                      onChange={(e) => {
-                        const val = parseFloat(e.target.value);
-                        setVideoSegments((prev: any[]) => prev.map(s => 
-                          selectedVideoIndexes.includes(s.id) 
-                            ? { ...s, transform: { ...(s.transform || {y: 0, scale: 1}), x: val } } 
-                            : s
-                        ));
-                      }}
-                      className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-purple-500 [&::-webkit-slider-thumb]:rounded-full"
-                    />
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <Video className="w-4 h-4 text-purple-500" /> Video Clip Transform & Mask
+                    </h3>
+                    <span className="text-xs font-bold bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full border border-purple-500/30 inline-block">
+                      {selectedVideoIndexes && selectedVideoIndexes.length > 0 ? `${selectedVideoIndexes.length} selected` : 'All Clips'}
+                    </span>
                   </div>
+                  
+                  <div className="grid grid-cols-2 gap-6 bg-card border border-border rounded-lg p-5">
+                    <div className="flex flex-col gap-3">
+                      <label className="text-xs font-medium text-muted-foreground flex justify-between">
+                        <span>Position X</span>
+                        <span className="font-mono text-purple-400">
+                          {Number(activeVideoSeg?.transform?.x || 0).toFixed(1)}%
+                        </span>
+                      </label>
+                      <input 
+                        type="range" min="-100" max="100" step="0.1"
+                        value={activeVideoSeg?.transform?.x || 0}
+                        onChange={(e) => {
+                          const val = parseFloat(e.target.value);
+                          setVideoSegments((prev: any[]) => prev.map(s => 
+                            selectedTargetIds.includes(s.id) 
+                              ? { ...s, transform: { ...(s.transform || {y: 0, scale: 1}), x: val } } 
+                              : s
+                          ));
+                        }}
+                        className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-purple-500 [&::-webkit-slider-thumb]:rounded-full"
+                      />
+                    </div>
                   
                   <div className="flex flex-col gap-3">
                     <label className="text-xs font-medium text-muted-foreground flex justify-between">
                       <span>Position Y</span>
                       <span className="font-mono text-purple-400">
-                        {Number(videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.transform?.y || 0).toFixed(1)}%
+                        {Number(activeVideoSeg?.transform?.y || 0).toFixed(1)}%
                       </span>
                     </label>
                     <input 
                       type="range" min="-100" max="100" step="0.1"
-                      value={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.transform?.y || 0}
+                      value={activeVideoSeg?.transform?.y || 0}
                       onChange={(e) => {
                         const val = parseFloat(e.target.value);
                         setVideoSegments((prev: any[]) => prev.map(s => 
-                          selectedVideoIndexes.includes(s.id) 
+                          selectedTargetIds.includes(s.id) 
                             ? { ...s, transform: { ...(s.transform || {x: 0, scale: 1}), y: val } } 
                             : s
                         ));
@@ -655,7 +660,7 @@ export function SubtitleEditor({
                     <label className="text-xs font-medium text-muted-foreground flex justify-between">
                       <span>Scale</span>
                       <span className="font-mono text-purple-400">
-                        {((videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.transform?.scale || 1) * 100).toFixed(0)}%
+                        {((activeVideoSeg?.transform?.scale || 1) * 100).toFixed(0)}%
                       </span>
                     </label>
                     <div className="flex items-center gap-3">
@@ -663,7 +668,7 @@ export function SubtitleEditor({
                         variant="outline" size="icon" className="h-7 w-7 shrink-0"
                         onClick={() => {
                           setVideoSegments((prev: any[]) => prev.map(s => 
-                            selectedVideoIndexes.includes(s.id) 
+                            selectedTargetIds.includes(s.id) 
                               ? { ...s, transform: { ...(s.transform || {x: 0, y: 0}), scale: Math.max(0.1, (s.transform?.scale || 1) - 0.05) } } 
                               : s
                           ));
@@ -673,11 +678,11 @@ export function SubtitleEditor({
                       </Button>
                       <input 
                         type="range" min="0.1" max="3.0" step="0.005"
-                        value={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.transform?.scale || 1}
+                        value={activeVideoSeg?.transform?.scale || 1}
                         onChange={(e) => {
                           const val = parseFloat(e.target.value);
                           setVideoSegments((prev: any[]) => prev.map(s => 
-                            selectedVideoIndexes.includes(s.id) 
+                            selectedTargetIds.includes(s.id) 
                               ? { ...s, transform: { ...(s.transform || {x: 0, y: 0}), scale: val } } 
                               : s
                           ));
@@ -688,7 +693,7 @@ export function SubtitleEditor({
                         variant="outline" size="icon" className="h-7 w-7 shrink-0"
                         onClick={() => {
                           setVideoSegments((prev: any[]) => prev.map(s => 
-                            selectedVideoIndexes.includes(s.id) 
+                            selectedTargetIds.includes(s.id) 
                               ? { ...s, transform: { ...(s.transform || {x: 0, y: 0}), scale: Math.min(3, (s.transform?.scale || 1) + 0.05) } } 
                               : s
                           ));
@@ -706,7 +711,7 @@ export function SubtitleEditor({
                       className="text-xs h-7 text-muted-foreground"
                       onClick={() => {
                         setVideoSegments((prev: any[]) => prev.map(s => 
-                          selectedVideoIndexes.includes(s.id) 
+                          selectedTargetIds.includes(s.id) 
                             ? { ...s, transform: { x: 0, y: 0, scale: 1 } } 
                             : s
                         ));
@@ -730,16 +735,16 @@ export function SubtitleEditor({
                         <label className="text-xs font-medium text-muted-foreground flex justify-between">
                           <span>Top Crop</span>
                           <span className="font-mono text-purple-400">
-                            {Number(videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.top || 0).toFixed(1)}%
+                            {Number(activeVideoSeg?.crop?.top || 0).toFixed(1)}%
                           </span>
                         </label>
                         <input 
                           type="range" min="0" max="50" step="0.5"
-                          value={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.top || 0}
+                          value={activeVideoSeg?.crop?.top || 0}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value);
                             setVideoSegments((prev: any[]) => prev.map(s => 
-                              selectedVideoIndexes.includes(s.id) 
+                              selectedTargetIds.includes(s.id) 
                                 ? { ...s, crop: { ...(s.crop || { top: 0, bottom: 0, left: 0, right: 0 }), top: val } } 
                                 : s
                             ));
@@ -753,16 +758,16 @@ export function SubtitleEditor({
                         <label className="text-xs font-medium text-muted-foreground flex justify-between">
                           <span>Bottom Crop</span>
                           <span className="font-mono text-purple-400">
-                            {Number(videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.bottom || 0).toFixed(1)}%
+                            {Number(activeVideoSeg?.crop?.bottom || 0).toFixed(1)}%
                           </span>
                         </label>
                         <input 
                           type="range" min="0" max="50" step="0.5"
-                          value={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.bottom || 0}
+                          value={activeVideoSeg?.crop?.bottom || 0}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value);
                             setVideoSegments((prev: any[]) => prev.map(s => 
-                              selectedVideoIndexes.includes(s.id) 
+                              selectedTargetIds.includes(s.id) 
                                 ? { ...s, crop: { ...(s.crop || { top: 0, bottom: 0, left: 0, right: 0 }), bottom: val } } 
                                 : s
                             ));
@@ -776,16 +781,16 @@ export function SubtitleEditor({
                         <label className="text-xs font-medium text-muted-foreground flex justify-between">
                           <span>Left Crop</span>
                           <span className="font-mono text-purple-400">
-                            {Number(videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.left || 0).toFixed(1)}%
+                            {Number(activeVideoSeg?.crop?.left || 0).toFixed(1)}%
                           </span>
                         </label>
                         <input 
                           type="range" min="0" max="50" step="0.5"
-                          value={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.left || 0}
+                          value={activeVideoSeg?.crop?.left || 0}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value);
                             setVideoSegments((prev: any[]) => prev.map(s => 
-                              selectedVideoIndexes.includes(s.id) 
+                              selectedTargetIds.includes(s.id) 
                                 ? { ...s, crop: { ...(s.crop || { top: 0, bottom: 0, left: 0, right: 0 }), left: val } } 
                                 : s
                             ));
@@ -799,16 +804,16 @@ export function SubtitleEditor({
                         <label className="text-xs font-medium text-muted-foreground flex justify-between">
                           <span>Right Crop</span>
                           <span className="font-mono text-purple-400">
-                            {Number(videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.right || 0).toFixed(1)}%
+                            {Number(activeVideoSeg?.crop?.right || 0).toFixed(1)}%
                           </span>
                         </label>
                         <input 
                           type="range" min="0" max="50" step="0.5"
-                          value={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.crop?.right || 0}
+                          value={activeVideoSeg?.crop?.right || 0}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value);
                             setVideoSegments((prev: any[]) => prev.map(s => 
-                              selectedVideoIndexes.includes(s.id) 
+                              selectedTargetIds.includes(s.id) 
                                 ? { ...s, crop: { ...(s.crop || { top: 0, bottom: 0, left: 0, right: 0 }), right: val } } 
                                 : s
                             ));
@@ -827,13 +832,13 @@ export function SubtitleEditor({
                       </span>
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-muted-foreground font-medium">
-                          {videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.gradientMask?.enabled ? "Enabled" : "Disabled"}
+                          {activeVideoSeg?.gradientMask?.enabled ? "Enabled" : "Disabled"}
                         </span>
                         <Switch 
-                          checked={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.gradientMask?.enabled ?? false} 
+                          checked={activeVideoSeg?.gradientMask?.enabled ?? false} 
                           onCheckedChange={(checked) => {
                             setVideoSegments((prev: any[]) => prev.map(s => 
-                              selectedVideoIndexes.includes(s.id) 
+                              selectedTargetIds.includes(s.id) 
                                 ? { ...s, gradientMask: { ...(s.gradientMask || { direction: 'bottom', length: 30 }), enabled: checked } } 
                                 : s
                             ));
@@ -842,14 +847,14 @@ export function SubtitleEditor({
                       </div>
                     </div>
 
-                    {videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.gradientMask?.enabled && (
+                    {activeVideoSeg?.gradientMask?.enabled && (
                       <div className="flex flex-col gap-4 bg-muted/20 p-3 rounded-lg border border-border/50">
                         {/* Direction Selection */}
                         <div className="flex flex-col gap-2">
                           <label className="text-xs font-medium text-muted-foreground">Fade Out Direction</label>
                           <div className="grid grid-cols-4 gap-2">
                             {(['bottom', 'top', 'left', 'right'] as const).map((dir) => {
-                              const currentDir = videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.gradientMask?.direction || 'bottom';
+                              const currentDir = activeVideoSeg?.gradientMask?.direction || 'bottom';
                               const isSelected = currentDir === dir;
                               return (
                                 <Button
@@ -860,7 +865,7 @@ export function SubtitleEditor({
                                   className={`text-xs capitalize h-8 ${isSelected ? 'bg-purple-600/30 text-purple-300 border-purple-500/50 font-semibold' : 'text-muted-foreground'}`}
                                   onClick={() => {
                                     setVideoSegments((prev: any[]) => prev.map(s => 
-                                      selectedVideoIndexes.includes(s.id) 
+                                      selectedTargetIds.includes(s.id) 
                                         ? { ...s, gradientMask: { ...(s.gradientMask || { enabled: true, length: 30 }), direction: dir } } 
                                         : s
                                     ));
@@ -882,16 +887,16 @@ export function SubtitleEditor({
                           <label className="text-xs font-medium text-muted-foreground flex justify-between">
                             <span>Fade Out Length</span>
                             <span className="font-mono text-purple-400">
-                              {videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.gradientMask?.length ?? 30}%
+                              {activeVideoSeg?.gradientMask?.length ?? 30}%
                             </span>
                           </label>
                           <input 
                             type="range" min="5" max="100" step="1"
-                            value={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.gradientMask?.length ?? 30}
+                            value={activeVideoSeg?.gradientMask?.length ?? 30}
                             onChange={(e) => {
                               const val = parseInt(e.target.value, 10);
                               setVideoSegments((prev: any[]) => prev.map(s => 
-                                selectedVideoIndexes.includes(s.id) 
+                                selectedTargetIds.includes(s.id) 
                                   ? { ...s, gradientMask: { ...(s.gradientMask || { enabled: true, direction: 'bottom' }), length: val } } 
                                   : s
                               ));
@@ -910,7 +915,7 @@ export function SubtitleEditor({
                       className="text-xs h-7 text-muted-foreground"
                       onClick={() => {
                         setVideoSegments((prev: any[]) => prev.map(s => 
-                          selectedVideoIndexes.includes(s.id) 
+                          selectedTargetIds.includes(s.id) 
                             ? { ...s, crop: { top: 0, bottom: 0, left: 0, right: 0 } } 
                             : s
                         ));
@@ -924,7 +929,7 @@ export function SubtitleEditor({
                       className="text-xs h-7 text-muted-foreground"
                       onClick={() => {
                         setVideoSegments((prev: any[]) => prev.map(s => 
-                          selectedVideoIndexes.includes(s.id) 
+                          selectedTargetIds.includes(s.id) 
                             ? { ...s, gradientMask: { enabled: false, direction: 'bottom', length: 30 } } 
                             : s
                         ));
@@ -938,7 +943,7 @@ export function SubtitleEditor({
                       className="text-xs h-7 text-muted-foreground"
                       onClick={() => {
                         setVideoSegments((prev: any[]) => prev.map(s => 
-                          selectedVideoIndexes.includes(s.id) 
+                          selectedTargetIds.includes(s.id) 
                             ? { ...s, transform: { x: 0, y: 0, scale: 1 }, crop: { top: 0, bottom: 0, left: 0, right: 0 }, gradientMask: { enabled: false, direction: 'bottom', length: 30 } } 
                             : s
                         ));
@@ -948,8 +953,7 @@ export function SubtitleEditor({
                     </Button>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
           </div>
         </ScrollArea>
       )}

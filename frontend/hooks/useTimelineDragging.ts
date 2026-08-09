@@ -67,6 +67,7 @@ export function useTimelineDragging({
   editableSegments,
   setEditableSegments,
   setSegmentHistory,
+  selectedIndexes = [],
 }: {
   draggingBoundary: DragTarget | null;
   setDraggingBoundary: (t: DragTarget | null) => void;
@@ -76,6 +77,7 @@ export function useTimelineDragging({
   editableSegments: any[];
   setEditableSegments: React.Dispatch<React.SetStateAction<any[]>>;
   setSegmentHistory: React.Dispatch<React.SetStateAction<{ past: any[]; future: any[] }>>;
+  selectedIndexes?: (number | string)[];
 }) {
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -320,20 +322,51 @@ export function useTimelineDragging({
 
             let targetStart = toMediaTime(targetTimelineTime) - dragOffset;
             targetStart = Math.max(0, Math.min(targetStart, maxMediaTime - duration));
-            const targetEnd = targetStart + duration;
             const delta = targetStart - currSegment.start;
 
             if (Math.abs(delta) > 0.001) {
-              currSegment.start = targetStart;
-              currSegment.end = targetEnd;
-              if (currSegment.words && currSegment.words.length > 0) {
-                currSegment.words = currSegment.words.map((w: any) => ({
-                  ...w,
-                  start: w.start + delta,
-                  end: w.end + delta,
-                }));
+              const numSelectedIndexes = selectedIndexes
+                .filter((i) => typeof i === 'number' && i >= 0 && i < newSegments.length) as number[];
+              const isMultiSelect = numSelectedIndexes.includes(index) && numSelectedIndexes.length > 1;
+
+              if (isMultiSelect) {
+                // Ensure no selected segment moves before start time 0
+                let validDelta = delta;
+                for (const idx of numSelectedIndexes) {
+                  if (newSegments[idx] && newSegments[idx].start + validDelta < 0) {
+                    validDelta = -newSegments[idx].start;
+                  }
+                }
+
+                if (Math.abs(validDelta) > 0.0001) {
+                  for (const idx of numSelectedIndexes) {
+                    if (newSegments[idx]) {
+                      const seg = { ...newSegments[idx] };
+                      seg.start += validDelta;
+                      seg.end += validDelta;
+                      if (seg.words && seg.words.length > 0) {
+                        seg.words = seg.words.map((w: any) => ({
+                          ...w,
+                          start: w.start + validDelta,
+                          end: w.end + validDelta,
+                        }));
+                      }
+                      newSegments[idx] = seg;
+                    }
+                  }
+                }
+              } else {
+                currSegment.start = targetStart;
+                currSegment.end = targetStart + duration;
+                if (currSegment.words && currSegment.words.length > 0) {
+                  currSegment.words = currSegment.words.map((w: any) => ({
+                    ...w,
+                    start: w.start + delta,
+                    end: w.end + delta,
+                  }));
+                }
+                newSegments[index] = currSegment;
               }
-              newSegments[index] = currSegment;
             }
           } else if (type === 'both' && nextSegment) {
             const prevStart = currSegment.start;

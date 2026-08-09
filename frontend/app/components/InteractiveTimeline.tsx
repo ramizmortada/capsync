@@ -89,6 +89,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   const [hoverX, setHoverX] = useState<number | null>(null);
   const [draggingVideoBoundary, setDraggingVideoBoundary] = useState<{ id: string; type: 'start' | 'end' | 'body', offsetStart?: number, initialTimelineStart?: number, initialTimelineEnd?: number } | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
+  const [marqueeBox, setMarqueeBox] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null);
   const zoomAnchorRef = useRef({ percentage: 0, cursorX: 0, targetZoom: 0 });
   const lastSelectedRef = useRef<number | null>(null);
 
@@ -283,21 +284,80 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
     };
   }, [draggingVideoBoundary, timelineDuration, mediaDuration, trackRef, mergedRippleDeletes, setVideoSegments]);
 
-  const handleTrackClick = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleTrackPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
-    if (e.shiftKey || e.ctrlKey || e.metaKey) return;
-    
-    setSelectedIndexes([]);
-    lastSelectedRef.current = null;
-
-    if ((e.target as HTMLElement).closest('.group')) return;
-    
+    if ((e.target as HTMLElement).closest('.group') || (e.target as HTMLElement).closest('.pointer-events-auto')) return;
     if (!trackRef.current || timelineDuration <= 0) return;
-    const rect = trackRef.current.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const percentage = clickX / rect.width;
-    const targetTimelineTime = percentage * timelineDuration;
-    onSeek(targetTimelineTime);
+
+    const trackRect = trackRef.current.getBoundingClientRect();
+    const startX = e.clientX - trackRect.left;
+    const startY = e.clientY - trackRect.top;
+
+    let hasDragged = false;
+    const initialSelectedIndexes = (e.shiftKey || e.ctrlKey || e.metaKey) ? [...selectedIndexes] : [];
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      if (!trackRef.current) return;
+      const currentX = moveEvent.clientX - trackRect.left;
+      const currentY = moveEvent.clientY - trackRect.top;
+
+      const distance = Math.hypot(currentX - startX, currentY - startY);
+      if (distance > 5) {
+        hasDragged = true;
+
+        const boxMinX = Math.min(startX, currentX);
+        const boxMaxX = Math.max(startX, currentX);
+        const boxMinY = Math.min(startY, currentY);
+        const boxMaxY = Math.max(startY, currentY);
+
+        setMarqueeBox({
+          startX: boxMinX,
+          startY: boxMinY,
+          currentX: boxMaxX,
+          currentY: boxMaxY,
+        });
+
+        if (cursorMode === 'select' || cursorMode === 'resize') {
+          const minPercentage = boxMinX / trackRect.width;
+          const maxPercentage = boxMaxX / trackRect.width;
+
+          const minTime = minPercentage * timelineDuration;
+          const maxTime = maxPercentage * timelineDuration;
+
+          const minMediaTime = toMediaTime(minTime);
+          const maxMediaTime = toMediaTime(maxTime);
+
+          const newlySelected: number[] = [];
+          editableSegments.forEach((seg, idx) => {
+            if (seg.start <= maxMediaTime && seg.end >= minMediaTime) {
+              newlySelected.push(idx);
+            }
+          });
+
+          const combined = Array.from(new Set([...initialSelectedIndexes, ...newlySelected]));
+          setSelectedIndexes(combined);
+        }
+      }
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      setMarqueeBox(null);
+
+      if (!hasDragged) {
+        if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+          setSelectedIndexes([]);
+          lastSelectedRef.current = null;
+        }
+        const percentage = startX / trackRect.width;
+        const targetTimelineTime = percentage * timelineDuration;
+        onSeek(targetTimelineTime);
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
   };
 
   const handleTrackContextMenu = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -428,7 +488,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
 
       {/* Scrollable Timeline Container with Headers */}
       <div className={`flex bg-background rounded-xl overflow-hidden h-[120px] ${
-        cursorMode === 'cut' ? 'cursor-none [&_*]:cursor-none' : cursorMode === 'resize' ? 'cursor-ew-resize [&_*]:cursor-ew-resize' : ''
+        cursorMode === 'cut' ? 'cursor-none [&_*]:cursor-none' : ''
       }`}>
         
         {/* Track Headers (Left Panel) */}
@@ -472,7 +532,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           ref={trackRef}
           className="relative h-full cursor-default min-w-full shrink-0"
           style={{ width: `${zoomLevel * 100}%` }}
-          onPointerDown={handleTrackClick}
+          onPointerDown={handleTrackPointerDown}
           onContextMenu={handleTrackContextMenu}
           onPointerMove={(e) => {
             if (cursorMode !== 'cut') {
@@ -697,8 +757,10 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                     setSelectedIndexes(prev => prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]);
                     lastSelectedRef.current = index;
                   } else {
-                    setSelectedIndexes([index]);
-                    lastSelectedRef.current = index;
+                    if (!selectedIndexes.includes(index)) {
+                      setSelectedIndexes([index]);
+                      lastSelectedRef.current = index;
+                    }
                   }
                 }}
                 className={`absolute top-[20px] h-8 rounded text-[10px] p-1 font-medium transition-colors border ${
@@ -805,6 +867,19 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
               <div className={`absolute -top-1 -left-1.5 w-3.5 h-3.5 rounded-full transition-transform ${isDraggingPlayhead ? 'bg-red-400 scale-125' : 'bg-red-500 group-hover:scale-125'}`} />
             </div>
           </div>
+
+          {/* Marquee Selection Box Overlay */}
+          {marqueeBox && (
+            <div 
+              className="absolute z-50 pointer-events-none bg-blue-500/20 border border-blue-400/70 rounded shadow-sm transition-none"
+              style={{
+                left: `${marqueeBox.startX}px`,
+                top: `${marqueeBox.startY}px`,
+                width: `${marqueeBox.currentX - marqueeBox.startX}px`,
+                height: `${marqueeBox.currentY - marqueeBox.startY}px`,
+              }}
+            />
+          )}
         </div>
         
         {/* Empty space at the end of the timeline */}
