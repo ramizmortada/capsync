@@ -247,11 +247,14 @@ def transcribe(
                         })
             final_segments = chunked_segments
 
-        # Extend timestamps to eliminate gaps between segments
+        # Extend timestamps for gaps <= 1.0 second between consecutive segments
         if final_segments:
             for i in range(len(final_segments) - 1):
-                if final_segments[i]["end"] < final_segments[i+1]["start"]:
+                gap = final_segments[i+1]["start"] - final_segments[i]["end"]
+                if 0 < gap <= 1.0:
                     final_segments[i]["end"] = final_segments[i+1]["start"]
+                    if "words" in final_segments[i] and final_segments[i]["words"]:
+                        final_segments[i]["words"][-1]["end"] = final_segments[i+1]["start"]
 
         print("Returning result to frontend.", flush=True)
         return {

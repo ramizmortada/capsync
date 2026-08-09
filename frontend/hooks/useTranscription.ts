@@ -28,7 +28,7 @@ export function mapTranscriptionToTimeline(rawSegments: any[], videoSegments: an
     const lastWord = mappedWords[mappedWords.length - 1];
 
     const finalStart = firstWord ? firstWord.start : seg.start;
-    const finalEnd = lastWord ? lastWord.end : seg.end;
+    const finalEnd = lastWord ? Math.max(lastWord.end, seg.end) : seg.end;
 
     const segmentText = mappedWords.length > 0
       ? mappedWords.map((w: any) => w.word || w.text).join(" ")

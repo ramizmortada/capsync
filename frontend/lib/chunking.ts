@@ -82,5 +82,18 @@ export function resegmentTranscripts(rawSegments: any[], maxWordsStr: string): a
     return segment;
   });
 
+  // Extend timestamps for gaps <= 1.0 second between consecutive segments
+  if (finalSegments && finalSegments.length > 1) {
+    for (let i = 0; i < finalSegments.length - 1; i++) {
+      const gap = finalSegments[i + 1].start - finalSegments[i].end;
+      if (gap > 0 && gap <= 1.0) {
+        finalSegments[i].end = finalSegments[i + 1].start;
+        if (finalSegments[i].words && finalSegments[i].words.length > 0) {
+          finalSegments[i].words[finalSegments[i].words.length - 1].end = finalSegments[i + 1].start;
+        }
+      }
+    }
+  }
+
   return finalSegments;
 }
