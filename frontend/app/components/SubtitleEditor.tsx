@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Edit3, Trash2, Download, Combine, Scissors, ChevronLeft, ChevronRight, Clock, Type, Video, Check, ArrowRight, SquareSplitHorizontal, VolumeX, Settings, Plus, Minus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -91,7 +91,10 @@ export function SubtitleEditor({
 }: SubtitleEditorProps) {
   const [activeTab, setActiveTab] = useState<'subtitles' | 'video'>('subtitles');
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
+  const [displayActiveIndex, setDisplayActiveIndex] = useState<number>(-1);
   const lastSelectedRef = useRef<number | null>(null);
+  const prevActiveIndexRef = useRef<number | null>(null);
+  const scrollAnimRef = useRef<number | null>(null);
 
   useEffect(() => {
     const handleWindowClick = () => setContextMenu(null);
@@ -112,6 +115,93 @@ export function SubtitleEditor({
     return mediaTime;
   };
 
+  const scrollToSegment = (index: number) => {
+    if (index < 0) return;
+    const el = document.getElementById(`subtitle-segment-${index}`);
+    if (!el) return;
+
+    const viewportEl = el.closest('[data-slot="scroll-area-viewport"]') as HTMLElement || el.closest('.overflow-y-auto') as HTMLElement || el.parentElement;
+    if (!viewportEl) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    const elRect = el.getBoundingClientRect();
+    const viewportRect = viewportEl.getBoundingClientRect();
+    const currentScrollTop = viewportEl.scrollTop;
+    const relativeTop = elRect.top - viewportRect.top + currentScrollTop;
+    const targetScrollTop = relativeTop - (viewportRect.height / 2) + (elRect.height / 2);
+    const maxScroll = viewportEl.scrollHeight - viewportEl.clientHeight;
+    const clampedTarget = Math.max(0, Math.min(targetScrollTop, maxScroll));
+
+    if (scrollAnimRef.current !== null) {
+      cancelAnimationFrame(scrollAnimRef.current);
+      scrollAnimRef.current = null;
+    }
+
+    // Attach interaction listeners to cancel auto-scroll if user intervenes
+    if (!(viewportEl as any)._hasScrollListener) {
+      const cancelAnim = () => {
+        if (scrollAnimRef.current !== null) {
+          cancelAnimationFrame(scrollAnimRef.current);
+          scrollAnimRef.current = null;
+        }
+      };
+      viewportEl.addEventListener('wheel', cancelAnim, { passive: true });
+      viewportEl.addEventListener('touchstart', cancelAnim, { passive: true });
+      viewportEl.addEventListener('mousedown', cancelAnim, { passive: true });
+      (viewportEl as any)._hasScrollListener = true;
+    }
+
+    const startTop = viewportEl.scrollTop;
+    const distance = clampedTarget - startTop;
+    
+    if (Math.abs(distance) < 2) return;
+
+    let startTime: number | null = null;
+    const duration = 300; // ms
+
+    const animateScroll = (time: number) => {
+      if (startTime === null) startTime = time;
+      const progress = Math.min((time - startTime) / duration, 1);
+      // easeOutCubic for a smooth, fast-start deceleration
+      const ease = 1 - Math.pow(1 - progress, 3);
+      
+      viewportEl.scrollTop = startTop + distance * ease;
+      
+      if (progress < 1) {
+        scrollAnimRef.current = requestAnimationFrame(animateScroll);
+      } else {
+        scrollAnimRef.current = null;
+      }
+    };
+    
+    scrollAnimRef.current = requestAnimationFrame(animateScroll);
+  };
+
+  // 1. Auto-scroll during playback when active segment changes
+  // Key: when playhead is in a gap between segments, we keep the LAST active
+  // segment highlighted and don't scroll. Only update when a genuinely new
+  // segment becomes active.
+  useEffect(() => {
+    if (activeTab !== 'subtitles' || !editableSegments || editableSegments.length === 0) return;
+
+    const activeIndex = editableSegments.findIndex(segment => {
+      const segTlStart = toTimelineTime(segment.start);
+      const segTlEnd = toTimelineTime(segment.end);
+      return currentTime >= segTlStart && currentTime < segTlEnd;
+    });
+
+    // Only act when we find a real segment (ignore gaps where activeIndex === -1)
+    if (activeIndex !== -1 && activeIndex !== prevActiveIndexRef.current) {
+      prevActiveIndexRef.current = activeIndex;
+      setDisplayActiveIndex(activeIndex);
+      scrollToSegment(activeIndex);
+    }
+  }, [currentTime, editableSegments, activeTab]);
+
+
+
   // Toggle selection or range selection
   const handleSelection = (e: React.MouseEvent, index: number) => {
     if (e.shiftKey) {
@@ -128,13 +218,11 @@ export function SubtitleEditor({
         setSelectedIndexes([index]);
         lastSelectedRef.current = index;
       }
-    } else if (e.ctrlKey || e.metaKey) {
+    } else {
+      // Toggle selection directly without requiring Ctrl/Cmd key
       setSelectedIndexes(prev => 
         prev.includes(index) ? prev.filter(i => i !== index) : [...prev, index]
       );
-      lastSelectedRef.current = index;
-    } else {
-      setSelectedIndexes([index]);
       lastSelectedRef.current = index;
     }
   };
@@ -326,7 +414,7 @@ export function SubtitleEditor({
       <ScrollArea className="flex-1 h-0 bg-background/50">
         <div className="p-0 relative">
           {editableSegments.map((segment, index) => {
-            const isActive = currentTime >= (toTimelineTime(segment.start) - 0.05) && currentTime < (toTimelineTime(segment.end) - 0.05);
+            const isActive = index === displayActiveIndex;
             const isSelected = selectedIndexes.includes(index);
             const isFirstSelected = isMergeVisible && Math.min(...(selectedIndexes.filter(i => typeof i === 'number') as number[])) === index;
             const canSplit = segment.text.trim().split(/\s+/).filter(Boolean).length >= 2;
@@ -425,7 +513,6 @@ export function SubtitleEditor({
                       <AutoResizeTextarea
                         value={segment.text}
                         onChange={(e: any) => handleSegmentChange(index, e.target.value)}
-                        onFocus={() => onSeek(toTimelineTime(segment.start))}
                         className="w-full bg-transparent text-sm text-foreground outline-none resize-none font-medium placeholder-muted-foreground/30 overflow-hidden"
                         rows={1}
                       />

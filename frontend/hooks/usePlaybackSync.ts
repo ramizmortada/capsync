@@ -174,17 +174,10 @@ export function usePlaybackSync({
     };
   }, [mediaDuration, draggingBoundary, isPlayingRef, isHoveringTimeline, masterTimeRef, mediaRef, setMasterTime, timelineRef, trackRef]);
 
-  useEffect(() => {
-    if (!mediaRef.current || mediaRef.current.paused || mediaDuration <= 0) return;
 
-    const activeIndex = editableSegments.findIndex((s: any) => masterTime >= s.start && masterTime < s.end);
-    if (activeIndex !== -1) {
-      const activeElement = document.getElementById(`subtitle-segment-${activeIndex}`);
-      if (activeElement) {
-        activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }
-  }, [masterTime, mediaDuration, editableSegments, mediaRef]);
+  // NOTE: Auto-scroll to active subtitle segment during playback is handled
+  // by SubtitleEditor.tsx (displayActiveIndex + scrollToSegment).
+  // Do NOT add scroll logic here — it causes two scroll systems to fight.
 
   const handleTimelineSeek = useCallback((time: number) => {
     let validTime = time;
