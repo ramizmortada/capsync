@@ -478,8 +478,9 @@ async def burn_subtitles(
                 if seg.get("sourceStart", 0) <= t + 0.01 and t - 0.01 <= seg.get("sourceEnd", 999999):
                     transform = seg.get("transform", {"x": 0, "y": 0, "scale": 1})
                     crop = seg.get("crop", {"top": 0, "bottom": 0, "left": 0, "right": 0})
-                    return transform, crop
-            return {"x": 0, "y": 0, "scale": 1}, {"top": 0, "bottom": 0, "left": 0, "right": 0}
+                    gradient_mask = seg.get("gradientMask", {"enabled": False, "direction": "bottom", "length": 30})
+                    return transform, crop, gradient_mask
+            return {"x": 0, "y": 0, "scale": 1}, {"top": 0, "bottom": 0, "left": 0, "right": 0}, {"enabled": False, "direction": "bottom", "length": 30}
 
         filter_complex = []
         concat_inputs = ""
@@ -487,7 +488,7 @@ async def burn_subtitles(
         
         for idx, (start, end) in enumerate(kept_ranges):
             mid_t = (start + end) / 2
-            transform, crop = get_clip_settings_for_time(mid_t, parsed_video_segments)
+            transform, crop, gradient_mask = get_clip_settings_for_time(mid_t, parsed_video_segments)
             scale_val = transform.get("scale", 1.0)
             x_pct = transform.get("x", 0.0) / 100.0
             y_pct = transform.get("y", 0.0) / 100.0
@@ -512,11 +513,38 @@ async def burn_subtitles(
             
             filter_complex.append(f"{v_scaled_in}scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=decrease,scale=iw*{scale_val}:ih*{scale_val}[vscale{idx}]")
             
+            # Gradient mask evaluation
+            g_enabled = gradient_mask.get("enabled", False)
+            g_dir = gradient_mask.get("direction", "bottom")
+            g_len_pct = float(gradient_mask.get("length", 30))
+            g_len = max(0.01, min(1.0, g_len_pct / 100.0))
+
+            if g_enabled and g_len > 0:
+                if g_dir == "bottom":
+                    t = f"((H-Y)/(H*{g_len:.4f}))"
+                    a_expr = f"if(gt(Y,H*(1-{g_len:.4f})),255*(3*{t}^2-2*{t}^3),255)"
+                elif g_dir == "top":
+                    t = f"(Y/(H*{g_len:.4f}))"
+                    a_expr = f"if(lt(Y,H*{g_len:.4f}),255*(3*{t}^2-2*{t}^3),255)"
+                elif g_dir == "right":
+                    t = f"((W-X)/(W*{g_len:.4f}))"
+                    a_expr = f"if(gt(X,W*(1-{g_len:.4f})),255*(3*{t}^2-2*{t}^3),255)"
+                elif g_dir == "left":
+                    t = f"(X/(W*{g_len:.4f}))"
+                    a_expr = f"if(lt(X,W*{g_len:.4f}),255*(3*{t}^2-2*{t}^3),255)"
+                else:
+                    a_expr = "255"
+
+                filter_complex.append(f"[vscale{idx}]format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{a_expr}'[vmasked{idx}]")
+                v_overlay_in = f"[vmasked{idx}]"
+            else:
+                v_overlay_in = f"[vscale{idx}]"
+
             filter_complex.append(f"color=c=0x{bg_color}:s={canvas_w}x{canvas_h}:d={(end-start):.3f}[bg{idx}]")
             
             overlay_x = f"(main_w-overlay_w)/2+{canvas_w}*{x_pct}"
             overlay_y = f"(main_h-overlay_h)/2+{canvas_h}*{y_pct}"
-            filter_complex.append(f"[bg{idx}][vscale{idx}]overlay=x='{overlay_x}':y='{overlay_y}':eval=init[v{idx}]")
+            filter_complex.append(f"[bg{idx}]{v_overlay_in}overlay=x='{overlay_x}':y='{overlay_y}':eval=init[v{idx}]")
             
             concat_inputs += f"[v{idx}][a{idx}]"
             

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Edit3, Trash2, Download, Combine, Scissors, ChevronLeft, ChevronRight, Clock, Type, Video, Check, ArrowRight, SquareSplitHorizontal, VolumeX, Settings, Plus, Minus } from "lucide-react";
+import { Edit3, Trash2, Download, Combine, Scissors, ChevronLeft, ChevronRight, Clock, Type, Video, Check, ArrowRight, ArrowUp, ArrowLeft, ArrowDown, SquareSplitHorizontal, VolumeX, Settings, Plus, Minus, Blend } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TimelineContextMenu, ContextMenuData } from "./timeline/TimelineContextMenu";
@@ -818,7 +819,91 @@ export function SubtitleEditor({
                     </div>
                   </div>
 
-                  <div className="col-span-2 flex justify-end gap-2">
+                  {/* Gradient Masking / Edge Fade Out Section */}
+                  <div className="col-span-2 border-t border-border pt-4 mt-2 flex flex-col gap-4">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                        <Blend className="w-3.5 h-3.5 text-purple-400" /> Gradient Mask (Fade Out)
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-muted-foreground font-medium">
+                          {videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.gradientMask?.enabled ? "Enabled" : "Disabled"}
+                        </span>
+                        <Switch 
+                          checked={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.gradientMask?.enabled ?? false} 
+                          onCheckedChange={(checked) => {
+                            setVideoSegments((prev: any[]) => prev.map(s => 
+                              selectedVideoIndexes.includes(s.id) 
+                                ? { ...s, gradientMask: { ...(s.gradientMask || { direction: 'bottom', length: 30 }), enabled: checked } } 
+                                : s
+                            ));
+                          }} 
+                        />
+                      </div>
+                    </div>
+
+                    {videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.gradientMask?.enabled && (
+                      <div className="flex flex-col gap-4 bg-muted/20 p-3 rounded-lg border border-border/50">
+                        {/* Direction Selection */}
+                        <div className="flex flex-col gap-2">
+                          <label className="text-xs font-medium text-muted-foreground">Fade Out Direction</label>
+                          <div className="grid grid-cols-4 gap-2">
+                            {(['bottom', 'top', 'left', 'right'] as const).map((dir) => {
+                              const currentDir = videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.gradientMask?.direction || 'bottom';
+                              const isSelected = currentDir === dir;
+                              return (
+                                <Button
+                                  key={dir}
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className={`text-xs capitalize h-8 ${isSelected ? 'bg-purple-600/30 text-purple-300 border-purple-500/50 font-semibold' : 'text-muted-foreground'}`}
+                                  onClick={() => {
+                                    setVideoSegments((prev: any[]) => prev.map(s => 
+                                      selectedVideoIndexes.includes(s.id) 
+                                        ? { ...s, gradientMask: { ...(s.gradientMask || { enabled: true, length: 30 }), direction: dir } } 
+                                        : s
+                                    ));
+                                  }}
+                                >
+                                  {dir === 'bottom' && <ArrowDown className="w-3 h-3 mr-1 inline" />}
+                                  {dir === 'top' && <ArrowUp className="w-3 h-3 mr-1 inline" />}
+                                  {dir === 'left' && <ArrowLeft className="w-3 h-3 mr-1 inline" />}
+                                  {dir === 'right' && <ArrowRight className="w-3 h-3 mr-1 inline" />}
+                                  {dir}
+                                </Button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Fade Length Slider */}
+                        <div className="flex flex-col gap-2">
+                          <label className="text-xs font-medium text-muted-foreground flex justify-between">
+                            <span>Fade Out Length</span>
+                            <span className="font-mono text-purple-400">
+                              {videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.gradientMask?.length ?? 30}%
+                            </span>
+                          </label>
+                          <input 
+                            type="range" min="5" max="100" step="1"
+                            value={videoSegments?.find(s => s.id === selectedVideoIndexes[0])?.gradientMask?.length ?? 30}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value, 10);
+                              setVideoSegments((prev: any[]) => prev.map(s => 
+                                selectedVideoIndexes.includes(s.id) 
+                                  ? { ...s, gradientMask: { ...(s.gradientMask || { enabled: true, direction: 'bottom' }), length: val } } 
+                                  : s
+                              ));
+                            }}
+                            className="w-full h-1 bg-muted rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-purple-500 [&::-webkit-slider-thumb]:rounded-full"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="col-span-2 flex justify-end gap-2 border-t border-border/50 pt-3">
                     <Button 
                       variant="ghost" 
                       size="sm" 
@@ -840,7 +925,21 @@ export function SubtitleEditor({
                       onClick={() => {
                         setVideoSegments((prev: any[]) => prev.map(s => 
                           selectedVideoIndexes.includes(s.id) 
-                            ? { ...s, transform: { x: 0, y: 0, scale: 1 }, crop: { top: 0, bottom: 0, left: 0, right: 0 } } 
+                            ? { ...s, gradientMask: { enabled: false, direction: 'bottom', length: 30 } } 
+                            : s
+                        ));
+                      }}
+                    >
+                      Reset Mask
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="text-xs h-7 text-muted-foreground"
+                      onClick={() => {
+                        setVideoSegments((prev: any[]) => prev.map(s => 
+                          selectedVideoIndexes.includes(s.id) 
+                            ? { ...s, transform: { x: 0, y: 0, scale: 1 }, crop: { top: 0, bottom: 0, left: 0, right: 0 }, gradientMask: { enabled: false, direction: 'bottom', length: 30 } } 
                             : s
                         ));
                       }}

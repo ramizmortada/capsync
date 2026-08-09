@@ -60,7 +60,8 @@ export function usePresets(
     const activeSeg = (videoSegments || []).find((s: any) => !s.deleted) || (videoSegments || [])[0];
     const videoSettings = {
       transform: activeSeg?.transform ? { ...activeSeg.transform } : { x: 0, y: 0, scale: 1 },
-      crop: activeSeg?.crop ? { ...activeSeg.crop } : { top: 0, right: 0, bottom: 0, left: 0 }
+      crop: activeSeg?.crop ? { ...activeSeg.crop } : { top: 0, right: 0, bottom: 0, left: 0 },
+      gradientMask: activeSeg?.gradientMask ? { ...activeSeg.gradientMask } : { enabled: false, direction: 'bottom' as const, length: 30 }
     };
 
     const newPreset: StylePreset = {
@@ -120,6 +121,7 @@ export function usePresets(
         ...seg,
         transform: selected.videoSettings?.transform ? { ...selected.videoSettings.transform } : seg.transform,
         crop: selected.videoSettings?.crop ? { ...selected.videoSettings.crop } : seg.crop,
+        gradientMask: selected.videoSettings?.gradientMask ? { ...selected.videoSettings.gradientMask } : seg.gradientMask,
       })));
     }
 
@@ -131,7 +133,8 @@ export function usePresets(
     const activeSeg = (videoSegments || []).find((s: any) => !s.deleted) || (videoSegments || [])[0];
     const videoSettings = {
       transform: activeSeg?.transform ? { ...activeSeg.transform } : { x: 0, y: 0, scale: 1 },
-      crop: activeSeg?.crop ? { ...activeSeg.crop } : { top: 0, right: 0, bottom: 0, left: 0 }
+      crop: activeSeg?.crop ? { ...activeSeg.crop } : { top: 0, right: 0, bottom: 0, left: 0 },
+      gradientMask: activeSeg?.gradientMask ? { ...activeSeg.gradientMask } : { enabled: false, direction: 'bottom' as const, length: 30 }
     };
 
     const updatedCustomPresets = presets.map(p => {

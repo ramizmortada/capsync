@@ -15,6 +15,17 @@ export interface VideoSegment {
     y: number;
     scale: number;
   };
+  crop?: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
+  gradientMask?: {
+    enabled: boolean;
+    direction: 'top' | 'bottom' | 'left' | 'right';
+    length: number;
+  };
 }
 
 type HistoryState = { 

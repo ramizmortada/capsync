@@ -121,6 +121,31 @@ export function LivePreview({
   
   const activeTransform = activeClip?.transform || { x: 0, y: 0, scale: 1 };
   const activeCrop = activeClip?.crop || { top: 0, bottom: 0, left: 0, right: 0 };
+  const activeGradientMask = activeClip?.gradientMask || { enabled: false, direction: 'bottom', length: 30 };
+
+  let maskStyle: React.CSSProperties = {};
+  if (activeGradientMask.enabled) {
+    const dir = activeGradientMask.direction || 'bottom';
+    const len = Math.max(1, Math.min(100, activeGradientMask.length ?? 30));
+    const startPct = 100 - len;
+    
+    // Smoothstep multi-stop easing curve (10 steps) to eliminate any harsh edge line
+    const stops: string[] = [`rgba(0,0,0,1) 0%`, `rgba(0,0,0,1) ${startPct.toFixed(2)}%`];
+    const steps = 10;
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const opacity = 1 - (3 * t * t - 2 * t * t * t);
+      const pct = startPct + t * len;
+      stops.push(`rgba(0,0,0,${opacity.toFixed(4)}) ${pct.toFixed(2)}%`);
+    }
+    const gradStr = `linear-gradient(to ${dir}, ${stops.join(', ')})`;
+
+    maskStyle = {
+      WebkitMaskImage: gradStr,
+      maskImage: gradStr,
+    };
+  }
+
   const scaleOnScreen = renderWidth / renderDim.width;
 
   const videoAspect = (localVideoDim.width && localVideoDim.height) ? (localVideoDim.width / localVideoDim.height) : (renderDim.width / (renderDim.height || 1));
@@ -264,7 +289,8 @@ export function LivePreview({
                 top: `calc(50% + ${activeTransform.y * (renderHeight / 100)}px)`,
                 transform: `translate(-50%, -50%) scale(${activeTransform.scale})`,
                 clipPath: `inset(${activeCrop.top || 0}% ${activeCrop.right || 0}% ${activeCrop.bottom || 0}% ${activeCrop.left || 0}%)`,
-                transition: 'transform 0.1s ease-out, clip-path 0.1s ease-out, left 0.1s ease-out, top 0.1s ease-out'
+                transition: 'transform 0.1s ease-out, clip-path 0.1s ease-out, left 0.1s ease-out, top 0.1s ease-out',
+                ...maskStyle,
               }}
               onLoadedMetadata={(e) => {
                 setMediaDuration(e.currentTarget.duration);

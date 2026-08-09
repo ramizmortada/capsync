@@ -30,9 +30,16 @@ export interface SubtitleStyle {
   textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';
 }
 
+export interface GradientMaskSettings {
+  enabled: boolean;
+  direction: 'top' | 'bottom' | 'left' | 'right';
+  length: number; // 0 to 100 percentage
+}
+
 export interface VideoTransformSettings {
   transform?: { x: number; y: number; scale: number };
   crop?: { top: number; right: number; bottom: number; left: number };
+  gradientMask?: GradientMaskSettings;
 }
 
 export interface StylePreset {
@@ -61,7 +68,8 @@ export const DEFAULT_PRESETS: StylePreset[] = [
     videoCanvas: { type: 'auto', backgroundColor: '#000000' },
     videoSettings: {
       transform: { x: 0, y: 0, scale: 1 },
-      crop: { top: 0, right: 0, bottom: 0, left: 0 }
+      crop: { top: 0, right: 0, bottom: 0, left: 0 },
+      gradientMask: { enabled: false, direction: 'bottom', length: 30 }
     },
     subtitleStyle: {
       fontFamily: "Inter",
