@@ -226,47 +226,184 @@ export function useSubtitleState({
     }).catch(console.error);
   };
 
+  /** Align edited text with existing segment words and calculate non-overlapping, adjacent word timings */
+  const alignAndRetimeWords = (
+    oldWords: any[],
+    newWordsList: string[],
+    segStart: number,
+    segEnd: number
+  ): any[] => {
+    if (newWordsList.length === 0) return [];
+
+    const spokenOld = (oldWords || []).filter((w: any) => !w.isGap && w.word !== "");
+    const N = newWordsList.length;
+    const O = spokenOld.length;
+
+    // 1. Align newWordsList to spokenOld using LCS (Longest Common Subsequence) / sequence matching
+    const dp = Array.from({ length: O + 1 }, () => Array(N + 1).fill(0));
+    for (let i = 0; i < O; i++) {
+      for (let j = 0; j < N; j++) {
+        if (spokenOld[i].word.toLowerCase() === newWordsList[j].toLowerCase()) {
+          dp[i + 1][j + 1] = dp[i][j] + 1;
+        } else {
+          dp[i + 1][j + 1] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+        }
+      }
+    }
+
+    // Backtrack to find matched pairs (oldIdx -> newIdx)
+    const matchedOldToNew = new Map<number, number>();
+    const matchedNewToOld = new Map<number, number>();
+    let i = O, j = N;
+    while (i > 0 && j > 0) {
+      if (spokenOld[i - 1].word.toLowerCase() === newWordsList[j - 1].toLowerCase()) {
+        matchedOldToNew.set(i - 1, j - 1);
+        matchedNewToOld.set(j - 1, i - 1);
+        i--;
+        j--;
+      } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+        i--;
+      } else {
+        j--;
+      }
+    }
+
+    // Also handle 1-to-1 position mapping if word count is unchanged and unmatched at same position
+    if (N === O) {
+      for (let k = 0; k < N; k++) {
+        if (!matchedNewToOld.has(k)) {
+          matchedOldToNew.set(k, k);
+          matchedNewToOld.set(k, k);
+        }
+      }
+    }
+
+    // 2. Assign initial target midpoints for each word in newWordsList
+    const midpoints: (number | undefined)[] = new Array(N);
+
+    // First, fill in midpoints for matched words
+    for (let k = 0; k < N; k++) {
+      if (matchedNewToOld.has(k)) {
+        const oldIdx = matchedNewToOld.get(k)!;
+        const w = spokenOld[oldIdx];
+        midpoints[k] = (w.start + w.end) / 2;
+      }
+    }
+
+    // Next, interpolate midpoints for unmatched (newly inserted) words
+    for (let k = 0; k < N; k++) {
+      if (midpoints[k] === undefined) {
+        // Find previous known midpoint
+        let prevMid = segStart;
+        for (let p = k - 1; p >= 0; p--) {
+          if (midpoints[p] !== undefined) {
+            prevMid = midpoints[p]!;
+            break;
+          }
+        }
+        // Find next known midpoint
+        let nextMid = segEnd;
+        for (let n = k + 1; n < N; n++) {
+          if (midpoints[n] !== undefined) {
+            nextMid = midpoints[n]!;
+            break;
+          }
+        }
+        // Count how many consecutive unmatched words are in this gap
+        let gapStart = k;
+        while (gapStart > 0 && midpoints[gapStart - 1] === undefined) gapStart--;
+        let gapEnd = k;
+        while (gapEnd < N - 1 && midpoints[gapEnd + 1] === undefined) gapEnd++;
+
+        const gapCount = gapEnd - gapStart + 1;
+        const posInGap = k - gapStart + 1;
+        const gapStep = (nextMid - prevMid) / (gapCount + 1);
+        midpoints[k] = prevMid + posInGap * gapStep;
+      }
+    }
+
+    // Ensure midpoints are strictly increasing
+    const totalDur = Math.max(0.1, segEnd - segStart);
+    const minMidGap = Math.min(0.04, totalDur / (N + 1));
+    for (let k = 1; k < N; k++) {
+      if (midpoints[k]! <= midpoints[k - 1]!) {
+        midpoints[k] = midpoints[k - 1]! + minMidGap;
+      }
+    }
+
+    // 3. Compute non-overlapping boundary points T[0..N] where T[0]=segStart and T[N]=segEnd
+    const T: number[] = new Array(N + 1);
+    T[0] = segStart;
+    T[N] = segEnd;
+
+    for (let k = 1; k < N; k++) {
+      T[k] = (midpoints[k - 1]! + midpoints[k]!) / 2;
+    }
+
+    // 4. Relax boundary points so every word has at least minWordDur width
+    const minWordDur = Math.min(0.06, totalDur / N);
+
+    // Forward pass (push right)
+    for (let k = 1; k < N; k++) {
+      if (T[k] < T[k - 1] + minWordDur) {
+        T[k] = T[k - 1] + minWordDur;
+      }
+    }
+
+    // Backward pass (push left)
+    for (let k = N - 1; k >= 1; k--) {
+      if (T[k] > T[k + 1] - minWordDur) {
+        T[k] = T[k + 1] - minWordDur;
+      }
+    }
+
+    // Fallback if boundaries overflowed: uniform spacing
+    if (T[1] < T[0] + 0.01 || T[N - 1] > T[N] - 0.01) {
+      const step = totalDur / N;
+      for (let k = 1; k < N; k++) {
+        T[k] = segStart + k * step;
+      }
+    }
+
+    // Enforce exact stickiness at edges
+    T[0] = segStart;
+    T[N] = segEnd;
+
+    // 5. Construct final word objects
+    const result: any[] = [];
+    for (let k = 0; k < N; k++) {
+      const wordText = newWordsList[k];
+      let score = 1.0;
+      if (matchedNewToOld.has(k)) {
+        const oldIdx = matchedNewToOld.get(k)!;
+        score = spokenOld[oldIdx].score ?? 1.0;
+      }
+
+      result.push({
+        word: wordText,
+        start: T[k],
+        end: T[k + 1],
+        score: score,
+        isGap: false,
+        deleted: false,
+      });
+    }
+
+    return result;
+  };
+
   const handleSegmentChange = (index: number, newText: string) => {
     updateSegments((prev) => {
       const newSegments = [...prev];
       const segment = { ...newSegments[index], text: newText };
       
-      if (segment.words) {
-        const newWordsList = newText.trim().split(/\s+/).filter(Boolean);
-        const updatedWords = [...segment.words];
-        
-        let newIdx = 0;
-        for (let i = 0; i < updatedWords.length; i++) {
-          if (!updatedWords[i].isGap) {
-            if (newIdx < newWordsList.length) {
-              updatedWords[i] = { ...updatedWords[i], word: newWordsList[newIdx] };
-              newIdx++;
-            } else {
-              updatedWords[i] = { ...updatedWords[i], word: "" };
-            }
-          }
-        }
-        
-        if (newIdx < newWordsList.length) {
-          const lastValidWord = updatedWords.slice().reverse().find((w) => !w.isGap);
-          const start = lastValidWord ? lastValidWord.end : segment.start;
-          const end = segment.end;
-          
-          while (newIdx < newWordsList.length) {
-            updatedWords.push({
-              word: newWordsList[newIdx],
-              start: start,
-              end: end,
-              score: 1.0,
-              isGap: false,
-              deleted: false
-            });
-            newIdx++;
-          }
-        }
-        
-        segment.words = updatedWords.filter((w: any) => w.isGap || w.word !== "");
-      }
+      const newWordsList = newText.trim().split(/\s+/).filter(Boolean);
+      segment.words = alignAndRetimeWords(
+        segment.words || [],
+        newWordsList,
+        segment.start,
+        segment.end
+      );
       
       newSegments[index] = segment;
       return newSegments;
