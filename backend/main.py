@@ -566,7 +566,7 @@ async def burn_subtitles(
                 else:
                     a_expr = "255"
 
-                filter_complex.append(f"[vscale{idx}]format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='{a_expr}'[vmasked{idx}]")
+                filter_complex.append(f"[vscale{idx}]format=yuva420p,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='{a_expr}'[vmasked{idx}]")
                 v_overlay_in = f"[vmasked{idx}]"
             else:
                 v_overlay_in = f"[vscale{idx}]"
@@ -575,7 +575,8 @@ async def burn_subtitles(
             
             overlay_x = f"(main_w-overlay_w)/2+{canvas_w}*{x_pct}"
             overlay_y = f"(main_h-overlay_h)/2+{canvas_h}*{y_pct}"
-            filter_complex.append(f"[bg{idx}]{v_overlay_in}overlay=x='{overlay_x}':y='{overlay_y}':eval=init[v{idx}]")
+            overlay_fmt = ":format=auto" if g_enabled else ""
+            filter_complex.append(f"[bg{idx}]{v_overlay_in}overlay=x='{overlay_x}':y='{overlay_y}'{overlay_fmt}:eval=init[v{idx}]")
             
             concat_inputs += f"[v{idx}][a{idx}]"
             
