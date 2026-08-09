@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { spawn } from 'child_process';
-import { promises as fs } from 'fs';
+import { promises as fs, existsSync } from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
@@ -149,9 +149,13 @@ export async function POST(req: NextRequest) {
     const outputPath = path.join(tempDir, 'output.mp4');
     ffmpegArgs.push(outputPath);
 
+    const PROJECT_ROOT = path.resolve(process.cwd(), '..');
+    const LOCAL_FFMPEG_BIN = path.join(PROJECT_ROOT, 'ffmpeg', 'bin', 'ffmpeg.exe');
+    const FFMPEG_BIN = existsSync(LOCAL_FFMPEG_BIN) ? LOCAL_FFMPEG_BIN : 'ffmpeg';
+
     // Execute FFmpeg
     await new Promise<void>((resolve, reject) => {
-      const proc = spawn('ffmpeg', ffmpegArgs);
+      const proc = spawn(FFMPEG_BIN, ffmpegArgs);
       let stderr = '';
 
       proc.stderr.on('data', (data) => {

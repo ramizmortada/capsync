@@ -57,6 +57,12 @@ const SCRATCH_DIR = path.resolve(process.cwd(), '..', 'scratch');
 const CACHE_DIR = path.join(SCRATCH_DIR, 'video_cache');
 const TEMP_DIR = path.join(SCRATCH_DIR, 'temp');
 
+const PROJECT_ROOT = path.resolve(process.cwd(), '..');
+const LOCAL_FFMPEG_DIR = path.join(PROJECT_ROOT, 'ffmpeg', 'bin');
+const LOCAL_FFMPEG_BIN = path.join(LOCAL_FFMPEG_DIR, 'ffmpeg.exe');
+const FFMPEG_DIR = fs.existsSync(LOCAL_FFMPEG_DIR) ? LOCAL_FFMPEG_DIR : 'C:\\FFmpeg\\bin';
+const FFMPEG_BIN = fs.existsSync(LOCAL_FFMPEG_BIN) ? LOCAL_FFMPEG_BIN : 'C:\\FFmpeg\\bin\\ffmpeg.exe';
+
 export async function POST(req: Request) {
   const body = await req.json();
   const { url, isAudio, quality, type, startTime, endTime, title } = body;
@@ -135,7 +141,7 @@ export async function POST(req: Request) {
             const clipFilePath = path.join(TEMP_DIR, clipFileName);
             console.log(`[API /api/download] Trimming clip using local FFmpeg from cached video...`);
 
-            const ffmpegBin = 'C:\\FFmpeg\\bin\\ffmpeg.exe';
+            const ffmpegBin = FFMPEG_BIN;
             const ffmpegArgs = ['-y'];
             if (normStart && normStart !== '00:00:00') ffmpegArgs.push('-ss', normStart);
             if (normEnd && normEnd !== '00:00:00') ffmpegArgs.push('-to', normEnd);
@@ -177,15 +183,20 @@ export async function POST(req: Request) {
           } catch (e) {}
         });
 
-        console.log(`[API /api/download] Setting FFmpeg Location: C:\\FFmpeg\\bin`);
-        dl = dl.addArgs('--ffmpeg-location', 'C:\\FFmpeg\\bin');
+        console.log(`[API /api/download] Setting FFmpeg Location & JS Runtime...`);
+        dl = dl.addArgs(
+          '--ffmpeg-location', FFMPEG_DIR,
+          '--js-runtimes', 'node'
+        );
         
         if (isAudio) {
           console.log(`[API /api/download] Format Mode: Extract Audio (mp3)`);
           dl = dl.extractAudio().audioFormat('mp3').audioQuality('0');
         } else {
-          console.log(`[API /api/download] Format Mode: Video (mergevideo, quality=${quality}p, type=${type || 'mp4'})`);
-          dl = dl.format({ filter: 'mergevideo', quality: `${quality}p` as any, type: type || 'mp4' });
+          const targetHeight = parseInt(quality, 10) || 1080;
+          const formatString = `bestvideo[height<=${targetHeight}]+bestaudio/bestvideo+bestaudio/best`;
+          console.log(`[API /api/download] Format Mode: Video (format="${formatString}", type=${type || 'mp4'})`);
+          dl = dl.addArgs('-f', formatString, '--merge-output-format', type || 'mp4');
         }
 
         let lastProgressLogTime = 0;
@@ -262,7 +273,7 @@ export async function POST(req: Request) {
           const clipFilePath = path.join(TEMP_DIR, clipFileName);
           console.log(`[API /api/download] Trimming clip using local FFmpeg...`);
 
-          const ffmpegBin = 'C:\\FFmpeg\\bin\\ffmpeg.exe';
+          const ffmpegBin = FFMPEG_BIN;
           const ffmpegArgs = ['-y'];
           if (normStart && normStart !== '00:00:00') ffmpegArgs.push('-ss', normStart);
           if (normEnd && normEnd !== '00:00:00') ffmpegArgs.push('-to', normEnd);

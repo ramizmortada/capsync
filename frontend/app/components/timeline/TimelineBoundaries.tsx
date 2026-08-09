@@ -83,22 +83,52 @@ export const TimelineBoundaries = ({
 
           // Render parent segment boundary handles when zoomed in
           if (index < editableSegments.length - 1) {
-            const leftPercent = (toTimelineTime(segment.end) / timelineDuration) * 100;
-            const isDraggingThisBoth = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'both' && 'index' in draggingBoundary && draggingBoundary.index === index;
-            
-            elements.push(
-              <div 
-                key={`parent-cluster-${index}`} 
-                className={`absolute top-[20px] h-8 w-8 -ml-4 z-50 flex justify-center items-center group ${cursorMode === 'cut' ? 'pointer-events-none' : ''}`} 
-                style={{ left: `${leftPercent}%`, ...getCursorStyle('both') }}
-                onMouseDown={(e) => { 
-                  e.preventDefault(); 
-                  setDraggingBoundary({ type: 'both', index }); 
-                }}
-              >
-                <div className={`h-full transition-colors ${isDraggingThisBoth ? 'bg-orange-500 w-1' : 'bg-orange-500/40 w-0.5 group-hover:bg-orange-400 group-hover:w-1'}`} />
-              </div>
-            );
+            const nextSegment = editableSegments[index + 1];
+            const isTouching = nextSegment.start - segment.end <= 0.05;
+
+            if (isTouching) {
+              const leftPercent = (toTimelineTime(segment.end) / timelineDuration) * 100;
+              const isDraggingThisBoth = draggingBoundary && typeof draggingBoundary === 'object' && draggingBoundary.type === 'both' && 'index' in draggingBoundary && draggingBoundary.index === index;
+              
+              elements.push(
+                <div 
+                  key={`parent-cluster-${index}`} 
+                  className={`absolute top-[20px] h-8 w-8 -ml-4 z-50 flex justify-center items-center group ${cursorMode === 'cut' ? 'pointer-events-none' : ''}`} 
+                  style={{ left: `${leftPercent}%`, ...getCursorStyle('both') }}
+                  onMouseDown={(e) => { 
+                    e.preventDefault(); 
+                    setDraggingBoundary({ type: 'both', index }); 
+                  }}
+                >
+                  <div className={`h-full transition-colors ${isDraggingThisBoth ? 'bg-orange-500 w-1' : 'bg-orange-500/40 w-0.5 group-hover:bg-orange-400 group-hover:w-1'}`} />
+                </div>
+              );
+            } else {
+              const leftPercent1 = (toTimelineTime(segment.end) / timelineDuration) * 100;
+              const leftPercent2 = (toTimelineTime(nextSegment.start) / timelineDuration) * 100;
+
+              elements.push(
+                <div 
+                  key={`parent-end-${index}`} 
+                  className={`absolute top-[20px] h-8 w-8 -ml-4 z-50 flex justify-center items-center group ${cursorMode === 'cut' ? 'pointer-events-none' : ''}`} 
+                  style={{ left: `${leftPercent1}%`, ...getCursorStyle('left') }}
+                  onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'end', index }); }}
+                >
+                  <div className="w-0.5 h-full bg-orange-500/40 transition-colors group-hover:bg-orange-400 group-hover:w-1" />
+                </div>
+              );
+
+              elements.push(
+                <div 
+                  key={`parent-start-${index + 1}`} 
+                  className={`absolute top-[20px] h-8 w-8 -ml-4 z-50 flex justify-center items-center group ${cursorMode === 'cut' ? 'pointer-events-none' : ''}`} 
+                  style={{ left: `${leftPercent2}%`, ...getCursorStyle('right') }}
+                  onMouseDown={(e) => { e.preventDefault(); setDraggingBoundary({ type: 'start', index: index + 1 }); }}
+                >
+                  <div className="w-0.5 h-full bg-orange-500/40 transition-colors group-hover:bg-orange-400 group-hover:w-1" />
+                </div>
+              );
+            }
           } else {
             // Last parent segment boundary handle
             const leftPercent = (toTimelineTime(segment.end) / timelineDuration) * 100;

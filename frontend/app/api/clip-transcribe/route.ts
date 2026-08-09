@@ -31,10 +31,19 @@ export async function POST(req: Request) {
 
     // 1. Download audio segment using yt-dlp
     // Removed explicit ffmpegPath so it defaults to system ffmpeg which yt-dlp requires for sections
+    const PROJECT_ROOT = path.resolve(process.cwd(), '..');
+    const LOCAL_FFMPEG_DIR = path.join(PROJECT_ROOT, 'ffmpeg', 'bin');
+    const FFMPEG_DIR = fs.existsSync(LOCAL_FFMPEG_DIR) ? LOCAL_FFMPEG_DIR : 'C:\\FFmpeg\\bin';
+
     const ytdlp = new YtDlp({});
 
     const tempDir = os.tmpdir();
-    let dl = ytdlp.download(url).output(path.join(tempDir, `clip_audio_${Date.now()}_%(id)s.%(ext)s`));
+    let dl = ytdlp.download(url)
+      .output(path.join(tempDir, `clip_audio_${Date.now()}_%(id)s.%(ext)s`))
+      .addArgs(
+        '--ffmpeg-location', FFMPEG_DIR,
+        '--js-runtimes', 'node'
+      );
 
     const normStart = normalizeTimestamp(startTime);
     const normEnd = normalizeTimestamp(endTime);

@@ -173,6 +173,11 @@ export function useSubtitleState({
       }
     }
 
+    if (result.length > 0) {
+      result[0] = { ...result[0], start: rangeStart };
+      result[result.length - 1] = { ...result[result.length - 1], end: rangeEnd };
+    }
+
     return result;
   };
 
@@ -698,8 +703,15 @@ export function useSubtitleState({
       let secondWords = target.words;
 
       if (target.words && target.words.length > 0) {
-        firstWords = target.words.filter((w: any) => (w.end || w.start || 0) <= mediaTime);
-        secondWords = target.words.filter((w: any) => (w.start || w.end || 0) > mediaTime);
+        firstWords = target.words.filter((w: any) => (w.end || w.start || 0) <= mediaTime).map((w: any) => ({ ...w }));
+        secondWords = target.words.filter((w: any) => (w.start || w.end || 0) > mediaTime).map((w: any) => ({ ...w }));
+
+        if (firstWords.length > 0) {
+          firstWords[firstWords.length - 1].end = mediaTime;
+        }
+        if (secondWords.length > 0) {
+          secondWords[0].start = mediaTime;
+        }
       }
 
       const firstText = firstWords ? firstWords.map((w: any) => w.text || w.word).join(" ") : target.text;

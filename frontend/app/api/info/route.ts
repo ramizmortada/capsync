@@ -26,10 +26,16 @@ const CACHE_DIR = path.join(SCRATCH_DIR, 'video_cache');
 export async function POST(req: Request) {
   try {
     const { url } = await req.json();
+    const PROJECT_ROOT = path.resolve(process.cwd(), '..');
+    const LOCAL_FFMPEG_BIN = path.join(PROJECT_ROOT, 'ffmpeg', 'bin', 'ffmpeg.exe');
+    const FFMPEG_BIN = fs.existsSync(LOCAL_FFMPEG_BIN) ? LOCAL_FFMPEG_BIN : 'C:\\FFmpeg\\bin\\ffmpeg.exe';
+
     const ytdlp = new YtDlp({
-      ffmpegPath: path.resolve(process.cwd(), 'ffmpeg.exe'),
+      ffmpegPath: FFMPEG_BIN,
     });
-    const info = await ytdlp.getInfoAsync(url);
+    const info = await ytdlp.getInfoAsync(url, {
+      rawArgs: ['--js-runtimes', 'node']
+    } as any);
     
     // Calculate approximate sizes for each quality
     const sizes: Record<string, number> = {};
@@ -50,19 +56,27 @@ export async function POST(req: Request) {
       sizes['audio'] = bestAudioSize;
 
       const targetHeights = [2160, 1440, 1080, 720, 480, 360];
+      const videoDuration = videoInfo.duration || 0;
+
       for (const height of targetHeights) {
         const vFormats = videoInfo.formats.filter((f: any) => f.vcodec !== 'none' && f.height === height);
         if (vFormats.length > 0) {
+          const getFmtSize = (fmt: any) => {
+            if (fmt.filesize && fmt.filesize > 0) return fmt.filesize;
+            if (fmt.filesize_approx && fmt.filesize_approx > 0) return fmt.filesize_approx;
+            if (fmt.tbr && videoDuration > 0) return Math.round((fmt.tbr * 1024 / 8) * videoDuration);
+            return 0;
+          };
+
           const bestVideo = vFormats.reduce((prev: any, current: any) => {
-            const s1 = prev.filesize || prev.filesize_approx || 0;
-            const s2 = current.filesize || current.filesize_approx || 0;
-            return s1 > s2 ? prev : current;
+            return getFmtSize(prev) >= getFmtSize(current) ? prev : current;
           });
           
-          const vSize = bestVideo.filesize || bestVideo.filesize_approx || 0;
-          if (vSize > 0) {
-            sizes[height.toString()] = vSize + bestAudioSize;
+          let vSize = getFmtSize(bestVideo);
+          if (!vSize) {
+            vSize = 10 * 1024 * 1024; // Default fallback size if unestimated
           }
+          sizes[height.toString()] = vSize + bestAudioSize;
         }
       }
     }

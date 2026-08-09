@@ -8,8 +8,9 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Downloaded installers
+# Downloaded installers & binaries
 installers/
+ffmpeg/
 *.exe
 
 # Frontend specific ignores (in case the nested .gitignore is missed)

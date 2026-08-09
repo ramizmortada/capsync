@@ -226,12 +226,27 @@ export default function Downloader({
     }
   };
 
-  const handleSetStartFromPlayer = (val: TimeValue) => {
-    setStartValue(val);
+  const handleStartChange = (newStart: TimeValue) => {
+    setStartValue(newStart);
+    const newStartSec = timeValueToSeconds(newStart);
+    const currentEndSec = timeValueToSeconds(endValue);
+    const totalDuration = typeof info?.duration === 'number' ? info.duration : null;
+
+    if (currentEndSec === 0 || (currentEndSec > 0 && newStartSec >= currentEndSec)) {
+      if (totalDuration !== null && totalDuration > 0) {
+        setEndValue(secondsToTimeValue(totalDuration));
+      }
+    }
   };
 
-  const handleSetEndFromPlayer = (val: TimeValue) => {
-    setEndValue(val);
+  const handleEndChange = (newEnd: TimeValue) => {
+    setEndValue(newEnd);
+    const newEndSec = timeValueToSeconds(newEnd);
+    const currentStartSec = timeValueToSeconds(startValue);
+
+    if (currentStartSec > 0 && newEndSec <= currentStartSec) {
+      setStartValue({ hours: '00', minutes: '00', seconds: '00' });
+    }
   };
 
 
@@ -364,14 +379,10 @@ export default function Downloader({
               {/* Top Section: Wide YouTube Preview Player */}
               {info.id && (
                 <div className="w-full flex flex-col gap-2.5 shrink-0">
-                  <div className="flex flex-col">
-                    <h2 className="text-base sm:text-lg font-bold line-clamp-1 leading-tight text-zinc-100">{info.title}</h2>
-                    <p className="text-zinc-400 text-xs font-medium mt-0.5">{info.channel || info.uploader}</p>
-                  </div>
                   <YouTubePreviewPlayer
                     videoId={info.id}
-                    onSetStart={handleSetStartFromPlayer}
-                    onSetEnd={handleSetEndFromPlayer}
+                    onSetStart={handleStartChange}
+                    onSetEnd={handleEndChange}
                     clipRange={(isClipping && !clippingError && endSeconds > startSeconds) ? { start: startSeconds, end: endSeconds } : null}
                     loopRange={loopRange}
                     videoAspectRatio={info.width && info.height ? info.width / info.height : 16/9}
@@ -494,7 +505,7 @@ export default function Downloader({
                       <TimeSegmentPicker 
                         label="Start Time" 
                         value={startValue} 
-                        onChange={setStartValue} 
+                        onChange={handleStartChange} 
                         hasError={isStartInvalid} 
                         idPrefix="start"
                         onNavigateBoundary={(dir) => {
@@ -504,7 +515,7 @@ export default function Downloader({
                       <TimeSegmentPicker 
                         label="End Time" 
                         value={endValue} 
-                        onChange={setEndValue} 
+                        onChange={handleEndChange} 
                         hasError={isEndInvalid} 
                         idPrefix="end"
                         onNavigateBoundary={(dir) => {

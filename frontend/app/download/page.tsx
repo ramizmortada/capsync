@@ -18,7 +18,11 @@ import {
   Video, 
   CheckCircle2, 
   LayoutGrid,
-  ArrowRight
+  ArrowRight,
+  ExternalLink,
+  Copy,
+  Check,
+  RotateCw
 } from 'lucide-react';
 
 interface AiClip {
@@ -35,7 +39,52 @@ interface VideoCardData {
   clips?: AiClip[];
   prompt?: string;
   loadingClips?: boolean;
+  refetchingInfo?: boolean;
   error?: string;
+}
+
+function UrlActionRow({ url }: { url: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleOpenNewTab = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  return (
+    <div className="flex items-center gap-1.5 shrink-0">
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-950/80 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-white transition-colors cursor-pointer shrink-0"
+        title="Copy URL to clipboard"
+      >
+        {copied ? (
+          <Check className="w-3.5 h-3.5 text-emerald-400" />
+        ) : (
+          <Copy className="w-3.5 h-3.5" />
+        )}
+      </button>
+
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={handleOpenNewTab}
+        className="flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-950/80 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-amber-400 transition-colors shrink-0"
+        title="Open link in new tab"
+      >
+        <ExternalLink className="w-3.5 h-3.5" />
+      </a>
+    </div>
+  );
 }
 
 export default function DownloadPage() {
@@ -176,6 +225,26 @@ export default function DownloadPage() {
 
   const handleRemoveCard = (cardId: string) => {
     setCards(prev => prev.filter(c => c.id !== cardId));
+  };
+
+  const handleRefetchCard = async (cardId: string, url: string) => {
+    setCards(prev => prev.map(c => c.id === cardId ? { ...c, refetchingInfo: true } : c));
+
+    try {
+      const res = await fetch('/api/info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      setCards(prev => prev.map(c => c.id === cardId ? { ...c, info: data, refetchingInfo: false } : c));
+    } catch (err: any) {
+      alert(err.message || 'Failed to refetch video info.');
+      setCards(prev => prev.map(c => c.id === cardId ? { ...c, refetchingInfo: false } : c));
+    }
   };
 
   const handleClearAllCards = () => {
@@ -337,31 +406,47 @@ export default function DownloadPage() {
               className="flex flex-col gap-6 p-6 bg-zinc-900/60 border border-zinc-800/90 rounded-2xl shadow-xl relative"
             >
               {/* Card Top Control Header */}
-              <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
-                <div className="flex items-center gap-3 overflow-hidden">
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-4 gap-4">
+                <div className="flex items-center gap-3 overflow-hidden min-w-0 flex-1">
                   <div className="flex items-center justify-center w-7 h-7 rounded-full bg-zinc-800 text-xs font-mono font-bold text-zinc-300 shrink-0">
                     #{cardIndex + 1}
                   </div>
-                  <div className="flex flex-col overflow-hidden">
+                  <div className="flex flex-col overflow-hidden min-w-0">
                     <h2 className="font-bold text-base text-white truncate" title={card.info?.title || card.url}>
                       {card.info?.title || 'YouTube Video'}
                     </h2>
-                    <span className="text-xs text-zinc-500 font-mono truncate">
-                      {card.url}
-                    </span>
+                    {card.info?.channel || card.info?.uploader ? (
+                      <span className="text-xs text-zinc-400 font-medium truncate mt-0.5">
+                        {card.info.channel || card.info.uploader}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
 
-                <Button
-                  onClick={() => handleRemoveCard(card.id)}
-                  size="sm"
-                  variant="ghost"
-                  className="h-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg gap-1.5 transition-colors shrink-0"
-                  title="Remove video card"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span className="text-xs font-semibold">Remove</span>
-                </Button>
+                <div className="flex items-center gap-2 shrink-0 ml-auto">
+                  <UrlActionRow url={card.url} />
+                  
+                  <button
+                    type="button"
+                    onClick={() => handleRefetchCard(card.id, card.url)}
+                    disabled={card.refetchingInfo}
+                    className="flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-950/80 hover:bg-zinc-800 border border-zinc-800 text-zinc-400 hover:text-blue-400 transition-colors cursor-pointer shrink-0 disabled:opacity-50"
+                    title="Refetch video info & resolutions"
+                  >
+                    <RotateCw className={`w-3.5 h-3.5 ${card.refetchingInfo ? 'animate-spin text-blue-400' : ''}`} />
+                  </button>
+
+                  <Button
+                    onClick={() => handleRemoveCard(card.id)}
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 text-zinc-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg gap-1.5 transition-colors shrink-0"
+                    title="Remove video card"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span className="text-xs font-semibold">Remove</span>
+                  </Button>
+                </div>
               </div>
 
               {/* Main Downloader for this specific video card */}

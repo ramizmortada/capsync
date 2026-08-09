@@ -18,6 +18,11 @@ function adjustWordsOnStartChange(words: any[], newStart: number) {
       }
     }
   }
+
+  if (result.length > 0) {
+    result[0] = { ...result[0], start: newStart };
+  }
+
   return result;
 }
 
@@ -38,6 +43,11 @@ function adjustWordsOnEndChange(words: any[], newEnd: number) {
       }
     }
   }
+
+  if (result.length > 0) {
+    result[result.length - 1] = { ...result[result.length - 1], end: newEnd };
+  }
+
   return result;
 }
 
@@ -141,29 +151,74 @@ export function useTimelineDragging({
           const nextWord = currWords[wordIdx + 1];
 
           if (type === 'start') {
-            const prevWord = wordIdx > 0 ? currWords[wordIdx - 1] : null;
-            const prevEnd = prevWord ? prevWord.end : currSegment.start;
-            
-            if (prevWord && prevWord.isGap) {
-              const minStart = prevWord.start + 0.02; 
-              newTime = Math.max(minStart, Math.min(newTime, currWord.end - 0.05));
-              currWords[wordIdx - 1] = { ...prevWord, end: newTime };
+            if (wordIdx === 0) {
+              const prevSegment = segmentIdx > 0 ? newSegments[segmentIdx - 1] : null;
+              const maxTime = currWord.end - 0.05;
+              const minTime = prevSegment ? prevSegment.start + 0.1 : 0;
+              newTime = Math.max(minTime, Math.min(newTime, maxTime));
+
+              currWords[0] = { ...currWord, start: newTime };
+              const seg = { ...currSegment, start: newTime, words: currWords };
+              seg.text = rebuildText(seg.words, seg.text);
+              newSegments[segmentIdx] = seg;
+
+              if (prevSegment && newTime <= prevSegment.end) {
+                const prevSeg = { ...prevSegment, end: newTime };
+                if (prevSeg.words && prevSeg.words.length > 0) {
+                  prevSeg.words = adjustWordsOnEndChange(prevSeg.words, newTime);
+                  prevSeg.text = rebuildText(prevSeg.words, prevSeg.text);
+                }
+                newSegments[segmentIdx - 1] = prevSeg;
+              }
             } else {
-              newTime = Math.max(prevEnd, Math.min(newTime, currWord.end - 0.05));
+              const prevWord = currWords[wordIdx - 1];
+              const prevEnd = prevWord ? prevWord.end : currSegment.start;
+              
+              if (prevWord && prevWord.isGap) {
+                const minStart = prevWord.start + 0.02; 
+                newTime = Math.max(minStart, Math.min(newTime, currWord.end - 0.05));
+                currWords[wordIdx - 1] = { ...prevWord, end: newTime };
+              } else {
+                newTime = Math.max(prevEnd, Math.min(newTime, currWord.end - 0.05));
+              }
+              currWords[wordIdx] = { ...currWord, start: newTime };
+              newSegments[segmentIdx] = { ...currSegment, words: currWords };
             }
-            currWords[wordIdx] = { ...currWord, start: newTime };
           } else if (type === 'end') {
-            const nextWord = wordIdx < currWords.length - 1 ? currWords[wordIdx + 1] : null;
-            const nextStart = nextWord ? nextWord.start : currSegment.end;
-            
-            if (nextWord && nextWord.isGap) {
-              const maxEnd = nextWord.end - 0.02;
-              newTime = Math.max(currWord.start + 0.05, Math.min(newTime, maxEnd));
-              currWords[wordIdx + 1] = { ...nextWord, start: newTime };
+            if (wordIdx === currWords.length - 1) {
+              const nextSeg = segmentIdx < newSegments.length - 1 ? newSegments[segmentIdx + 1] : null;
+              const maxMediaTime = toMediaTime(timelineDuration);
+              const minTime = currWord.start + 0.05;
+              const maxTime = nextSeg ? nextSeg.end - 0.1 : maxMediaTime;
+              newTime = Math.max(minTime, Math.min(newTime, maxTime));
+
+              currWords[wordIdx] = { ...currWord, end: newTime };
+              const seg = { ...currSegment, end: newTime, words: currWords };
+              seg.text = rebuildText(seg.words, seg.text);
+              newSegments[segmentIdx] = seg;
+
+              if (nextSeg && newTime >= nextSeg.start) {
+                const pushed = { ...nextSeg, start: newTime };
+                if (pushed.words && pushed.words.length > 0) {
+                  pushed.words = adjustWordsOnStartChange(pushed.words, newTime);
+                  pushed.text = rebuildText(pushed.words, pushed.text);
+                }
+                newSegments[segmentIdx + 1] = pushed;
+              }
             } else {
-              newTime = Math.max(currWord.start + 0.05, Math.min(newTime, nextStart));
+              const nextWord = currWords[wordIdx + 1];
+              const nextStart = nextWord ? nextWord.start : currSegment.end;
+              
+              if (nextWord && nextWord.isGap) {
+                const maxEnd = nextWord.end - 0.02;
+                newTime = Math.max(currWord.start + 0.05, Math.min(newTime, maxEnd));
+                currWords[wordIdx + 1] = { ...nextWord, start: newTime };
+              } else {
+                newTime = Math.max(currWord.start + 0.05, Math.min(newTime, nextStart));
+              }
+              currWords[wordIdx] = { ...currWord, end: newTime };
+              newSegments[segmentIdx] = { ...currSegment, words: currWords };
             }
-            currWords[wordIdx] = { ...currWord, end: newTime };
           } else if (type === 'gap-ripple') {
             const gapWord = currWords[wordIdx];
             const oldEnd = gapWord.end;

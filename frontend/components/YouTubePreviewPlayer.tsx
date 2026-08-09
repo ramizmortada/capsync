@@ -89,10 +89,7 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
           onReady: (event: any) => {
             if (isMounted) {
               setDuration(event.target.getDuration() || 0);
-              // Set as active if none exists
-              if (!window.activeYouTubePlayerId) {
-                window.activeYouTubePlayerId = uniqueId;
-              }
+              window.activeYouTubePlayerId = uniqueId;
               // Hide captions by default initially
               if (typeof event.target.setOption === 'function') {
                 event.target.setOption('captions', 'track', {});
@@ -141,6 +138,9 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
 
     return () => {
       isMounted = false;
+      if (window.activeYouTubePlayerId === uniqueId) {
+        window.activeYouTubePlayerId = undefined;
+      }
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (playerRef.current && typeof playerRef.current.destroy === 'function') {
         try {
@@ -230,8 +230,11 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
   // Global keyboard shortcuts for video seeking
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if this is not the active player
-      if (window.activeYouTubePlayerId && window.activeYouTubePlayerId !== uniqueId) return;
+      // Set active player if none set
+      if (!window.activeYouTubePlayerId) {
+        window.activeYouTubePlayerId = uniqueId;
+      }
+      if (window.activeYouTubePlayerId !== uniqueId) return;
 
       // Ignore if user is typing in a text input or textarea
       const active = document.activeElement as HTMLInputElement;
@@ -245,16 +248,19 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
 
       if (!playerRef.current || typeof playerRef.current.getCurrentTime !== 'function') return;
 
+      const keyLower = e.key ? e.key.toLowerCase() : '';
+      const code = e.code;
+
       let seekAmount = 0;
-      if (e.key === 'ArrowLeft') {
+      if (code === 'ArrowLeft' || e.key === 'ArrowLeft') {
         seekAmount = e.shiftKey ? -30 : -5;
-      } else if (e.key === 'ArrowRight') {
+      } else if (code === 'ArrowRight' || e.key === 'ArrowRight') {
         seekAmount = e.shiftKey ? 30 : 5;
-      } else if (e.key === 'd' || e.key === 'D') {
+      } else if (code === 'KeyD' || keyLower === 'd' || e.key === 'ي') {
         seekAmount = -1;
-      } else if (e.key === 'f' || e.key === 'F') {
+      } else if (code === 'KeyF' || keyLower === 'f' || e.key === 'ب') {
         seekAmount = 1;
-      } else if (e.key === 'i' || e.key === 'I') {
+      } else if (code === 'KeyI' || keyLower === 'i' || e.key === 'ه') {
         e.preventDefault();
         const current = playerRef.current.getCurrentTime();
         onSetStart({
@@ -263,7 +269,7 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
           seconds: Math.floor(current % 60).toString().padStart(2, '0')
         });
         return;
-      } else if (e.key === 'o' || e.key === 'O') {
+      } else if (code === 'KeyO' || keyLower === 'o' || e.key === 'خ') {
         e.preventDefault();
         const current = playerRef.current.getCurrentTime();
         onSetEnd({
@@ -272,7 +278,7 @@ export default function YouTubePreviewPlayer({ videoId, onSetStart, onSetEnd, cl
           seconds: Math.floor(current % 60).toString().padStart(2, '0')
         });
         return;
-      } else if (e.key === ' ') {
+      } else if (code === 'Space' || e.key === ' ') {
         e.preventDefault();
         if (playerRef.current && typeof playerRef.current.getPlayerState === 'function') {
           const state = playerRef.current.getPlayerState();

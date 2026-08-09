@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { YtDlp } from 'ytdlp-nodejs';
 import path from 'path';
 import os from 'os';
+import fs from 'fs';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,15 +38,26 @@ export async function POST(req: Request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      const PROJECT_ROOT = path.resolve(process.cwd(), '..');
+      const LOCAL_FFMPEG_DIR = path.join(PROJECT_ROOT, 'ffmpeg', 'bin');
+      const LOCAL_FFMPEG_BIN = path.join(LOCAL_FFMPEG_DIR, 'ffmpeg.exe');
+      const FFMPEG_DIR = fs.existsSync(LOCAL_FFMPEG_DIR) ? LOCAL_FFMPEG_DIR : 'C:\\FFmpeg\\bin';
+      const FFMPEG_BIN = fs.existsSync(LOCAL_FFMPEG_BIN) ? LOCAL_FFMPEG_BIN : 'C:\\FFmpeg\\bin\\ffmpeg.exe';
+
       const ytdlp = new YtDlp({
-        ffmpegPath: path.resolve(process.cwd(), 'ffmpeg.exe'),
+        ffmpegPath: FFMPEG_BIN,
       });
 
       try {
         // Use a safe temporary directory
         const tempDir = os.tmpdir();
         
-        let dl = ytdlp.download(url).output(path.join(tempDir, '%(title)s.%(ext)s'));
+        let dl = ytdlp.download(url)
+          .output(path.join(tempDir, '%(title)s.%(ext)s'))
+          .addArgs(
+            '--ffmpeg-location', FFMPEG_DIR,
+            '--js-runtimes', 'node'
+          );
 
         const normStart = normalizeTimestamp(startTime);
         const normEnd = normalizeTimestamp(endTime);

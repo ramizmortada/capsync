@@ -6,8 +6,8 @@ echo ===================================
 echo     Starting CapSync Studio
 echo ===================================
 
-:: Add FFmpeg to PATH so WhisperX can process audio
-set PATH=%PATH%;C:\FFmpeg\bin
+:: Add FFmpeg to PATH so WhisperX and services can process audio
+set PATH=%~dp0ffmpeg\bin;%PATH%;C:\FFmpeg\bin
 
 :: Start the Python Backend in the background (no new window)
 echo Starting Python FastAPI Backend...
