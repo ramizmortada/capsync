@@ -866,6 +866,7 @@ function EditorContent() {
           <div className="lg:col-span-4 animate-in fade-in slide-in-from-bottom-4 duration-700 h-full overflow-hidden">
             <SubtitleEditor 
               isBusy={isBusy}
+              file={file}
               editableSegments={editableSegments}
               selectedIndexes={selectedIndexes.filter(i => typeof i === 'number') as number[]}
               setSelectedIndexes={setSelectedIndexes}

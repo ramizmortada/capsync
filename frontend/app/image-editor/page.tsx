@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { StagedFrameItem, CanvasComposition } from '../types/imageEditor';
 import { SubtitleStyle, DEFAULT_PRESETS } from '../types';
+import { get, set } from 'idb-keyval';
 import { getTimeline, getAllTimelines } from '@/lib/timelineStorage';
 import JSZip from 'jszip';
 import { PanelScrubberCard } from '../components/image-editor/PanelScrubberCard';
@@ -22,6 +23,7 @@ import {
   CheckSquare,
   Square,
   Archive,
+  Video,
 } from 'lucide-react';
 
 export default function ImageEditorPage() {
@@ -51,22 +53,40 @@ export default function ImageEditorPage() {
       let loadedVideoUrl: string | null = null;
       let projectSegments: any[] = [];
 
-      // Load active project timeline video file from IDB
+      // 1. First attempt to load dedicated standalone video file stored for Image Creator
       try {
-        const timelines = await getAllTimelines();
-        const activeId = timelines.length > 0 ? timelines[0].id : 'main_timeline';
-        const project = await getTimeline(activeId);
-
-        if (project && project.file) {
-          loadedVideoUrl = URL.createObjectURL(project.file);
+        const standaloneBlob = await get<Blob>('capsync_image_creator_video_blob');
+        if (standaloneBlob) {
+          loadedVideoUrl = URL.createObjectURL(standaloneBlob);
           setVideoUrl(loadedVideoUrl);
         }
-
-        if (project && project.editableSegments) {
-          projectSegments = project.editableSegments;
-        }
       } catch (err) {
-        console.error('Failed to load project video from storage', err);
+        console.error('Failed to load standalone video blob for Image Creator:', err);
+      }
+
+      // 2. Fallback to active timeline file if standalone blob is not present
+      if (!loadedVideoUrl) {
+        try {
+          const timelines = await getAllTimelines();
+          const activeId = timelines.length > 0 ? timelines[0].id : 'main_timeline';
+          const project = await getTimeline(activeId);
+
+          if (project && project.file) {
+            loadedVideoUrl = URL.createObjectURL(project.file);
+            setVideoUrl(loadedVideoUrl);
+            try {
+              await set('capsync_image_creator_video_blob', project.file);
+            } catch (e) {
+              console.error('Failed auto-relinking video file to IDB:', e);
+            }
+          }
+
+          if (project && project.editableSegments) {
+            projectSegments = project.editableSegments;
+          }
+        } catch (err) {
+          console.error('Failed to load project video from storage', err);
+        }
       }
 
       // Load staged captions from localStorage or fallback to project segments
@@ -369,6 +389,21 @@ export default function ImageEditorPage() {
       }))
     );
     setSelectedFrameIds([]);
+  };
+
+  const relinkFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const handleManualRelinkVideo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) return;
+
+    try {
+      await set('capsync_image_creator_video_blob', selectedFile);
+      const url = URL.createObjectURL(selectedFile);
+      setVideoUrl(url);
+    } catch (err) {
+      console.error('Failed to relink video file:', err);
+    }
   };
 
   const [isZipping, setIsZipping] = useState(false);
@@ -731,22 +766,41 @@ export default function ImageEditorPage() {
               <span>Staging Tray ({stagedItems.length})</span>
             </div>
 
-            {stagedItems.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="file"
+                ref={relinkFileInputRef}
+                accept="video/*"
+                onChange={handleManualRelinkVideo}
+                className="hidden"
+              />
+
               <button
-                onClick={handleToggleSelectAll}
-                className="text-xs font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1 bg-purple-950/40 border border-purple-800/40 px-2 py-1 rounded-md"
+                onClick={() => relinkFileInputRef.current?.click()}
+                className="text-xs font-semibold text-emerald-400 hover:text-emerald-300 flex items-center gap-1 bg-emerald-950/40 border border-emerald-800/40 px-2 py-1 rounded-md transition-colors"
+                title="Relink or replace video file for staged frames"
               >
-                {selectedFrameIds.length === stagedItems.length ? (
-                  <>
-                    <CheckSquare className="w-3.5 h-3.5" /> Deselect All
-                  </>
-                ) : (
-                  <>
-                    <Square className="w-3.5 h-3.5" /> Select All ({selectedFrameIds.length})
-                  </>
-                )}
+                <Video className="w-3.5 h-3.5 text-emerald-400" />
+                <span>{videoUrl ? 'Relink Video' : 'Select Video File'}</span>
               </button>
-            )}
+
+              {stagedItems.length > 0 && (
+                <button
+                  onClick={handleToggleSelectAll}
+                  className="text-xs font-semibold text-purple-400 hover:text-purple-300 flex items-center gap-1 bg-purple-950/40 border border-purple-800/40 px-2 py-1 rounded-md"
+                >
+                  {selectedFrameIds.length === stagedItems.length ? (
+                    <>
+                      <CheckSquare className="w-3.5 h-3.5" /> Deselect All
+                    </>
+                  ) : (
+                    <>
+                      <Square className="w-3.5 h-3.5" /> Select All ({selectedFrameIds.length})
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Staged Items List inside ScrollArea */}

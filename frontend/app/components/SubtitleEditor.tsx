@@ -2,12 +2,14 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { TimelineContextMenu, ContextMenuData } from "./timeline/TimelineContextMenu";
+import { set } from 'idb-keyval';
 import { SubtitleHeader } from "./subtitle/SubtitleHeader";
 import { SubtitleList } from "./subtitle/SubtitleList";
 import { VideoTabContent } from "./subtitle/VideoTabContent";
 
 interface SubtitleEditorProps {
   isBusy?: boolean;
+  file?: File | null;
   editableSegments: any[];
   selectedIndexes: (number | string)[];
   setSelectedIndexes: React.Dispatch<React.SetStateAction<(number | string)[]>>;
@@ -40,6 +42,7 @@ interface SubtitleEditorProps {
 
 export function SubtitleEditor({
   isBusy = false,
+  file,
   editableSegments,
   selectedIndexes,
   setSelectedIndexes,
@@ -77,8 +80,12 @@ export function SubtitleEditor({
   const prevActiveIndexRef = useRef<number | null>(null);
   const scrollAnimRef = useRef<number | null>(null);
 
-  const handleExportToImageEditor = () => {
+  const handleExportToImageEditor = async () => {
     if (!editableSegments || editableSegments.length === 0) return;
+    if (isBusy) {
+      alert('Transcription is currently in progress. Please wait for transcription to complete before navigating.');
+      return;
+    }
     const targetIndexes = selectedIndexes.length > 0 
       ? selectedIndexes.map(Number).sort((a, b) => a - b)
       : editableSegments.map((_, i) => i);
@@ -95,11 +102,17 @@ export function SubtitleEditor({
         customText: seg.text || '',
       };
     });
-    if (isBusy) {
-      alert('Transcription is currently in progress. Please wait for transcription to complete before navigating.');
-      return;
-    }
+
     localStorage.setItem('capsync_staged_captions', JSON.stringify(stagedItems));
+
+    if (file) {
+      try {
+        await set('capsync_image_creator_video_blob', file);
+      } catch (err) {
+        console.error('Failed to save standalone video blob for Image Creator:', err);
+      }
+    }
+
     router.push('/image-editor');
   };
 
