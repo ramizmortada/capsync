@@ -7,6 +7,7 @@ import { SubtitleList } from "./subtitle/SubtitleList";
 import { VideoTabContent } from "./subtitle/VideoTabContent";
 
 interface SubtitleEditorProps {
+  isBusy?: boolean;
   editableSegments: any[];
   selectedIndexes: (number | string)[];
   setSelectedIndexes: React.Dispatch<React.SetStateAction<(number | string)[]>>;
@@ -38,6 +39,7 @@ interface SubtitleEditorProps {
 }
 
 export function SubtitleEditor({
+  isBusy = false,
   editableSegments,
   selectedIndexes,
   setSelectedIndexes,
@@ -93,6 +95,10 @@ export function SubtitleEditor({
         customText: seg.text || '',
       };
     });
+    if (isBusy) {
+      alert('Transcription is currently in progress. Please wait for transcription to complete before navigating.');
+      return;
+    }
     localStorage.setItem('capsync_staged_captions', JSON.stringify(stagedItems));
     router.push('/image-editor');
   };

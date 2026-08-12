@@ -122,6 +122,41 @@ function EditorContent() {
 
   const [isPlaying, setIsPlaying] = useState(false);
 
+  const isBusy = status === 'uploading' || status === 'downloading_model' || status === 'transcribing' || status === 'burning';
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isBusy) {
+        e.preventDefault();
+        e.returnValue = 'Transcription is currently in progress. Are you sure you want to leave?';
+        return 'Transcription is currently in progress. Are you sure you want to leave?';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isBusy]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__capsync_is_transcribing = isBusy;
+      window.dispatchEvent(new Event('capsync_transcription_status_change'));
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        (window as any).__capsync_is_transcribing = false;
+        window.dispatchEvent(new Event('capsync_transcription_status_change'));
+      }
+    };
+  }, [isBusy]);
+
+  const handleSafeNavigate = (url: string) => {
+    if (isBusy) {
+      alert(`Transcription is currently in progress (${progress}%). Please wait for transcription to complete before navigating away.`);
+      return;
+    }
+    router.push(url);
+  };
+
   // Subtitle management hook
   const subtitleState = useSubtitleState({
     file,
@@ -659,7 +694,7 @@ function EditorContent() {
           <Button 
             variant="ghost" 
             size="sm" 
-            onClick={() => router.push('/')}
+            onClick={() => handleSafeNavigate('/')}
             className="text-neutral-400 hover:text-white hover:bg-neutral-800 gap-2 h-8 text-xs font-semibold"
           >
             <ArrowLeft className="w-4 h-4" /> Timelines
@@ -830,6 +865,7 @@ function EditorContent() {
 
           <div className="lg:col-span-4 animate-in fade-in slide-in-from-bottom-4 duration-700 h-full overflow-hidden">
             <SubtitleEditor 
+              isBusy={isBusy}
               editableSegments={editableSegments}
               selectedIndexes={selectedIndexes.filter(i => typeof i === 'number') as number[]}
               setSelectedIndexes={setSelectedIndexes}
