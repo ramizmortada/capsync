@@ -28,7 +28,7 @@ export function NavBar() {
     { href: '/', label: 'Timelines', icon: Film },
     { href: '/download', label: 'Downloader', icon: Download },
     { href: '/editor', label: 'Editor', icon: Edit3 },
-    { href: '/image-editor', label: 'Image Creator', icon: Sparkles },
+    { href: '/screencaps', label: 'Screencaps', icon: Sparkles },
     { href: '/image-to-video', label: 'Image to Video', icon: Images },
     { href: '/cache', label: 'Cache Storage', icon: HardDrive },
   ];
@@ -82,7 +82,7 @@ export function NavBar() {
                     isActive && link.href === '/' && 'text-blue-400',
                     isActive && link.href === '/download' && 'text-blue-400',
                     isActive && link.href === '/editor' && 'text-purple-400',
-                    isActive && link.href === '/image-editor' && 'text-purple-400',
+                    isActive && link.href === '/screencaps' && 'text-purple-400',
                     isActive && link.href === '/image-to-video' && 'text-emerald-400'
                   )}
                 />

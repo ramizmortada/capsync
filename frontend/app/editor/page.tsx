@@ -868,6 +868,7 @@ function EditorContent() {
               isBusy={isBusy}
               file={file}
               editableSegments={editableSegments}
+              setEditableSegments={setEditableSegments}
               selectedIndexes={selectedIndexes.filter(i => typeof i === 'number') as number[]}
               setSelectedIndexes={setSelectedIndexes}
               rippleDeletes={rippleDeletes}

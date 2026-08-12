@@ -1,17 +1,19 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { StagedFrameItem, CanvasComposition } from '../types/imageEditor';
 import { SubtitleStyle, DEFAULT_PRESETS } from '../types';
 import { get, set } from 'idb-keyval';
 import { getTimeline, getAllTimelines } from '@/lib/timelineStorage';
+import { getScreencapProject, createScreencapProject, saveScreencapProject, ScreencapProjectData } from '@/lib/screencapStorage';
 import JSZip from 'jszip';
 import { PanelScrubberCard } from '../components/image-editor/PanelScrubberCard';
 import { CanvasCompositor, formatCaptionText, renderCanvasToOffscreen } from '../components/image-editor/CanvasCompositor';
 import { PanelStyleControls } from '../components/image-editor/PanelStyleControls';
 import { BulkActionToolbar } from '../components/image-editor/BulkActionToolbar';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   ArrowLeft,
@@ -24,10 +26,19 @@ import {
   Square,
   Archive,
   Video,
+  Edit2,
+  Check,
+  Folder
 } from 'lucide-react';
 
 export default function ImageEditorPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const projectId = searchParams?.get('id');
+  const [projectData, setProjectData] = useState<ScreencapProjectData | null>(null);
+  
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleInput, setTitleInput] = useState('');
 
   // Video Media State
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -50,119 +61,100 @@ export default function ImageEditorPage() {
   // 1. Load project video, saved canvases, and staged captions on initial mount
   useEffect(() => {
     async function loadData() {
-      let loadedVideoUrl: string | null = null;
-      let projectSegments: any[] = [];
+      if (projectId) {
+        // LOAD PROJECT FROM DB
+        const proj = await getScreencapProject(projectId);
+        if (proj) {
+          setProjectData(proj);
+          setTitleInput(proj.name);
+          setStagedItems(proj.stagedItems || []);
+          setCanvases(proj.canvases || []);
+          if (proj.subtitleStyle) setSubtitleStyle(proj.subtitleStyle);
+          if (proj.canvases && proj.canvases.length > 0) setActiveCanvasId(proj.canvases[0].id);
 
-      // 1. First attempt to load dedicated standalone video file stored for Image Creator
+          if (proj.file) {
+             setVideoUrl(URL.createObjectURL(proj.file as Blob));
+          }
+        }
+        setIsLoaded(true);
+        return;
+      }
+
+      // NO PROJECT ID -> CHECK FOR LEGACY DATA
+      let standaloneBlob: Blob | null = null;
       try {
-        const standaloneBlob = await get<Blob>('capsync_image_creator_video_blob');
-        if (standaloneBlob) {
-          loadedVideoUrl = URL.createObjectURL(standaloneBlob);
-          setVideoUrl(loadedVideoUrl);
-        }
-      } catch (err) {
-        console.error('Failed to load standalone video blob for Image Creator:', err);
-      }
+        standaloneBlob = await get<Blob>('capsync_image_creator_video_blob') || null;
+      } catch (err) { }
 
-      // 2. Fallback to active timeline file if standalone blob is not present
-      if (!loadedVideoUrl) {
-        try {
-          const timelines = await getAllTimelines();
-          const activeId = timelines.length > 0 ? timelines[0].id : 'main_timeline';
-          const project = await getTimeline(activeId);
-
-          if (project && project.file) {
-            loadedVideoUrl = URL.createObjectURL(project.file);
-            setVideoUrl(loadedVideoUrl);
-            try {
-              await set('capsync_image_creator_video_blob', project.file);
-            } catch (e) {
-              console.error('Failed auto-relinking video file to IDB:', e);
-            }
-          }
-
-          if (project && project.editableSegments) {
-            projectSegments = project.editableSegments;
-          }
-        } catch (err) {
-          console.error('Failed to load project video from storage', err);
-        }
-      }
-
-      // Load staged captions from localStorage or fallback to project segments
       const savedStaged = localStorage.getItem('capsync_staged_captions');
       let itemsToStage: StagedFrameItem[] = [];
-
       if (savedStaged) {
-        try {
-          itemsToStage = JSON.parse(savedStaged);
-        } catch (err) {
-          console.error('Failed to parse staged captions', err);
-        }
+        try { itemsToStage = JSON.parse(savedStaged); } catch (err) {}
       }
 
-      // Fallback: If no explicitly staged items, populate from active project segments
-      if (itemsToStage.length === 0 && projectSegments.length > 0) {
-        itemsToStage = projectSegments.map((seg, idx) => ({
-          id: `stage_auto_${idx}_${Date.now()}`,
-          segmentIndex: idx,
-          startTime: seg.start,
-          endTime: seg.end,
-          frameTime: seg.start + (seg.end - seg.start) / 2,
-          defaultText: seg.text || '',
-          customText: seg.text || '',
-        }));
+      const savedCanvasesStr = localStorage.getItem('capsync_editor_canvases');
+      let legacyCanvases: CanvasComposition[] = [];
+      if (savedCanvasesStr) {
+        try { legacyCanvases = JSON.parse(savedCanvasesStr); } catch (err) {}
       }
 
-      setStagedItems(itemsToStage);
-
-      // Load saved canvases from localStorage (NO auto-creation of default canvas!)
-      const savedCanvases = localStorage.getItem('capsync_editor_canvases');
-      if (savedCanvases) {
-        try {
-          const parsedCanvases: CanvasComposition[] = JSON.parse(savedCanvases);
-          setCanvases(parsedCanvases);
-
-          const savedActiveId = localStorage.getItem('capsync_active_canvas_id');
-          if (savedActiveId && parsedCanvases.some((c) => c.id === savedActiveId)) {
-            setActiveCanvasId(savedActiveId);
-          } else if (parsedCanvases.length > 0) {
-            setActiveCanvasId(parsedCanvases[0].id);
-          }
-        } catch (err) {
-          console.error('Failed to parse saved canvases', err);
-        }
+      const savedStyleStr = localStorage.getItem('capsync_subtitle_style');
+      let legacyStyle: SubtitleStyle | undefined = undefined;
+      if (savedStyleStr) {
+        try { legacyStyle = JSON.parse(savedStyleStr); } catch (err) {}
       }
 
-      // Load saved subtitle style
-      const savedStyle = localStorage.getItem('capsync_subtitle_style');
-      if (savedStyle) {
-        try {
-          setSubtitleStyle(JSON.parse(savedStyle));
-        } catch (err) {
-          console.error('Failed to parse subtitle style', err);
-        }
-      }
+      // If we found legacy data, migrate it!
+      if (itemsToStage.length > 0 || legacyCanvases.length > 0) {
+         try {
+            const newProj = await createScreencapProject(
+              `Migrated Screencap`, 
+              standaloneBlob as File | null, 
+              itemsToStage, 
+              legacyCanvases,
+              legacyStyle
+            );
 
+            // Clean up legacy keys
+            localStorage.removeItem('capsync_staged_captions');
+            localStorage.removeItem('capsync_editor_canvases');
+            localStorage.removeItem('capsync_subtitle_style');
+            
+            // Redirect to new project
+            router.push(`/image-editor?id=${newProj.id}`);
+            return;
+         } catch(e) {
+            console.error('Migration failed', e);
+         }
+      }
+      
       setIsLoaded(true);
     }
 
     loadData();
-  }, []);
+  }, [projectId, router]);
 
-  // 2. Persistent Auto-Save for Canvases
+  // Auto-Save to IndexedDB Project
   useEffect(() => {
-    if (!isLoaded) return;
-    localStorage.setItem('capsync_editor_canvases', JSON.stringify(canvases));
-  }, [canvases, isLoaded]);
-
-  // 3. Persistent Auto-Save for Staged Items
-  useEffect(() => {
-    if (!isLoaded) return;
-    localStorage.setItem('capsync_staged_captions', JSON.stringify(stagedItems));
-  }, [stagedItems, isLoaded]);
-
-  // 4. Persistent Auto-Save for Active Canvas ID
+    if (!isLoaded || !projectData) return;
+    
+    const save = async () => {
+      const updatedProj: ScreencapProjectData = {
+        ...projectData,
+        stagedItems,
+        canvases,
+        subtitleStyle
+      };
+      try {
+        await saveScreencapProject(updatedProj);
+      } catch (e) {
+        console.error("Failed to auto-save screencap project:", e);
+      }
+    };
+    save();
+  }, [stagedItems, canvases, subtitleStyle, isLoaded]); // Omit projectData to avoid loops
+  
+  // Save Active Canvas ID to localStorage (just UI state)
   useEffect(() => {
     if (!isLoaded) return;
     localStorage.setItem('capsync_active_canvas_id', activeCanvasId || '');
@@ -671,6 +663,19 @@ export default function ImageEditorPage() {
   const activeCanvas = canvases.find((c) => c.id === activeCanvasId) || canvases[0];
   const activeCanvasFrameIds = activeCanvas ? activeCanvas.frameIds : [];
 
+  const handleSaveTitle = async () => {
+    if (projectData && titleInput.trim()) {
+      const updated = { ...projectData, name: titleInput.trim() };
+      setProjectData(updated);
+      try {
+        await saveScreencapProject(updated);
+      } catch (e) {
+        console.error("Failed to save title", e);
+      }
+    }
+    setIsEditingTitle(false);
+  };
+
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden relative">
       {/* Hidden Master Video Element for Canvas Rendering */}
@@ -700,12 +705,30 @@ export default function ImageEditorPage() {
 
           <div className="h-4 w-px bg-border" />
 
-          <div className="flex items-center gap-2">
-            <ImageIcon className="w-5 h-5 text-purple-400" />
-            <h1 className="font-bold text-base bg-gradient-to-r from-purple-400 to-indigo-400 bg-clip-text text-transparent">
-              Image & Panel Creator
-            </h1>
-          </div>
+          {isEditingTitle ? (
+            <div className="flex items-center gap-2">
+              <Input
+                value={titleInput}
+                onChange={(e) => setTitleInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveTitle()}
+                className="h-8 text-sm font-bold bg-neutral-950 border-purple-500 w-64"
+                autoFocus
+              />
+              <Button size="icon" className="h-8 w-8 bg-purple-600 hover:bg-purple-500" onClick={handleSaveTitle}>
+                <Check className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 group cursor-pointer" onClick={() => { setIsEditingTitle(true); setTitleInput(projectData?.name || 'Screencap'); }}>
+              <span className="flex items-center gap-1.5 text-xs font-semibold text-purple-400 bg-purple-950/60 border border-purple-800/40 px-2 py-0.5 rounded-md">
+                <Folder className="w-3.5 h-3.5" /> Screencap
+              </span>
+              <h2 className="font-bold text-sm text-neutral-100 group-hover:text-purple-400 transition-colors">
+                {projectData?.name || 'Loading...'}
+              </h2>
+              <Edit2 className="w-3 h-3 text-neutral-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

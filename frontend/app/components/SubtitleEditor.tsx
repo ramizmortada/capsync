@@ -3,6 +3,7 @@ import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { TimelineContextMenu, ContextMenuData } from "./timeline/TimelineContextMenu";
 import { set } from 'idb-keyval';
+import { createScreencapProject } from "@/lib/screencapStorage";
 import { SubtitleHeader } from "./subtitle/SubtitleHeader";
 import { SubtitleList } from "./subtitle/SubtitleList";
 import { VideoTabContent } from "./subtitle/VideoTabContent";
@@ -11,6 +12,7 @@ interface SubtitleEditorProps {
   isBusy?: boolean;
   file?: File | null;
   editableSegments: any[];
+  setEditableSegments: React.Dispatch<React.SetStateAction<any[]>>;
   selectedIndexes: (number | string)[];
   setSelectedIndexes: React.Dispatch<React.SetStateAction<(number | string)[]>>;
   rippleDeletes: {start: number, end: number}[];
@@ -44,6 +46,7 @@ export function SubtitleEditor({
   isBusy = false,
   file,
   editableSegments,
+  setEditableSegments,
   selectedIndexes,
   setSelectedIndexes,
   rippleDeletes,
@@ -103,17 +106,20 @@ export function SubtitleEditor({
       };
     });
 
-    localStorage.setItem('capsync_staged_captions', JSON.stringify(stagedItems));
-
-    if (file) {
-      try {
-        await set('capsync_image_creator_video_blob', file);
-      } catch (err) {
-        console.error('Failed to save standalone video blob for Image Creator:', err);
+    try {
+      const newProj = await createScreencapProject(`Screencap ${new Date().toLocaleDateString()}`, file, stagedItems);
+      router.push(`/image-editor?id=${newProj.id}`);
+    } catch (err) {
+      console.error('Failed to create screencap project:', err);
+      // Fallback
+      localStorage.setItem('capsync_staged_captions', JSON.stringify(stagedItems));
+      if (file) {
+        try {
+          await set('capsync_image_creator_video_blob', file);
+        } catch (e) {}
       }
+      router.push('/image-editor');
     }
-
-    router.push('/image-editor');
   };
 
   const selectedTargetIds = useMemo(() => {
@@ -316,7 +322,7 @@ export function SubtitleEditor({
         handleOffsetSegments={handleOffsetSegments}
         onLiftDeleteClick={onLiftDeleteClick}
         downloadSRT={downloadSRT}
-        onExportToImageEditor={handleExportToImageEditor}
+        onImportSubtitles={setEditableSegments}
       />
       
       {activeTab === 'subtitles' ? (
@@ -334,6 +340,7 @@ export function SubtitleEditor({
           setSelectedIndexes={setSelectedIndexes}
           handleSegmentChange={handleSegmentChange}
           onMergeClick={onMergeClick}
+          onImportSubtitles={setEditableSegments}
         />
       ) : (
         <VideoTabContent

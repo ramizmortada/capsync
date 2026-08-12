@@ -1,6 +1,8 @@
-import { Edit3, Type, Video, Scissors, ChevronLeft, ChevronRight, Clock, Trash2, Download, Image as ImageIcon } from "lucide-react";
+import { useRef } from "react";
+import { Edit3, Type, Video, Scissors, ChevronLeft, ChevronRight, Clock, Trash2, Download, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { parseSRT, parseVTT } from "@/lib/subtitleParser";
 
 interface SubtitleHeaderProps {
   activeTab: 'subtitles' | 'video';
@@ -14,7 +16,7 @@ interface SubtitleHeaderProps {
   handleOffsetSegments: (seconds: number) => void;
   onLiftDeleteClick: () => void;
   downloadSRT: () => void;
-  onExportToImageEditor?: () => void;
+  onImportSubtitles?: (segments: any[]) => void;
 }
 
 export function SubtitleHeader({
@@ -29,8 +31,37 @@ export function SubtitleHeader({
   handleOffsetSegments,
   onLiftDeleteClick,
   downloadSRT,
-  onExportToImageEditor,
+  onImportSubtitles,
 }: SubtitleHeaderProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !onImportSubtitles) return;
+
+    const text = await file.text();
+    let segments: any[] = [];
+    if (file.name.endsWith('.srt')) {
+      segments = parseSRT(text);
+    } else if (file.name.endsWith('.vtt')) {
+      segments = parseVTT(text);
+    } else {
+      alert("Unsupported file format. Please upload .srt or .vtt.");
+      return;
+    }
+    
+    if (segments.length > 0) {
+      onImportSubtitles(segments);
+    } else {
+      alert("Failed to parse subtitles. Please check the file format.");
+    }
+    
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <div className="p-4 border-b border-border bg-card flex justify-between items-center shrink-0">
       <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
@@ -144,15 +175,22 @@ export function SubtitleHeader({
         )}
       </div>
       <div className="flex items-center gap-2">
-        {onExportToImageEditor && (
-          <Button
-            onClick={onExportToImageEditor}
-            size="sm"
-            className="h-8 px-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md"
-            title={selectedIndexesCount > 0 ? `Export ${selectedIndexesCount} selected subtitle(s) as Image Panels` : 'Open Image & Panel Creator'}
+        <input 
+          type="file" 
+          accept=".srt,.vtt" 
+          ref={fileInputRef} 
+          onChange={handleImportFile} 
+          className="hidden" 
+        />
+        {onImportSubtitles && (
+          <Button 
+            onClick={() => fileInputRef.current?.click()} 
+            size="icon" 
+            variant="outline" 
+            className="h-8 w-8 shadow-sm text-xs" 
+            title="Import Subtitles (.srt, .vtt)"
           >
-            <ImageIcon className="w-3.5 h-3.5" />
-            <span>{selectedIndexesCount > 0 ? `Create Panels (${selectedIndexesCount})` : 'Image Panels'}</span>
+            <Upload className="w-3.5 h-3.5" />
           </Button>
         )}
         {activeTab === 'subtitles' && selectedIndexesCount > 0 && (
