@@ -83,7 +83,7 @@ export function SubtitleEditor({
   const prevActiveIndexRef = useRef<number | null>(null);
   const scrollAnimRef = useRef<number | null>(null);
 
-  const handleExportToImageEditor = async () => {
+  const handleExportToImageEditor = async (projectId?: string) => {
     if (!editableSegments || editableSegments.length === 0) return;
     if (isBusy) {
       alert('Transcription is currently in progress. Please wait for transcription to complete before navigating.');
@@ -107,10 +107,24 @@ export function SubtitleEditor({
     });
 
     try {
+      if (projectId) {
+        const { getScreencapProject, saveScreencapProject } = await import('@/lib/screencapStorage');
+        const proj = await getScreencapProject(projectId);
+        if (proj) {
+          proj.stagedItems = [...proj.stagedItems, ...stagedItems];
+          if (file && !proj.file) {
+            proj.file = file;
+          }
+          await saveScreencapProject(proj);
+          router.push(`/image-editor?id=${proj.id}`);
+          return;
+        }
+      }
+      
       const newProj = await createScreencapProject(`Screencap ${new Date().toLocaleDateString()}`, file, stagedItems);
       router.push(`/image-editor?id=${newProj.id}`);
     } catch (err) {
-      console.error('Failed to create screencap project:', err);
+      console.error('Failed to export to Image Editor:', err);
       // Fallback
       localStorage.setItem('capsync_staged_captions', JSON.stringify(stagedItems));
       if (file) {
@@ -323,6 +337,7 @@ export function SubtitleEditor({
         onLiftDeleteClick={onLiftDeleteClick}
         downloadSRT={downloadSRT}
         onImportSubtitles={setEditableSegments}
+        onExportToImageEditor={handleExportToImageEditor}
       />
       
       {activeTab === 'subtitles' ? (

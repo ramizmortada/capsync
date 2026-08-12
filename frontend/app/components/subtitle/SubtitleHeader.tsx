@@ -1,8 +1,9 @@
-import { useRef } from "react";
-import { Edit3, Type, Video, Scissors, ChevronLeft, ChevronRight, Clock, Trash2, Download, Upload } from "lucide-react";
+import { useRef, useState, useEffect } from "react";
+import { Edit3, Type, Video, Scissors, ChevronLeft, ChevronRight, Clock, Trash2, Download, Upload, Image as ImageIcon, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { parseSRT, parseVTT } from "@/lib/subtitleParser";
+import { getAllScreencaps, ScreencapMetadata } from "@/lib/screencapStorage";
 
 interface SubtitleHeaderProps {
   activeTab: 'subtitles' | 'video';
@@ -17,6 +18,7 @@ interface SubtitleHeaderProps {
   onLiftDeleteClick: () => void;
   downloadSRT: () => void;
   onImportSubtitles?: (segments: any[]) => void;
+  onExportToImageEditor?: (projectId?: string) => void;
 }
 
 export function SubtitleHeader({
@@ -32,8 +34,17 @@ export function SubtitleHeader({
   onLiftDeleteClick,
   downloadSRT,
   onImportSubtitles,
+  onExportToImageEditor,
 }: SubtitleHeaderProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [screencaps, setScreencaps] = useState<ScreencapMetadata[]>([]);
+  const [isExportPopoverOpen, setIsExportPopoverOpen] = useState(false);
+
+  useEffect(() => {
+    if (isExportPopoverOpen) {
+      getAllScreencaps().then(setScreencaps);
+    }
+  }, [isExportPopoverOpen]);
 
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -192,6 +203,49 @@ export function SubtitleHeader({
           >
             <Upload className="w-3.5 h-3.5" />
           </Button>
+        )}
+        {onExportToImageEditor && activeTab === 'subtitles' && selectedIndexesCount > 0 && (
+          <Popover open={isExportPopoverOpen} onOpenChange={setIsExportPopoverOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                size="icon"
+                className="h-8 w-8 bg-gradient-to-br from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-md"
+                title={`Export ${selectedIndexesCount} subtitle(s) to Screencaps`}
+              >
+                <ImageIcon className="w-3.5 h-3.5" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-64 p-3 bg-neutral-900 border-neutral-800 flex flex-col gap-3">
+              <h4 className="font-semibold text-sm text-neutral-200">Send to Screencap</h4>
+              <p className="text-xs text-neutral-400">Add selected captions to a new or existing project.</p>
+              
+              <Button 
+                onClick={() => { setIsExportPopoverOpen(false); onExportToImageEditor(); }} 
+                className="w-full justify-start text-xs h-8 bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 text-white"
+              >
+                <Plus className="w-3.5 h-3.5 mr-2" /> New Project
+              </Button>
+              
+              {screencaps.length > 0 && (
+                <div className="flex flex-col gap-1.5 mt-1 border-t border-neutral-800 pt-3">
+                  <span className="text-xs font-semibold text-neutral-500 uppercase tracking-wider">Existing Projects</span>
+                  <div className="max-h-32 overflow-y-auto pr-1 flex flex-col gap-1 scrollbar-thin">
+                    {screencaps.map(proj => (
+                      <Button
+                        key={proj.id}
+                        variant="ghost"
+                        onClick={() => { setIsExportPopoverOpen(false); onExportToImageEditor(proj.id); }}
+                        className="w-full justify-start text-xs h-8 text-neutral-300 hover:text-white hover:bg-purple-900/40"
+                      >
+                        <ImageIcon className="w-3 h-3 mr-2 text-purple-400" />
+                        <span className="truncate">{proj.name}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </PopoverContent>
+          </Popover>
         )}
         {activeTab === 'subtitles' && selectedIndexesCount > 0 && (
           <div className="flex items-center bg-red-950/40 border border-red-800/60 rounded-lg overflow-hidden h-8 shadow-sm">
