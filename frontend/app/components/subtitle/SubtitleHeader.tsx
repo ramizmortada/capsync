@@ -1,4 +1,4 @@
-import { Edit3, Type, Video, Scissors, ChevronLeft, ChevronRight, Clock, Trash2, Download } from "lucide-react";
+import { Edit3, Type, Video, Scissors, ChevronLeft, ChevronRight, Clock, Trash2, Download, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 
@@ -14,6 +14,7 @@ interface SubtitleHeaderProps {
   handleOffsetSegments: (seconds: number) => void;
   onLiftDeleteClick: () => void;
   downloadSRT: () => void;
+  onExportToImageEditor?: () => void;
 }
 
 export function SubtitleHeader({
@@ -28,6 +29,7 @@ export function SubtitleHeader({
   handleOffsetSegments,
   onLiftDeleteClick,
   downloadSRT,
+  onExportToImageEditor,
 }: SubtitleHeaderProps) {
   return (
     <div className="p-4 border-b border-border bg-card flex justify-between items-center shrink-0">
@@ -142,6 +144,17 @@ export function SubtitleHeader({
         )}
       </div>
       <div className="flex items-center gap-2">
+        {onExportToImageEditor && (
+          <Button
+            onClick={onExportToImageEditor}
+            size="sm"
+            className="h-8 px-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-semibold text-xs flex items-center gap-1.5 shadow-md"
+            title={selectedIndexesCount > 0 ? `Export ${selectedIndexesCount} selected subtitle(s) as Image Panels` : 'Open Image & Panel Creator'}
+          >
+            <ImageIcon className="w-3.5 h-3.5" />
+            <span>{selectedIndexesCount > 0 ? `Create Panels (${selectedIndexesCount})` : 'Image Panels'}</span>
+          </Button>
+        )}
         {activeTab === 'subtitles' && selectedIndexesCount > 0 && (
           <div className="flex items-center bg-red-950/40 border border-red-800/60 rounded-lg overflow-hidden h-8 shadow-sm">
             <span className="px-2.5 text-xs font-bold text-red-300 border-r border-red-800/60 select-none">

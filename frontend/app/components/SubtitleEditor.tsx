@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/card";
 import { TimelineContextMenu, ContextMenuData } from "./timeline/TimelineContextMenu";
 import { SubtitleHeader } from "./subtitle/SubtitleHeader";
@@ -66,12 +67,35 @@ export function SubtitleEditor({
   setVideoSegments,
   selectedVideoIndexes,
 }: SubtitleEditorProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<'subtitles' | 'video'>('subtitles');
   const [contextMenu, setContextMenu] = useState<ContextMenuData | null>(null);
   const [displayActiveIndex, setDisplayActiveIndex] = useState<number>(-1);
   const lastSelectedRef = useRef<number | null>(null);
   const prevActiveIndexRef = useRef<number | null>(null);
   const scrollAnimRef = useRef<number | null>(null);
+
+  const handleExportToImageEditor = () => {
+    if (!editableSegments || editableSegments.length === 0) return;
+    const targetIndexes = selectedIndexes.length > 0 
+      ? selectedIndexes.map(Number).sort((a, b) => a - b)
+      : editableSegments.map((_, i) => i);
+    
+    const stagedItems = targetIndexes.map(idx => {
+      const seg = editableSegments[idx];
+      return {
+        id: `stage_${idx}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        segmentIndex: idx,
+        startTime: seg.start,
+        endTime: seg.end,
+        frameTime: seg.start + (seg.end - seg.start) / 2, // default to midpoint
+        defaultText: seg.text || '',
+        customText: seg.text || '',
+      };
+    });
+    localStorage.setItem('capsync_staged_captions', JSON.stringify(stagedItems));
+    router.push('/image-editor');
+  };
 
   const selectedTargetIds = useMemo(() => {
     return (selectedVideoIndexes && selectedVideoIndexes.length > 0)
@@ -273,6 +297,7 @@ export function SubtitleEditor({
         handleOffsetSegments={handleOffsetSegments}
         onLiftDeleteClick={onLiftDeleteClick}
         downloadSRT={downloadSRT}
+        onExportToImageEditor={handleExportToImageEditor}
       />
       
       {activeTab === 'subtitles' ? (
