@@ -17,6 +17,8 @@ interface UseProjectPersistenceProps {
   setRippleDeletes: (deletes: any[]) => void;
   videoSegments: any[];
   setVideoSegments: (segments: any[]) => void;
+  audioSegments?: any[];
+  setAudioSegments?: (segments: any[]) => void;
   videoCanvas: any;
   setVideoCanvas: (canvas: any) => void;
   subtitleStyle: any;
@@ -43,6 +45,8 @@ export function useProjectPersistence({
   setRippleDeletes,
   videoSegments,
   setVideoSegments,
+  audioSegments,
+  setAudioSegments,
   videoCanvas,
   setVideoCanvas,
   subtitleStyle,
@@ -82,6 +86,7 @@ export function useProjectPersistence({
             if (savedProject.editableSegments) setEditableSegments(savedProject.editableSegments);
             if (savedProject.rippleDeletes) setRippleDeletes(savedProject.rippleDeletes);
             if (savedProject.videoSegments) setVideoSegments(savedProject.videoSegments);
+            if (savedProject.audioSegments && setAudioSegments) setAudioSegments(savedProject.audioSegments);
             if (savedProject.videoCanvas) setVideoCanvas(savedProject.videoCanvas);
           }
         }
@@ -92,7 +97,7 @@ export function useProjectPersistence({
       }
     }
     loadProject();
-  }, [timelineId, setTimelineName, setFile, setStatus, setResult, setEditableSegments, setRippleDeletes, setVideoSegments, setVideoCanvas]);
+  }, [timelineId, setTimelineName, setFile, setStatus, setResult, setEditableSegments, setRippleDeletes, setVideoSegments, setAudioSegments, setVideoCanvas]);
 
   // Load subtitle style from localStorage
   useEffect(() => {
@@ -143,11 +148,12 @@ export function useProjectPersistence({
         editableSegments,
         rippleDeletes,
         videoSegments,
+        audioSegments,
         videoCanvas,
         subtitleStyle,
       }).catch(console.error);
     }
-  }, [isProjectLoaded, activeId, timelineName, file, status, result, editableSegments, rippleDeletes, videoSegments, videoCanvas, subtitleStyle]);
+  }, [isProjectLoaded, activeId, timelineName, file, status, result, editableSegments, rippleDeletes, videoSegments, audioSegments, videoCanvas, subtitleStyle]);
 
   // Save subtitle style to localStorage
   useEffect(() => {

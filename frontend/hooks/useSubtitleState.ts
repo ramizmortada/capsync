@@ -28,10 +28,21 @@ export interface VideoSegment {
   };
 }
 
+export interface AudioSegment {
+  id: string;
+  sourceStart: number;
+  sourceEnd: number;
+  timelineStart: number;
+  timelineEnd: number;
+  deleted: boolean;
+  linkedVideoId?: string;
+}
+
 type HistoryState = { 
   segments: any[]; 
   rippleDeletes: { start: number; end: number }[];
   videoSegments: VideoSegment[];
+  audioSegments: AudioSegment[];
 };
 
 export function useSubtitleState({
@@ -52,6 +63,9 @@ export function useSubtitleState({
   
   const [videoSegments, setVideoSegments] = useState<VideoSegment[]>([]);
   const [selectedVideoIndexes, setSelectedVideoIndexes] = useState<string[]>([]);
+  const [audioSegments, setAudioSegments] = useState<AudioSegment[]>([]);
+  const [selectedAudioIndexes, setSelectedAudioIndexes] = useState<string[]>([]);
+  const [isAudioLinked, setIsAudioLinked] = useState<boolean>(true);
   const [cursorMode, setCursorMode] = useState<'select' | 'cut' | 'resize'>('select');
 
   const [rippleDeletes, setRippleDeletes] = useState<{ start: number; end: number }[]>([]);
@@ -60,10 +74,16 @@ export function useSubtitleState({
     future: [],
   });
 
-  const cloneState = (segments: any[], rippleDeletesList: any[], videoSegs: VideoSegment[]) => ({
+  const cloneState = (
+    segments: any[], 
+    rippleDeletesList: any[], 
+    videoSegs: VideoSegment[], 
+    audioSegs: AudioSegment[] = []
+  ): HistoryState => ({
     segments: JSON.parse(JSON.stringify(segments || [])),
     rippleDeletes: JSON.parse(JSON.stringify(rippleDeletesList || [])),
     videoSegments: JSON.parse(JSON.stringify(videoSegs || [])),
+    audioSegments: JSON.parse(JSON.stringify(audioSegs || [])),
   });
 
   /**
@@ -204,7 +224,7 @@ export function useSubtitleState({
     setEditableSegments((prevSegments) => {
       const updated = typeof newSegments === "function" ? newSegments(prevSegments) : newSegments;
       setSegmentHistory((prevHistory) => ({
-        past: [...prevHistory.past, cloneState(prevSegments, rippleDeletes, videoSegments)].slice(-50),
+        past: [...prevHistory.past, cloneState(prevSegments, rippleDeletes, videoSegments, audioSegments)].slice(-50),
         future: [],
       }));
       return updated;
@@ -215,7 +235,18 @@ export function useSubtitleState({
     setVideoSegments((prevSegments) => {
       const updated = typeof newVideoSegments === "function" ? newVideoSegments(prevSegments) : newVideoSegments;
       setSegmentHistory((prevHistory) => ({
-        past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, prevSegments)].slice(-50),
+        past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, prevSegments, audioSegments)].slice(-50),
+        future: [],
+      }));
+      return updated;
+    });
+  };
+
+  const updateAudioSegments = (newAudioSegments: AudioSegment[] | ((prev: AudioSegment[]) => AudioSegment[])) => {
+    setAudioSegments((prevSegments) => {
+      const updated = typeof newAudioSegments === "function" ? newAudioSegments(prevSegments) : newAudioSegments;
+      setSegmentHistory((prevHistory) => ({
+        past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments, prevSegments)].slice(-50),
         future: [],
       }));
       return updated;
@@ -530,120 +561,155 @@ export function useSubtitleState({
     });
   };
 
-  // Helper: given ripple-deleted source-time regions, reconstruct base video segments
-  // and recalculate timeline positions so the timeline collapses/uncollapses dynamically.
-  const recalcVideoTimeline = (rippleDeletesToApply: { start: number; end: number }[], customVideoSegs?: VideoSegment[]) => {
-    setVideoSegments((prev) => {
-      const sourceSegs = customVideoSegs || prev;
-      if (!sourceSegs || sourceSegs.length === 0) return sourceSegs;
+  const toTimelineTime = (mediaTime: number) => {
+    const activeSeg = videoSegments.find(s => mediaTime >= s.sourceStart && mediaTime <= s.sourceEnd && !s.deleted);
+    if (activeSeg) {
+      return activeSeg.timelineStart + (mediaTime - activeSeg.sourceStart);
+    }
+    const closest = [...videoSegments].filter(s => !s.deleted).sort((a, b) => Math.abs(a.sourceStart - mediaTime) - Math.abs(b.sourceStart - mediaTime))[0];
+    if (closest) {
+      return closest.timelineStart + (mediaTime - closest.sourceStart);
+    }
+    return mediaTime;
+  };
 
-      // 1. Group segments by base ID (strip '_r' suffixes)
-      const groups = new Map<string, VideoSegment[]>();
-      for (const seg of sourceSegs) {
-        const baseId = seg.id.replace(/(_r)+$/, '');
-        if (!groups.has(baseId)) {
-          groups.set(baseId, []);
+  // Helper: applies timeline-range ripple deletion to a track's segment list,
+  // trimming or splitting overlapping segments and shifting subsequent segments left.
+  const rippleDeleteTrackSegments = <T extends { id: string; timelineStart: number; timelineEnd: number; sourceStart: number; sourceEnd: number; deleted?: boolean; [key: string]: any }>(
+    prev: T[],
+    ranges: { timelineStart: number; timelineEnd: number }[]
+  ): T[] => {
+    if (!prev || prev.length === 0 || !ranges || ranges.length === 0) return prev || [];
+    let current = [...prev];
+    const sortedRanges = [...ranges].filter(r => r.timelineEnd > r.timelineStart).sort((a, b) => b.timelineStart - a.timelineStart);
+
+    for (const { timelineStart: dStart, timelineEnd: dEnd } of sortedRanges) {
+      const delta = dEnd - dStart;
+      const nextList: T[] = [];
+
+      for (const seg of current) {
+        if (seg.deleted) {
+          nextList.push(seg);
+          continue;
         }
-        groups.get(baseId)!.push(seg);
+
+        // Entirely before deleted range -> unchanged
+        if (seg.timelineEnd <= dStart + 0.001) {
+          nextList.push(seg);
+          continue;
+        }
+
+        // Entirely after deleted range -> shift left by delta
+        if (seg.timelineStart >= dEnd - 0.001) {
+          nextList.push({
+            ...seg,
+            timelineStart: seg.timelineStart - delta,
+            timelineEnd: seg.timelineEnd - delta,
+          });
+          continue;
+        }
+
+        // Completely inside deleted range -> mark deleted
+        if (seg.timelineStart >= dStart - 0.001 && seg.timelineEnd <= dEnd + 0.001) {
+          nextList.push({ ...seg, deleted: true });
+          continue;
+        }
+
+        // Spans across the deleted range (starts before dStart, ends after dEnd) -> split into left and right
+        if (seg.timelineStart < dStart && seg.timelineEnd > dEnd) {
+          const segDur = seg.timelineEnd - seg.timelineStart;
+          const srcDur = seg.sourceEnd - seg.sourceStart;
+          const leftRatio = (dStart - seg.timelineStart) / segDur;
+          const rightRatio = (dEnd - seg.timelineStart) / segDur;
+
+          const leftSrcEnd = seg.sourceStart + leftRatio * srcDur;
+          const rightSrcStart = seg.sourceStart + rightRatio * srcDur;
+
+          const leftSeg: T = {
+            ...seg,
+            timelineEnd: dStart,
+            sourceEnd: leftSrcEnd,
+          };
+          const rightSeg: T = {
+            ...seg,
+            id: seg.id + '_r' + Math.random().toString(36).substr(2, 4),
+            timelineStart: dStart,
+            timelineEnd: seg.timelineEnd - delta,
+            sourceStart: rightSrcStart,
+          };
+
+          nextList.push(leftSeg, rightSeg);
+          continue;
+        }
+
+        // Starts before dStart and ends inside [dStart, dEnd] -> trim end to dStart
+        if (seg.timelineStart < dStart && seg.timelineEnd <= dEnd) {
+          const segDur = seg.timelineEnd - seg.timelineStart;
+          const srcDur = seg.sourceEnd - seg.sourceStart;
+          const ratio = (dStart - seg.timelineStart) / segDur;
+          const newSrcEnd = seg.sourceStart + ratio * srcDur;
+
+          nextList.push({
+            ...seg,
+            timelineEnd: dStart,
+            sourceEnd: newSrcEnd,
+          });
+          continue;
+        }
+
+        // Starts inside [dStart, dEnd] and ends after dEnd -> trim start to dStart, shift end left
+        if (seg.timelineStart >= dStart && seg.timelineEnd > dEnd) {
+          const segDur = seg.timelineEnd - seg.timelineStart;
+          const srcDur = seg.sourceEnd - seg.sourceStart;
+          const ratio = (dEnd - seg.timelineStart) / segDur;
+          const newSrcStart = seg.sourceStart + ratio * srcDur;
+
+          nextList.push({
+            ...seg,
+            timelineStart: dStart,
+            timelineEnd: seg.timelineEnd - delta,
+            sourceStart: newSrcStart,
+          });
+          continue;
+        }
+
+        nextList.push(seg);
       }
 
-      // 2. Reconstruct base segments by merging adjacent non-deleted segments in each group
-      const baseSegments: VideoSegment[] = [];
-      groups.forEach((groupSegs, baseId) => {
-        const sorted = [...groupSegs].sort((a, b) => a.sourceStart - b.sourceStart);
-        let currentBase: VideoSegment | null = null;
-        for (const seg of sorted) {
-          if (seg.deleted) {
-            if (currentBase) {
-              baseSegments.push(currentBase);
-              currentBase = null;
-            }
-            baseSegments.push({ ...seg });
-            continue;
-          }
+      current = nextList;
+    }
 
-          if (!currentBase) {
-            currentBase = { ...seg, id: baseId };
-          } else {
-            if (Math.abs(seg.sourceStart - currentBase.sourceEnd) < 0.01) {
-              currentBase.sourceEnd = seg.sourceEnd;
-            } else {
-              baseSegments.push(currentBase);
-              currentBase = { ...seg, id: baseId };
-            }
-          }
-        }
-        if (currentBase) {
-          baseSegments.push(currentBase);
-        }
-      });
-
-      // 3. Cut baseSegments by rippleDeletesToApply
-      let segments = baseSegments;
-      for (const region of rippleDeletesToApply) {
-        const result: VideoSegment[] = [];
-        for (const seg of segments) {
-          if (seg.deleted) { result.push(seg); continue; }
-          // No overlap
-          if (region.end <= seg.sourceStart || region.start >= seg.sourceEnd) {
-            result.push(seg);
-            continue;
-          }
-          // Full overlap
-          if (region.start <= seg.sourceStart && region.end >= seg.sourceEnd) {
-            result.push({ ...seg, deleted: true });
-            continue;
-          }
-          // Partial overlap — split
-          if (region.start > seg.sourceStart) {
-            result.push({ ...seg, sourceEnd: region.start, timelineEnd: seg.timelineStart + (region.start - seg.sourceStart), id: seg.id });
-          }
-          if (region.end < seg.sourceEnd) {
-            result.push({ ...seg, sourceStart: region.end, timelineStart: seg.timelineStart, id: seg.id + '_r', deleted: false });
-          }
-        }
-        segments = result;
-      }
-
-      // 4. Recalculate timeline positions for active segments
-      const active = segments.filter((s) => !s.deleted).sort((a, b) => a.sourceStart - b.sourceStart);
-      let cursor = 0;
-      const timelinePosMap = new Map<string, { start: number; end: number }>();
-      for (const seg of active) {
-        const duration = seg.sourceEnd - seg.sourceStart;
-        timelinePosMap.set(seg.id, { start: cursor, end: cursor + duration });
-        cursor += duration;
-      }
-
-      return segments.map((seg) => {
-        if (seg.deleted) return { ...seg };
-        const pos = timelinePosMap.get(seg.id);
-        if (pos) {
-          return { ...seg, timelineStart: pos.start, timelineEnd: pos.end };
-        }
-        return { ...seg };
-      });
-    });
+    return current;
   };
 
   const handleRippleDelete = (indices: (number | string)[]) => {
     const regionsToAdd: { start: number; end: number }[] = [];
     const segmentIndicesToDelete: number[] = [];
+    const timelineRanges: { timelineStart: number; timelineEnd: number }[] = [];
 
     indices.forEach((idx) => {
       if (typeof idx === "number") {
         segmentIndicesToDelete.push(idx);
         if (editableSegments[idx]) {
-          regionsToAdd.push({ start: editableSegments[idx].start, end: editableSegments[idx].end });
+          const seg = editableSegments[idx];
+          regionsToAdd.push({ start: seg.start, end: seg.end });
+          const tlStart = toTimelineTime(seg.start);
+          const tlEnd = toTimelineTime(seg.end);
+          timelineRanges.push({ timelineStart: tlStart, timelineEnd: tlEnd });
         }
       } else if (typeof idx === "string" && (idx.startsWith("gap:") || idx.startsWith("word:"))) {
         const [, sIdx, wIdx] = idx.split(":").map(Number);
         if (editableSegments[sIdx] && editableSegments[sIdx].words && editableSegments[sIdx].words[wIdx]) {
           const word = editableSegments[sIdx].words[wIdx];
           regionsToAdd.push({ start: word.start, end: word.end });
+          const tlStart = toTimelineTime(word.start);
+          const tlEnd = toTimelineTime(word.end);
+          timelineRanges.push({ timelineStart: tlStart, timelineEnd: tlEnd });
         }
       }
     });
+
+    if (regionsToAdd.length === 0) return;
 
     const newRippleDeletes = [...rippleDeletes, ...regionsToAdd];
     let newSegments = [...editableSegments];
@@ -666,7 +732,7 @@ export function useSubtitleState({
     }
 
     setSegmentHistory((prevHistory) => ({
-      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments)].slice(-50),
+      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments, audioSegments)].slice(-50),
       future: [],
     }));
     
@@ -674,44 +740,73 @@ export function useSubtitleState({
     newSegments = trimSubtitlesByRegions(newSegments, regionsToAdd);
     setEditableSegments(newSegments);
     setRippleDeletes(newRippleDeletes);
-    recalcVideoTimeline(newRippleDeletes);
+
+    setVideoSegments(prev => rippleDeleteTrackSegments(prev, timelineRanges));
+    setAudioSegments(prev => {
+      const baseAudio = prev && prev.length > 0 ? prev : videoSegments.map(v => ({
+        id: v.id + '_a',
+        sourceStart: v.sourceStart,
+        sourceEnd: v.sourceEnd,
+        timelineStart: v.timelineStart,
+        timelineEnd: v.timelineEnd,
+        deleted: v.deleted,
+        linkedVideoId: v.id,
+      }));
+      return rippleDeleteTrackSegments(baseAudio, timelineRanges);
+    });
   };
 
   const handleRippleDeleteRange = (start: number, end: number) => {
     const newRippleDeletes = [...rippleDeletes, { start, end }];
     setSegmentHistory((prevHistory) => ({
-      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments)].slice(-50),
+      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments, audioSegments)].slice(-50),
       future: [],
     }));
     // Trim subtitles that overlap the deleted range
     const trimmedSegments = trimSubtitlesByRegions(editableSegments, [{ start, end }]);
     setEditableSegments(trimmedSegments);
     setRippleDeletes(newRippleDeletes);
-    recalcVideoTimeline(newRippleDeletes);
+
+    const timelineRanges = [{ timelineStart: start, timelineEnd: end }];
+    setVideoSegments(prev => rippleDeleteTrackSegments(prev, timelineRanges));
+    setAudioSegments(prev => {
+      const baseAudio = prev && prev.length > 0 ? prev : videoSegments.map(v => ({
+        id: v.id + '_a',
+        sourceStart: v.sourceStart,
+        sourceEnd: v.sourceEnd,
+        timelineStart: v.timelineStart,
+        timelineEnd: v.timelineEnd,
+        deleted: v.deleted,
+        linkedVideoId: v.id,
+      }));
+      return rippleDeleteTrackSegments(baseAudio, timelineRanges);
+    });
   };
 
   const undo = () => {
     if (segmentHistory.past.length === 0) return;
     const previous = segmentHistory.past[segmentHistory.past.length - 1];
     const newPast = segmentHistory.past.slice(0, segmentHistory.past.length - 1);
-    const newFuture = [cloneState(editableSegments, rippleDeletes, videoSegments), ...segmentHistory.future];
+    const newFuture = [cloneState(editableSegments, rippleDeletes, videoSegments, audioSegments), ...segmentHistory.future];
     
-    setEditableSegments(previous.segments);
-    setRippleDeletes(previous.rippleDeletes);
+    setEditableSegments(previous.segments || []);
+    setRippleDeletes(previous.rippleDeletes || []);
+    if (previous.videoSegments) setVideoSegments(previous.videoSegments);
+    if (previous.audioSegments) setAudioSegments(previous.audioSegments);
     setSegmentHistory({ past: newPast, future: newFuture });
-    recalcVideoTimeline(previous.rippleDeletes || [], previous.videoSegments);
   };
 
   const redo = () => {
     if (segmentHistory.future.length === 0) return;
     const next = segmentHistory.future[0];
     const newFuture = segmentHistory.future.slice(1);
-    const newPast = [...segmentHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments)];
+    const newPast = [...segmentHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments, audioSegments)];
     
-    setEditableSegments(next.segments);
-    setRippleDeletes(next.rippleDeletes);
+    setEditableSegments(next.segments || []);
+    setRippleDeletes(next.rippleDeletes || []);
+    if (next.videoSegments) setVideoSegments(next.videoSegments);
+    if (next.audioSegments) setAudioSegments(next.audioSegments);
     setSegmentHistory({ past: newPast, future: newFuture });
-    recalcVideoTimeline(next.rippleDeletes || [], next.videoSegments);
   };
 
   const handleDuplicateSegment = (index: number) => {
@@ -770,7 +865,14 @@ export function useSubtitleState({
   };
 
   const handleVideoCut = (time: number) => {
-    updateVideoSegments((prev) => {
+    setSegmentHistory((prevHistory) => ({
+      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments, audioSegments)].slice(-50),
+      future: [],
+    }));
+
+    const cutVideoId = Math.random().toString(36).substr(2, 9);
+
+    setVideoSegments((prev) => {
       const newSegments = [...prev];
       const targetIndex = newSegments.findIndex(s => time > s.timelineStart && time < s.timelineEnd);
       if (targetIndex !== -1) {
@@ -779,10 +881,264 @@ export function useSubtitleState({
         const sourceTime = target.sourceStart + timelineRatio * (target.sourceEnd - target.sourceStart);
         
         const firstHalf: VideoSegment = { ...target, timelineEnd: time, sourceEnd: sourceTime };
-        const secondHalf: VideoSegment = { ...target, id: Math.random().toString(36).substr(2, 9), timelineStart: time, sourceStart: sourceTime };
+        const secondHalf: VideoSegment = { ...target, id: cutVideoId, timelineStart: time, sourceStart: sourceTime };
         newSegments.splice(targetIndex, 1, firstHalf, secondHalf);
       }
       return newSegments;
+    });
+
+    if (isAudioLinked) {
+      setAudioSegments((prev) => {
+        let baseAudio = prev && prev.length > 0 ? [...prev] : videoSegments.map(v => ({
+          id: v.id + '_a',
+          sourceStart: v.sourceStart,
+          sourceEnd: v.sourceEnd,
+          timelineStart: v.timelineStart,
+          timelineEnd: v.timelineEnd,
+          deleted: v.deleted,
+          linkedVideoId: v.id,
+        }));
+
+        const newSegments = [...baseAudio];
+        const targetIndex = newSegments.findIndex(s => time > s.timelineStart && time < s.timelineEnd);
+        if (targetIndex !== -1) {
+          const target = newSegments[targetIndex];
+          const timelineRatio = (time - target.timelineStart) / (target.timelineEnd - target.timelineStart);
+          const sourceTime = target.sourceStart + timelineRatio * (target.sourceEnd - target.sourceStart);
+          
+          const firstHalf: AudioSegment = { ...target, timelineEnd: time, sourceEnd: sourceTime };
+          const secondHalf: AudioSegment = { ...target, id: cutVideoId + '_a', timelineStart: time, sourceStart: sourceTime, linkedVideoId: cutVideoId };
+          newSegments.splice(targetIndex, 1, firstHalf, secondHalf);
+        }
+        return newSegments;
+      });
+    }
+  };
+
+  const handleAudioCut = (time: number) => {
+    setSegmentHistory((prevHistory) => ({
+      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments, audioSegments)].slice(-50),
+      future: [],
+    }));
+
+    const cutAudioId = Math.random().toString(36).substr(2, 9) + '_a';
+
+    setAudioSegments((prev) => {
+      let baseAudio = prev && prev.length > 0 ? [...prev] : videoSegments.map(v => ({
+        id: v.id + '_a',
+        sourceStart: v.sourceStart,
+        sourceEnd: v.sourceEnd,
+        timelineStart: v.timelineStart,
+        timelineEnd: v.timelineEnd,
+        deleted: v.deleted,
+        linkedVideoId: v.id,
+      }));
+
+      const newSegments = [...baseAudio];
+      const targetIndex = newSegments.findIndex(s => time > s.timelineStart && time < s.timelineEnd);
+      if (targetIndex !== -1) {
+        const target = newSegments[targetIndex];
+        const timelineRatio = (time - target.timelineStart) / (target.timelineEnd - target.timelineStart);
+        const sourceTime = target.sourceStart + timelineRatio * (target.sourceEnd - target.sourceStart);
+        
+        const firstHalf: AudioSegment = { ...target, timelineEnd: time, sourceEnd: sourceTime };
+        const secondHalf: AudioSegment = { ...target, id: cutAudioId, timelineStart: time, sourceStart: sourceTime };
+        newSegments.splice(targetIndex, 1, firstHalf, secondHalf);
+      }
+      return newSegments;
+    });
+
+    if (isAudioLinked) {
+      setVideoSegments((prev) => {
+        const newSegments = [...prev];
+        const targetIndex = newSegments.findIndex(s => time > s.timelineStart && time < s.timelineEnd);
+        if (targetIndex !== -1) {
+          const target = newSegments[targetIndex];
+          const timelineRatio = (time - target.timelineStart) / (target.timelineEnd - target.timelineStart);
+          const sourceTime = target.sourceStart + timelineRatio * (target.sourceEnd - target.sourceStart);
+          
+          const firstHalf: VideoSegment = { ...target, timelineEnd: time, sourceEnd: sourceTime };
+          const secondHalf: VideoSegment = { ...target, id: cutAudioId.replace('_a', ''), timelineStart: time, sourceStart: sourceTime };
+          newSegments.splice(targetIndex, 1, firstHalf, secondHalf);
+        }
+        return newSegments;
+      });
+    }
+  };
+
+  const applyJCut = (splitTime: number, leadDuration: number = 1.0) => {
+    setSegmentHistory((prevHistory) => ({
+      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments, audioSegments)].slice(-50),
+      future: [],
+    }));
+
+    setAudioSegments((prevAudio) => {
+      // 1. Ensure audioSegments is initialized
+      let currentAudio: AudioSegment[] = prevAudio && prevAudio.length > 0
+        ? [...prevAudio]
+        : videoSegments.map(v => ({
+            id: v.id + '_a',
+            sourceStart: v.sourceStart,
+            sourceEnd: v.sourceEnd,
+            timelineStart: v.timelineStart,
+            timelineEnd: v.timelineEnd,
+            deleted: v.deleted,
+            linkedVideoId: v.id,
+          }));
+
+      let sorted = currentAudio.sort((a, b) => a.timelineStart - b.timelineStart);
+
+      // 2. Find candidate cut boundaries from video and audio tracks
+      const candidateBoundaries: number[] = [];
+      videoSegments.filter(v => !v.deleted).forEach((v, i) => {
+        if (i > 0) candidateBoundaries.push(v.timelineStart);
+      });
+      sorted.filter(a => !a.deleted).forEach((a, i) => {
+        if (i > 0) candidateBoundaries.push(a.timelineStart);
+      });
+
+      // 3. Determine the best cut boundary point T
+      let cutPoint = splitTime;
+      if (candidateBoundaries.length > 0) {
+        const closest = candidateBoundaries.reduce((prev, curr) =>
+          Math.abs(curr - splitTime) < Math.abs(prev - splitTime) ? curr : prev
+        );
+        // If within 10s or if only 1 cut exists, pick this edit boundary
+        if (Math.abs(closest - splitTime) < 10.0 || candidateBoundaries.length === 1) {
+          cutPoint = closest;
+        }
+      }
+
+      // 4. Find audio segment starting at or closest to cutPoint
+      let targetIdx = sorted.findIndex(s => !s.deleted && Math.abs(s.timelineStart - cutPoint) < 0.2);
+
+      // If no audio segment starts at cutPoint, split the spanning audio segment
+      if (targetIdx === -1) {
+        const spanIdx = sorted.findIndex(s => !s.deleted && s.timelineStart < cutPoint - 0.05 && s.timelineEnd > cutPoint + 0.05);
+        if (spanIdx !== -1) {
+          const target = sorted[spanIdx];
+          const dur = target.timelineEnd - target.timelineStart;
+          const ratio = (cutPoint - target.timelineStart) / dur;
+          const srcCut = target.sourceStart + ratio * (target.sourceEnd - target.sourceStart);
+          
+          const leftHalf: AudioSegment = { ...target, timelineEnd: cutPoint, sourceEnd: srcCut };
+          const rightHalf: AudioSegment = { ...target, id: Math.random().toString(36).substr(2, 9) + '_a', timelineStart: cutPoint, sourceStart: srcCut };
+          
+          sorted.splice(spanIdx, 1, leftHalf, rightHalf);
+          targetIdx = spanIdx + 1;
+        }
+      }
+
+      if (targetIdx <= 0 || targetIdx >= sorted.length) return sorted;
+
+      const incoming = sorted[targetIdx];
+      const outgoing = sorted[targetIdx - 1];
+
+      if (outgoing.deleted || incoming.deleted) return sorted;
+
+      const maxLead = Math.min(leadDuration, (outgoing.timelineEnd - outgoing.timelineStart) * 0.8, incoming.sourceStart > 0 ? incoming.sourceStart : leadDuration);
+      const actualLead = Math.max(0.1, maxLead > 0 ? maxLead : Math.min(leadDuration, 1.0));
+
+      const newBoundary = cutPoint - actualLead;
+
+      sorted[targetIdx] = {
+        ...incoming,
+        timelineStart: newBoundary,
+        sourceStart: Math.max(0, incoming.sourceStart - actualLead),
+      };
+
+      sorted[targetIdx - 1] = {
+        ...outgoing,
+        timelineEnd: newBoundary,
+        sourceEnd: Math.max(outgoing.sourceStart + 0.05, outgoing.sourceEnd - actualLead),
+      };
+
+      return [...sorted];
+    });
+  };
+
+  const applyLCut = (splitTime: number, lagDuration: number = 1.0) => {
+    setSegmentHistory((prevHistory) => ({
+      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments, audioSegments)].slice(-50),
+      future: [],
+    }));
+
+    setAudioSegments((prevAudio) => {
+      let currentAudio: AudioSegment[] = prevAudio && prevAudio.length > 0
+        ? [...prevAudio]
+        : videoSegments.map(v => ({
+            id: v.id + '_a',
+            sourceStart: v.sourceStart,
+            sourceEnd: v.sourceEnd,
+            timelineStart: v.timelineStart,
+            timelineEnd: v.timelineEnd,
+            deleted: v.deleted,
+            linkedVideoId: v.id,
+          }));
+
+      let sorted = currentAudio.sort((a, b) => a.timelineStart - b.timelineStart);
+
+      const candidateBoundaries: number[] = [];
+      videoSegments.filter(v => !v.deleted).forEach((v, i) => {
+        if (i > 0) candidateBoundaries.push(v.timelineStart);
+      });
+      sorted.filter(a => !a.deleted).forEach((a, i) => {
+        if (i > 0) candidateBoundaries.push(a.timelineStart);
+      });
+
+      let cutPoint = splitTime;
+      if (candidateBoundaries.length > 0) {
+        const closest = candidateBoundaries.reduce((prev, curr) =>
+          Math.abs(curr - splitTime) < Math.abs(prev - splitTime) ? curr : prev
+        );
+        if (Math.abs(closest - splitTime) < 10.0 || candidateBoundaries.length === 1) {
+          cutPoint = closest;
+        }
+      }
+
+      let targetIdx = sorted.findIndex(s => !s.deleted && Math.abs(s.timelineStart - cutPoint) < 0.2);
+
+      if (targetIdx === -1) {
+        const spanIdx = sorted.findIndex(s => !s.deleted && s.timelineStart < cutPoint - 0.05 && s.timelineEnd > cutPoint + 0.05);
+        if (spanIdx !== -1) {
+          const target = sorted[spanIdx];
+          const dur = target.timelineEnd - target.timelineStart;
+          const ratio = (cutPoint - target.timelineStart) / dur;
+          const srcCut = target.sourceStart + ratio * (target.sourceEnd - target.sourceStart);
+          
+          const leftHalf: AudioSegment = { ...target, timelineEnd: cutPoint, sourceEnd: srcCut };
+          const rightHalf: AudioSegment = { ...target, id: Math.random().toString(36).substr(2, 9) + '_a', timelineStart: cutPoint, sourceStart: srcCut };
+          
+          sorted.splice(spanIdx, 1, leftHalf, rightHalf);
+          targetIdx = spanIdx + 1;
+        }
+      }
+
+      if (targetIdx <= 0 || targetIdx >= sorted.length) return sorted;
+
+      const incoming = sorted[targetIdx];
+      const outgoing = sorted[targetIdx - 1];
+
+      if (outgoing.deleted || incoming.deleted) return sorted;
+
+      const maxLag = Math.min(lagDuration, (incoming.timelineEnd - incoming.timelineStart) * 0.8);
+      const actualLag = Math.max(0.1, maxLag > 0 ? maxLag : Math.min(lagDuration, 1.0));
+
+      const newBoundary = cutPoint + actualLag;
+
+      sorted[targetIdx - 1] = {
+        ...outgoing,
+        timelineEnd: newBoundary,
+        sourceEnd: outgoing.sourceEnd + actualLag,
+      };
+
+      sorted[targetIdx] = {
+        ...incoming,
+        timelineStart: newBoundary,
+        sourceStart: incoming.sourceStart + actualLag,
+      };
+
+      return [...sorted];
     });
   };
 
@@ -790,54 +1146,90 @@ export function useSubtitleState({
     updateVideoSegments((prev) => {
       return prev.map(s => ids.includes(s.id) ? { ...s, deleted: true } : s);
     });
+    if (isAudioLinked) {
+      updateAudioSegments((prev) => {
+        return prev.map(s => (ids.includes(s.id) || (s.linkedVideoId && ids.includes(s.linkedVideoId)) || ids.includes(s.id.replace('_a', ''))) ? { ...s, deleted: true } : s);
+      });
+    }
+  };
+
+  const handleAudioDelete = (ids: string[]) => {
+    updateAudioSegments((prev) => {
+      return prev.map(s => ids.includes(s.id) ? { ...s, deleted: true } : s);
+    });
+    if (isAudioLinked) {
+      updateVideoSegments((prev) => {
+        return prev.map(s => (ids.includes(s.id) || ids.includes(s.id + '_a') || (ids.some(aid => aid.replace('_a', '') === s.id))) ? { ...s, deleted: true } : s);
+      });
+    }
   };
 
   const handleVideoRippleDelete = (ids: string[]) => {
-    // Collect regions eagerly from the current videoSegments closure value
-    // (not inside a setState callback, to avoid React batching timing issues)
-    const regionsToAdd = videoSegments
-      .filter(s => ids.includes(s.id) && !s.deleted)
-      .map(s => ({ start: s.sourceStart, end: s.sourceEnd }));
-
-    if (regionsToAdd.length === 0) return;
+    const targetSegments = videoSegments.filter(s => ids.includes(s.id) && !s.deleted);
+    if (targetSegments.length === 0) return;
 
     setSegmentHistory((prevHistory) => ({
-      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments)].slice(-50),
+      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments, audioSegments)].slice(-50),
       future: [],
     }));
 
-    setVideoSegments((prev) => {
-      // Mark targeted segments as deleted
-      const updated = prev.map(s =>
-        ids.includes(s.id) ? { ...s, deleted: true } : s
-      );
+    const timelineRanges = targetSegments.map(s => ({ timelineStart: s.timelineStart, timelineEnd: s.timelineEnd }));
+    const regionsToAdd = targetSegments.map(s => ({ start: s.sourceStart, end: s.sourceEnd }));
 
-      // Recalculate timeline positions: only active (non-deleted) segments get timeline space
-      const active = updated.filter(s => !s.deleted).sort((a, b) => a.timelineStart - b.timelineStart);
-      let cursor = 0;
-      for (const seg of active) {
-        const duration = seg.sourceEnd - seg.sourceStart;
-        seg.timelineStart = cursor;
-        seg.timelineEnd = cursor + duration;
-        cursor += duration;
-      }
-
-      return updated;
+    setVideoSegments(prev => rippleDeleteTrackSegments(prev, timelineRanges));
+    setAudioSegments(prev => {
+      const baseAudio = prev && prev.length > 0 ? prev : videoSegments.map(v => ({
+        id: v.id + '_a',
+        sourceStart: v.sourceStart,
+        sourceEnd: v.sourceEnd,
+        timelineStart: v.timelineStart,
+        timelineEnd: v.timelineEnd,
+        deleted: v.deleted,
+        linkedVideoId: v.id,
+      }));
+      return rippleDeleteTrackSegments(baseAudio, timelineRanges);
     });
 
     setRippleDeletes((prev) => [...prev, ...regionsToAdd]);
-
-    // Trim/split/remove subtitle segments that overlap the deleted video regions
-    setEditableSegments((prevSegments) => {
-      return trimSubtitlesByRegions(prevSegments, regionsToAdd);
-    });
+    setEditableSegments((prevSegments) => trimSubtitlesByRegions(prevSegments, regionsToAdd));
   };
 
-  const handleClearTrack = (trackType: 'subtitle' | 'video') => {
+  const handleAudioRippleDelete = (ids: string[]) => {
+    const baseAudio = audioSegments && audioSegments.length > 0 ? audioSegments : videoSegments.map(v => ({
+      id: v.id + '_a',
+      sourceStart: v.sourceStart,
+      sourceEnd: v.sourceEnd,
+      timelineStart: v.timelineStart,
+      timelineEnd: v.timelineEnd,
+      deleted: v.deleted,
+      linkedVideoId: v.id,
+    }));
+
+    const targetSegments = baseAudio.filter(s => ids.includes(s.id) && !s.deleted);
+    if (targetSegments.length === 0) return;
+
+    setSegmentHistory((prevHistory) => ({
+      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments, audioSegments)].slice(-50),
+      future: [],
+    }));
+
+    const timelineRanges = targetSegments.map(s => ({ timelineStart: s.timelineStart, timelineEnd: s.timelineEnd }));
+    const regionsToAdd = targetSegments.map(s => ({ start: s.sourceStart, end: s.sourceEnd }));
+
+    setAudioSegments(prev => rippleDeleteTrackSegments(baseAudio, timelineRanges));
+    setVideoSegments(prev => rippleDeleteTrackSegments(prev, timelineRanges));
+
+    setRippleDeletes((prev) => [...prev, ...regionsToAdd]);
+    setEditableSegments((prevSegments) => trimSubtitlesByRegions(prevSegments, regionsToAdd));
+  };
+
+  const handleClearTrack = (trackType: 'subtitle' | 'video' | 'audio') => {
     if (trackType === 'subtitle') {
       updateSegments([]);
-    } else {
+    } else if (trackType === 'video') {
       updateVideoSegments([]);
+    } else {
+      updateAudioSegments([]);
     }
   };
 
@@ -883,6 +1275,12 @@ export function useSubtitleState({
     setVideoSegments,
     selectedVideoIndexes,
     setSelectedVideoIndexes,
+    audioSegments,
+    setAudioSegments,
+    selectedAudioIndexes,
+    setSelectedAudioIndexes,
+    isAudioLinked,
+    setIsAudioLinked,
     cursorMode,
     setCursorMode,
     rippleDeletes,
@@ -893,6 +1291,7 @@ export function useSubtitleState({
     setSegmentHistory,
     updateSegments,
     updateVideoSegments,
+    updateAudioSegments,
     handleResegment,
     handleSegmentChange,
     handleToggleWordDelete,
@@ -907,8 +1306,13 @@ export function useSubtitleState({
     handleOffsetSegments,
     handleSubtitleCutAtTime,
     handleVideoCut,
+    handleAudioCut,
+    applyJCut,
+    applyLCut,
     handleVideoDelete,
+    handleAudioDelete,
     handleVideoRippleDelete,
+    handleAudioRippleDelete,
     handleClearTrack,
   };
 }

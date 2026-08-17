@@ -4,11 +4,14 @@ export interface ContextMenuData {
   segmentIdx?: number;
   wordIdx?: number;
   videoSegmentId?: string;
+  audioSegmentId?: string;
   isDeleted?: boolean;
-  type: 'Empty Space' | 'Silence' | 'Word' | 'Subtitle Segment' | 'Video Segment' | 'Subtitle Track' | 'Video Track';
+  type: 'Empty Space' | 'Silence' | 'Word' | 'Subtitle Segment' | 'Video Segment' | 'Audio Segment' | 'Subtitle Track' | 'Video Track' | 'Audio Track';
   gapStart?: number;
   gapEnd?: number;
   insertTime?: number;
+  timelineStart?: number;
+  timelineEnd?: number;
 }
 
 interface TimelineContextMenuProps {
@@ -18,10 +21,14 @@ interface TimelineContextMenuProps {
   handleRippleDelete: (indices: (number|string)[]) => void;
   handleRippleDeleteRange?: (start: number, end: number) => void;
   handleVideoRippleDelete?: (ids: string[]) => void;
+  handleAudioRippleDelete?: (ids: string[]) => void;
   handleVideoDelete?: (ids: string[]) => void;
+  handleAudioDelete?: (ids: string[]) => void;
   handleLiftDelete?: (indices: (number|string)[]) => void;
-  handleClearTrack?: (trackType: 'subtitle' | 'video') => void;
+  handleClearTrack?: (trackType: 'subtitle' | 'video' | 'audio') => void;
   handleInsertSubtitle?: (time: number) => void;
+  applyJCut?: (splitTime: number, duration?: number) => void;
+  applyLCut?: (splitTime: number, duration?: number) => void;
 }
 
 export const TimelineContextMenu = ({
@@ -31,14 +38,18 @@ export const TimelineContextMenu = ({
   handleRippleDelete,
   handleRippleDeleteRange,
   handleVideoRippleDelete,
+  handleAudioRippleDelete,
   handleVideoDelete,
+  handleAudioDelete,
   handleLiftDelete,
   handleClearTrack,
   handleInsertSubtitle,
+  applyJCut,
+  applyLCut,
 }: TimelineContextMenuProps) => {
   return (
     <div 
-      className="fixed bg-neutral-900 border border-neutral-800 text-neutral-100 rounded-lg shadow-xl py-1 z-[9999] text-xs min-w-[160px] animate-in fade-in zoom-in-95 duration-100"
+      className="fixed bg-neutral-900 border border-neutral-800 text-neutral-100 rounded-lg shadow-xl py-1 z-[9999] text-xs min-w-[170px] animate-in fade-in zoom-in-95 duration-100"
       style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
       onPointerDown={(e) => e.stopPropagation()} // Prevent auto-dismiss when clicking items
     >
@@ -46,11 +57,11 @@ export const TimelineContextMenu = ({
         {contextMenu.type} Actions
       </div>
       
-      {contextMenu.type === 'Subtitle Track' || contextMenu.type === 'Video Track' ? (
+      {contextMenu.type === 'Subtitle Track' || contextMenu.type === 'Video Track' || contextMenu.type === 'Audio Track' ? (
         <button 
           onClick={() => {
             if (handleClearTrack) {
-              handleClearTrack(contextMenu.type === 'Subtitle Track' ? 'subtitle' : 'video');
+              handleClearTrack(contextMenu.type === 'Subtitle Track' ? 'subtitle' : contextMenu.type === 'Video Track' ? 'video' : 'audio');
             }
             setContextMenu(null);
           }}
@@ -60,6 +71,46 @@ export const TimelineContextMenu = ({
         </button>
       ) : (
         <>
+          {/* J-Cut & L-Cut Actions for Video & Audio Segments */}
+          {(contextMenu.type === 'Video Segment' || contextMenu.type === 'Audio Segment') && (
+            <>
+              {applyJCut && contextMenu.timelineStart !== undefined && (
+                <button
+                  onClick={() => {
+                    applyJCut(contextMenu.timelineStart!, 1.0);
+                    setContextMenu(null);
+                  }}
+                  className="w-full px-3 py-1.5 text-left hover:bg-emerald-950/50 transition-colors flex items-center gap-2 text-emerald-300 font-medium"
+                >
+                  ⚡ Apply J-Cut (1.0s Lead)
+                </button>
+              )}
+              {applyJCut && contextMenu.timelineStart !== undefined && (
+                <button
+                  onClick={() => {
+                    applyJCut(contextMenu.timelineStart!, 0.5);
+                    setContextMenu(null);
+                  }}
+                  className="w-full px-3 py-1.5 text-left hover:bg-emerald-950/50 transition-colors flex items-center gap-2 text-emerald-300 font-medium"
+                >
+                  ⚡ Apply J-Cut (0.5s Lead)
+                </button>
+              )}
+              {applyLCut && contextMenu.timelineStart !== undefined && (
+                <button
+                  onClick={() => {
+                    applyLCut(contextMenu.timelineStart!, 1.0);
+                    setContextMenu(null);
+                  }}
+                  className="w-full px-3 py-1.5 text-left hover:bg-teal-950/50 transition-colors flex items-center gap-2 text-teal-300 font-medium"
+                >
+                  🌊 Apply L-Cut (1.0s Lag)
+                </button>
+              )}
+              <div className="my-1 border-t border-neutral-800" />
+            </>
+          )}
+
           {/* Lift Delete Action */}
           {contextMenu.type === 'Subtitle Segment' && contextMenu.segmentIdx !== undefined && handleLiftDelete && (
             <button 
@@ -81,7 +132,19 @@ export const TimelineContextMenu = ({
               }}
               className="w-full px-3 py-2 text-left hover:bg-neutral-800 transition-colors flex items-center gap-2 text-neutral-300 hover:text-white font-medium"
             >
-              ❌ Delete (Lift)
+              ❌ Delete Video (Lift)
+            </button>
+          )}
+
+          {contextMenu.type === 'Audio Segment' && contextMenu.audioSegmentId !== undefined && handleAudioDelete && (
+            <button 
+              onClick={() => {
+                handleAudioDelete([contextMenu.audioSegmentId!]);
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-2 text-left hover:bg-neutral-800 transition-colors flex items-center gap-2 text-neutral-300 hover:text-white font-medium"
+            >
+              ❌ Delete Audio (Lift)
             </button>
           )}
 
@@ -119,6 +182,8 @@ export const TimelineContextMenu = ({
                 handleRippleDelete([contextMenu.segmentIdx]);
               } else if (contextMenu.type === 'Video Segment' && contextMenu.videoSegmentId !== undefined && handleVideoRippleDelete) {
                 handleVideoRippleDelete([contextMenu.videoSegmentId]);
+              } else if (contextMenu.type === 'Audio Segment' && contextMenu.audioSegmentId !== undefined && handleAudioRippleDelete) {
+                handleAudioRippleDelete([contextMenu.audioSegmentId]);
               } else if (contextMenu.segmentIdx !== undefined && contextMenu.wordIdx !== undefined) {
                 const key = contextMenu.type === 'Silence' 
                   ? `gap:${contextMenu.segmentIdx}:${contextMenu.wordIdx}` 

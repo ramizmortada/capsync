@@ -6,10 +6,12 @@ interface LivePreviewProps {
   file: File | null;
   mediaUrl: string;
   mediaRef: React.RefObject<HTMLMediaElement | null>;
+  audioRef?: React.RefObject<HTMLAudioElement | null>;
   setCurrentTime: (time: number) => void;
   setMediaDuration: (duration: number) => void;
   editableSegments: any[];
   videoSegments: any[];
+  audioSegments?: any[];
   cutZones: { start: number; end: number }[];
   currentTime: number;
   subtitleStyle: any; // We'll just pass the object directly
@@ -27,10 +29,12 @@ export function LivePreview({
   file,
   mediaUrl,
   mediaRef,
+  audioRef,
   setCurrentTime,
   setMediaDuration,
   editableSegments,
   videoSegments,
+  audioSegments,
   cutZones,
   currentTime,
   subtitleStyle,
@@ -278,9 +282,11 @@ export function LivePreview({
           }}
         >
           {file?.type.startsWith('video') ? (
-            <video 
+            <>
+              <video 
               ref={mediaRef as React.RefObject<HTMLVideoElement>}
               src={mediaUrl || undefined} 
+              muted
               className={`absolute bg-transparent object-cover pointer-events-none transition-opacity duration-150 ${isGap ? 'opacity-0' : 'opacity-100'}`}
               style={{
                 width: `${actualVideoWidth}px`,
@@ -302,6 +308,13 @@ export function LivePreview({
                 setVideoDimensions(dims);
               }}
             />
+            {/* Auxiliary audio element for decoupled split-audio / J-Cut playback */}
+            <audio 
+              ref={audioRef as React.RefObject<HTMLAudioElement>}
+              src={mediaUrl || undefined}
+              className="hidden"
+            />
+          </>
           ) : (
             <div className="w-full flex items-center justify-center p-8">
               <audio 

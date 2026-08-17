@@ -117,6 +117,7 @@ function EditorContent() {
   const timelineRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const mediaRef = useRef<HTMLMediaElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const isHoveringTimeline = useRef(false);
   const hasInitializedVideoRef = useRef(false);
 
@@ -190,12 +191,23 @@ function EditorContent() {
     setVideoSegments,
     selectedVideoIndexes,
     setSelectedVideoIndexes,
+    audioSegments,
+    setAudioSegments,
+    selectedAudioIndexes,
+    setSelectedAudioIndexes,
+    isAudioLinked,
+    setIsAudioLinked,
     cursorMode,
     setCursorMode,
     handleSubtitleCutAtTime,
     handleVideoCut,
+    handleAudioCut,
+    applyJCut,
+    applyLCut,
     handleVideoDelete,
+    handleAudioDelete,
     handleVideoRippleDelete,
+    handleAudioRippleDelete,
     undo,
     redo,
     handleClearTrack,
@@ -306,6 +318,7 @@ function EditorContent() {
     language,
     videoCanvas,
     videoSegments,
+    audioSegments,
   });
 
   // Timeline dragging hook
@@ -337,6 +350,8 @@ function EditorContent() {
     setRippleDeletes,
     videoSegments,
     setVideoSegments,
+    audioSegments,
+    setAudioSegments,
     videoCanvas,
     setVideoCanvas,
     subtitleStyle,
@@ -349,10 +364,12 @@ function EditorContent() {
 
   const { handleTimelineSeek, currentSourceTime } = usePlaybackSync({
     mediaRef,
+    audioRef,
     timelineRef,
     trackRef,
     mediaDuration,
     videoSegments,
+    audioSegments,
     editableSegments,
     masterTimeRef,
     setMasterTime,
@@ -378,22 +395,32 @@ function EditorContent() {
     checkModelsStatus();
   }, []);
 
-  // Initialize video segments when media duration is known (only once per media load)
+  // Initialize video & audio segments when media duration is known (only once per media load)
   useEffect(() => {
     if (mediaDuration > 0 && videoSegments.length === 0 && !hasInitializedVideoRef.current) {
+      const initialId = Math.random().toString(36).substr(2, 9);
       setVideoSegments([{
-        id: Math.random().toString(36).substr(2, 9),
+        id: initialId,
         sourceStart: 0,
         sourceEnd: mediaDuration,
         timelineStart: 0,
         timelineEnd: mediaDuration,
         deleted: false
       }]);
+      setAudioSegments([{
+        id: initialId + '_a',
+        sourceStart: 0,
+        sourceEnd: mediaDuration,
+        timelineStart: 0,
+        timelineEnd: mediaDuration,
+        deleted: false,
+        linkedVideoId: initialId,
+      }]);
       hasInitializedVideoRef.current = true;
     } else if (mediaDuration === 0) {
       hasInitializedVideoRef.current = false;
     }
-  }, [mediaDuration, videoSegments.length, setVideoSegments]);
+  }, [mediaDuration, videoSegments.length, setVideoSegments, setAudioSegments]);
 
   // Poll progress and status
   useEffect(() => {
@@ -442,36 +469,40 @@ function EditorContent() {
 
   const togglePlay = () => {
     if (mediaRef.current) {
-      if (mediaRef.current.paused) {
+      if (isPlayingRef.current) {
+        mediaRef.current.pause();
+        if (audioRef.current) audioRef.current.pause();
+        setIsPlaying(false);
+        isPlayingRef.current = false;
+      } else {
         if (masterTime >= mediaDuration) {
           handleTimelineSeek(0);
-          mediaRef.current.play().catch(e => {
-            if (e.name !== 'AbortError') console.error(e);
-          });
-          setIsPlaying(true);
-          isPlayingRef.current = true;
-          return;
         }
 
-        // Align hardware clock to current master timeline position before starting playback
-        const activeSeg = videoSegments.find(s => !s.deleted && masterTime >= s.timelineStart && masterTime < s.timelineEnd) 
-          || videoSegments.find(s => !s.deleted);
-        if (activeSeg) {
-          const expectedSourceTime = activeSeg.sourceStart + Math.max(0, masterTime - activeSeg.timelineStart);
-          if (Math.abs(mediaRef.current.currentTime - expectedSourceTime) > 0.05) {
-            mediaRef.current.currentTime = expectedSourceTime;
-          }
+        // Align both video and audio clocks before starting playback
+        const activeVideo = (videoSegments || []).find(s => !s.deleted && masterTime >= s.timelineStart && masterTime < s.timelineEnd) || videoSegments.find(s => !s.deleted);
+        const activeAudio = (audioSegments || []).find(s => !s.deleted && masterTime >= s.timelineStart && masterTime < s.timelineEnd) || audioSegments.find(s => !s.deleted);
+
+        if (activeVideo) {
+          const expVideoTime = activeVideo.sourceStart + Math.max(0, masterTime - activeVideo.timelineStart);
+          mediaRef.current.currentTime = Math.max(0, Math.min(mediaDuration, expVideoTime));
         }
 
+        if (activeAudio && audioRef.current) {
+          const expAudioTime = activeAudio.sourceStart + Math.max(0, masterTime - activeAudio.timelineStart);
+          audioRef.current.currentTime = Math.max(0, Math.min(mediaDuration, expAudioTime));
+        }
+
+        if (audioRef.current) {
+          mediaRef.current.muted = true;
+          audioRef.current.play().catch(() => {});
+        }
         mediaRef.current.play().catch(e => {
           if (e.name !== 'AbortError') console.error(e);
         });
+
         setIsPlaying(true);
         isPlayingRef.current = true;
-      } else {
-        mediaRef.current.pause();
-        setIsPlaying(false);
-        isPlayingRef.current = false;
       }
     }
   };
@@ -479,6 +510,7 @@ function EditorContent() {
   const stopPlay = () => {
     if (mediaRef.current) {
       mediaRef.current.pause();
+      if (audioRef.current) audioRef.current.pause();
       handleTimelineSeek(0);
       setIsPlaying(false);
       isPlayingRef.current = false;
@@ -547,7 +579,19 @@ function EditorContent() {
         }
         
         if (selectedVideoIndexes.length > 0) {
-          handleVideoDelete(selectedVideoIndexes);
+          if (e.shiftKey) {
+            handleVideoRippleDelete(selectedVideoIndexes);
+          } else {
+            handleVideoDelete(selectedVideoIndexes);
+          }
+        }
+
+        if (selectedAudioIndexes.length > 0) {
+          if (e.shiftKey && handleAudioRippleDelete) {
+            handleAudioRippleDelete(selectedAudioIndexes);
+          } else if (handleAudioDelete) {
+            handleAudioDelete(selectedAudioIndexes);
+          }
         }
       } else if (e.code === 'KeyX') {
         e.preventDefault();
@@ -559,6 +603,10 @@ function EditorContent() {
         
         if (selectedVideoIndexes.length > 0) {
           handleVideoRippleDelete(selectedVideoIndexes);
+        }
+
+        if (selectedAudioIndexes.length > 0 && handleAudioRippleDelete) {
+          handleAudioRippleDelete(selectedAudioIndexes);
         }
       } else if (e.code === 'KeyC' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
@@ -572,9 +620,16 @@ function EditorContent() {
         e.preventDefault();
         e.stopPropagation();
         if (setCursorMode) setCursorMode(prev => prev === 'resize' ? 'select' : 'resize');
-      } else if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) {
+      } else if (e.code === 'KeyJ' && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         e.stopPropagation();
+        if (applyJCut) applyJCut(masterTime, 1.0);
+      } else if (e.code === 'KeyL' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (applyLCut) applyLCut(masterTime, 1.0);
+      } else if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
         if (e.shiftKey) {
           redo();
         } else {
@@ -582,16 +637,13 @@ function EditorContent() {
         }
       } else if (e.code === 'KeyY' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        e.stopPropagation();
         redo();
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown, { capture: true });
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown, { capture: true });
-    };
-  }, [editableSegments, togglePlay, setEditableSegments, setRippleDeletes, setSegmentHistory, rippleDeletes, setCursorMode, selectedVideoIndexes, handleVideoDelete, handleVideoRippleDelete, setSelectedVideoIndexes, videoSegments, setVideoSegments, selectedIndexes, handleRippleDelete, handleLiftDelete, undo, redo]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [editableSegments, togglePlay, setEditableSegments, setRippleDeletes, setSegmentHistory, rippleDeletes, setCursorMode, selectedVideoIndexes, selectedAudioIndexes, handleVideoDelete, handleAudioDelete, handleVideoRippleDelete, setSelectedVideoIndexes, setSelectedAudioIndexes, videoSegments, setVideoSegments, audioSegments, setAudioSegments, selectedIndexes, handleRippleDelete, handleLiftDelete, applyJCut, applyLCut, masterTime, undo, redo]);
 
   // Clear current project and persistent storage
   const clearProject = async () => {
@@ -908,6 +960,7 @@ function EditorContent() {
               file={file}
               mediaUrl={mediaUrl}
               mediaRef={mediaRef}
+              audioRef={audioRef}
               setCurrentTime={(sourceTime) => {
                 const activeSeg = videoSegments.find(s => !s.deleted && sourceTime >= s.sourceStart && sourceTime <= s.sourceEnd);
                 const timelineTime = activeSeg ? activeSeg.timelineStart + (sourceTime - activeSeg.sourceStart) : sourceTime;
@@ -916,6 +969,7 @@ function EditorContent() {
               setMediaDuration={setMediaDuration}
               editableSegments={editableSegments}
               videoSegments={videoSegments}
+              audioSegments={audioSegments}
               cutZones={cutZones}
               currentTime={masterTime}
               subtitleStyle={subtitleStyle}
@@ -954,6 +1008,8 @@ function EditorContent() {
           handleRippleDeleteRange={handleRippleDeleteRange}
           handleVideoDelete={handleVideoDelete}
           handleVideoRippleDelete={handleVideoRippleDelete}
+          handleAudioDelete={handleAudioDelete}
+          handleAudioRippleDelete={handleAudioRippleDelete}
           handleClearTrack={handleClearTrack}
           setDraggingBoundary={setDraggingBoundary}
           draggingBoundary={draggingBoundary}
@@ -965,9 +1021,18 @@ function EditorContent() {
           setVideoSegments={setVideoSegments}
           selectedVideoIndexes={selectedVideoIndexes}
           setSelectedVideoIndexes={setSelectedVideoIndexes}
+          audioSegments={audioSegments}
+          setAudioSegments={setAudioSegments}
+          selectedAudioIndexes={selectedAudioIndexes}
+          setSelectedAudioIndexes={setSelectedAudioIndexes}
+          isAudioLinked={isAudioLinked}
+          setIsAudioLinked={setIsAudioLinked}
           cursorMode={cursorMode}
           setCursorMode={setCursorMode}
           handleVideoCut={handleVideoCut}
+          handleAudioCut={handleAudioCut}
+          applyJCut={applyJCut}
+          applyLCut={applyLCut}
           handleSubtitleCutAtTime={handleSubtitleCutAtTime}
           setEditableSegments={setEditableSegments}
           setSegmentHistory={setSegmentHistory}

@@ -32,6 +32,7 @@ export interface TimelineProjectData {
   editableSegments: any[];
   rippleDeletes: any[];
   videoSegments: any[];
+  audioSegments?: any[];
   videoCanvas: any;
   subtitleStyle?: any;
 }
@@ -214,6 +215,7 @@ export async function createTimeline(
     editableSegments: [],
     rippleDeletes: [],
     videoSegments: [],
+    audioSegments: [],
     videoCanvas: { type: 'auto' },
   };
 

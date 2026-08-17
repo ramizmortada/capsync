@@ -68,6 +68,7 @@ export function useTranscription({
   language,
   videoCanvas,
   videoSegments,
+  audioSegments,
 }: {
   file: File | null;
   status: string;
@@ -89,6 +90,7 @@ export function useTranscription({
   language: string;
   videoCanvas: any;
   videoSegments: any[];
+  audioSegments?: any[];
 }) {
   const [transcriptionMessage, setTranscriptionMessage] = useState<string>("Processing media...");
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -196,6 +198,7 @@ export function useTranscription({
     formData.append("cuts", JSON.stringify(cutZones || []));
     formData.append("videoCanvas", JSON.stringify(videoCanvas || { type: 'auto' }));
     formData.append("videoSegments", JSON.stringify(videoSegments || []));
+    formData.append("audioSegments", JSON.stringify(audioSegments || []));
 
     const progressTimer = setInterval(async () => {
       try {

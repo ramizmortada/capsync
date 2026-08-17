@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { StagedFrameItem, CanvasComposition } from '../types/imageEditor';
 import { SubtitleStyle, DEFAULT_PRESETS } from '../types';
@@ -31,7 +31,7 @@ import {
   Folder
 } from 'lucide-react';
 
-export default function ImageEditorPage() {
+function ImageEditorContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const projectId = searchParams?.get('id');
@@ -947,5 +947,17 @@ export default function ImageEditorPage() {
         onClearSelection={() => setSelectedFrameIds([])}
       />
     </div>
+  );
+}
+
+export default function ImageEditorPage() {
+  return (
+    <Suspense fallback={
+      <div className="h-screen bg-neutral-950 text-neutral-100 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+      </div>
+    }>
+      <ImageEditorContent />
+    </Suspense>
   );
 }

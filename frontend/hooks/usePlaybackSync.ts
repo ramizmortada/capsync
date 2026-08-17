@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 
 interface UsePlaybackSyncProps {
   mediaRef: React.RefObject<HTMLMediaElement | null>;
+  audioRef?: React.RefObject<HTMLAudioElement | null>;
   timelineRef: React.RefObject<HTMLDivElement | null>;
   trackRef: React.RefObject<HTMLDivElement | null>;
   mediaDuration: number;
   videoSegments: any[];
+  audioSegments?: any[];
   editableSegments: any[];
   masterTimeRef: React.MutableRefObject<number>;
   setMasterTime: React.Dispatch<React.SetStateAction<number>>;
@@ -18,10 +20,12 @@ interface UsePlaybackSyncProps {
 
 export function usePlaybackSync({
   mediaRef,
+  audioRef,
   timelineRef,
   trackRef,
   mediaDuration,
   videoSegments,
+  audioSegments,
   editableSegments,
   masterTimeRef,
   setMasterTime,
@@ -36,7 +40,10 @@ export function usePlaybackSync({
   const timelineMapRef = useRef<any[]>([]);
 
   useEffect(() => {
-    let map = [...videoSegments].filter(s => !s.deleted).sort((a, b) => a.timelineStart - b.timelineStart);
+    const activeAudio = (audioSegments && audioSegments.length > 0) 
+      ? audioSegments.filter(s => !s.deleted)
+      : videoSegments.filter(s => !s.deleted);
+    let map = [...activeAudio].sort((a, b) => a.timelineStart - b.timelineStart);
     if (map.length === 0 && mediaDuration > 0) {
       map = [{
         timelineStart: 0,
@@ -46,7 +53,7 @@ export function usePlaybackSync({
       }];
     }
     timelineMapRef.current = map;
-  }, [videoSegments, mediaDuration]);
+  }, [videoSegments, audioSegments, mediaDuration]);
 
   // Initial centering
   useEffect(() => {
@@ -61,95 +68,111 @@ export function usePlaybackSync({
 
   // Ensure media currentTime is aligned on initial load or segment changes when paused
   useEffect(() => {
-    if (mediaRef.current && !isPlayingRef.current && timelineMapRef.current.length > 0) {
-      const activeSeg = timelineMapRef.current.find(s => masterTime >= s.timelineStart && masterTime < s.timelineEnd) || timelineMapRef.current[0];
-      if (activeSeg) {
-        const expectedSourceTime = activeSeg.sourceStart + Math.max(0, masterTime - activeSeg.timelineStart);
-        if (Math.abs(mediaRef.current.currentTime - expectedSourceTime) > 0.05) {
-          mediaRef.current.currentTime = expectedSourceTime;
+    if (mediaRef.current && !isPlayingRef.current) {
+      const activeVideo = (videoSegments || []).find(s => !s.deleted && masterTime >= s.timelineStart && masterTime < s.timelineEnd);
+      const activeAudio = (audioSegments || []).find(s => !s.deleted && masterTime >= s.timelineStart && masterTime < s.timelineEnd);
+      const targetSeg = activeVideo || activeAudio;
+      if (targetSeg) {
+        const expectedSourceTime = targetSeg.sourceStart + Math.max(0, masterTime - targetSeg.timelineStart);
+        if (Math.abs(mediaRef.current.currentTime - expectedSourceTime) > 0.03) {
+          mediaRef.current.currentTime = Math.max(0, Math.min(mediaDuration, expectedSourceTime));
+          setCurrentSourceTime(expectedSourceTime);
+        }
+      }
+      if (activeAudio && audioRef?.current) {
+        const expectedAudioTime = activeAudio.sourceStart + Math.max(0, masterTime - activeAudio.timelineStart);
+        if (Math.abs(audioRef.current.currentTime - expectedAudioTime) > 0.03) {
+          audioRef.current.currentTime = Math.max(0, Math.min(mediaDuration, expectedAudioTime));
         }
       }
     }
-  }, [videoSegments, mediaDuration, mediaRef, masterTime, isPlayingRef]);
+  }, [videoSegments, audioSegments, mediaDuration, mediaRef, audioRef, masterTime, isPlayingRef]);
 
   const [currentSourceTime, setCurrentSourceTime] = useState(0);
 
   useEffect(() => {
     let animationFrameId: number;
+    let lastTime = performance.now();
 
     const smoothSync = (timestamp: number) => {
       if (!mediaRef.current || mediaDuration <= 0) {
+        lastTime = performance.now();
         animationFrameId = requestAnimationFrame(smoothSync);
         return;
       }
       
-      setCurrentSourceTime(mediaRef.current.currentTime);
-      
+      const now = performance.now();
+      const dt = Math.min(0.1, (now - lastTime) / 1000);
+      lastTime = now;
+
       if (isPlayingRef.current) {
-        if (mediaRef.current.seeking) {
+        let currentMaster = masterTimeRef.current + dt;
+
+        const maxActiveVideoEnd = videoSegments.reduce((max, s) => s.deleted ? max : Math.max(max, s.timelineEnd), 0);
+        const maxActiveAudioEnd = (audioSegments || []).reduce((max, s) => s.deleted ? max : Math.max(max, s.timelineEnd), 0);
+        const timelineMax = Math.max(maxActiveVideoEnd, maxActiveAudioEnd, 0.1);
+
+        if (currentMaster >= timelineMax) {
+          mediaRef.current.pause();
+          if (audioRef?.current) audioRef.current.pause();
+          isPlayingRef.current = false;
+          currentMaster = 0;
+          masterTimeRef.current = 0;
+          setMasterTime(0);
+          handleTimelineSeek(0);
           animationFrameId = requestAnimationFrame(smoothSync);
           return;
         }
 
-        let currentMaster = masterTimeRef.current;
-        const timelineMap = timelineMapRef.current;
-        const mediaTime = mediaRef.current.currentTime;
+        const activeVideo = (videoSegments || []).find(s => !s.deleted && currentMaster >= s.timelineStart && currentMaster < s.timelineEnd);
+        const activeAudio = (audioSegments || []).find(s => !s.deleted && currentMaster >= s.timelineStart && currentMaster < s.timelineEnd);
 
-        const activeSegment = timelineMap.find(s => 
-          currentMaster >= s.timelineStart && currentMaster < s.timelineEnd
-        ) || timelineMap.find(s => 
-          mediaTime >= s.sourceStart - 0.01 && mediaTime < s.sourceEnd
-        );
+        const videoSrcTime = activeVideo ? activeVideo.sourceStart + (currentMaster - activeVideo.timelineStart) : null;
+        const audioSrcTime = activeAudio ? activeAudio.sourceStart + (currentMaster - activeAudio.timelineStart) : null;
 
-        if (activeSegment) {
-          const expectedSourceTime = activeSegment.sourceStart + Math.max(0, currentMaster - activeSegment.timelineStart);
-
-          // If media hardware clock is out of sync with current master timeline position (e.g. initial load after refresh), seek media hardware clock to expected source position!
-          if (Math.abs(mediaTime - expectedSourceTime) > 0.15) {
-            mediaRef.current.currentTime = expectedSourceTime;
-            animationFrameId = requestAnimationFrame(smoothSync);
-            return;
-          }
-
-          // Derive master timeline position directly from video element hardware clock
-          currentMaster = activeSegment.timelineStart + Math.max(0, mediaTime - activeSegment.sourceStart);
-
-          // Only jump media position when crossing segment boundaries
-          if (mediaTime >= activeSegment.sourceEnd - 0.02 || currentMaster >= activeSegment.timelineEnd - 0.02) {
-             const nextSegment = timelineMap.find(s => s.timelineStart >= activeSegment.timelineEnd);
-             if (nextSegment) {
-               currentMaster = nextSegment.timelineStart + 0.01;
-               mediaRef.current.currentTime = nextSegment.sourceStart + 0.01;
-             } else {
-               mediaRef.current.pause();
-               isPlayingRef.current = false;
-               const firstSeg = timelineMap[0];
-               currentMaster = 0;
-               mediaRef.current.currentTime = firstSeg ? firstSeg.sourceStart : 0;
-               if (timelineRef.current) {
-                 timelineRef.current.scrollLeft = 0;
-               }
-             }
-          }
-        } else {
-          const nextSegment = timelineMap.find(s => s.timelineStart > currentMaster);
-          if (nextSegment) {
-            currentMaster = nextSegment.timelineStart + 0.01;
-            mediaRef.current.currentTime = nextSegment.sourceStart + 0.01;
+        // 1. Audio track playback (Dedicated Primary Audio Engine)
+        if (audioRef?.current) {
+          if (activeAudio && audioSrcTime !== null) {
+            if (Math.abs(audioRef.current.currentTime - audioSrcTime) > 0.12) {
+              audioRef.current.currentTime = Math.max(0, Math.min(mediaDuration, audioSrcTime));
+            }
+            if (audioRef.current.paused) {
+              audioRef.current.play().catch(() => {});
+            }
           } else {
-             mediaRef.current.pause();
-             isPlayingRef.current = false;
-             const firstSeg = timelineMap[0];
-             currentMaster = 0;
-             mediaRef.current.currentTime = firstSeg ? firstSeg.sourceStart : 0;
-             if (timelineRef.current) {
-               timelineRef.current.scrollLeft = 0;
-             }
+            if (!audioRef.current.paused) {
+              audioRef.current.pause();
+            }
+          }
+        }
+
+        // 2. Video track visual playback (Silent Frame Renderer)
+        if (mediaRef.current) {
+          if (audioRef?.current) {
+            mediaRef.current.muted = true;
+          }
+          if (activeVideo && videoSrcTime !== null) {
+            if (Math.abs(mediaRef.current.currentTime - videoSrcTime) > 0.12) {
+              mediaRef.current.currentTime = Math.max(0, Math.min(mediaDuration, videoSrcTime));
+            }
+            if (mediaRef.current.paused) {
+              mediaRef.current.play().catch(() => {});
+            }
+          } else {
+            if (!mediaRef.current.paused) {
+              mediaRef.current.pause();
+            }
           }
         }
 
         masterTimeRef.current = currentMaster;
         setMasterTime(currentMaster);
+        setCurrentSourceTime(videoSrcTime ?? audioSrcTime ?? currentMaster);
+      } else {
+        lastTime = performance.now();
+        if (audioRef?.current && !audioRef.current.paused) {
+          audioRef.current.pause();
+        }
       }
 
       if (isPlayingRef.current && timelineRef.current && trackRef.current && !isHoveringTimeline.current && draggingBoundary === null) {
@@ -172,12 +195,7 @@ export function usePlaybackSync({
     return () => {
       if (animationFrameId) cancelAnimationFrame(animationFrameId);
     };
-  }, [mediaDuration, draggingBoundary, isPlayingRef, isHoveringTimeline, masterTimeRef, mediaRef, setMasterTime, timelineRef, trackRef]);
-
-
-  // NOTE: Auto-scroll to active subtitle segment during playback is handled
-  // by SubtitleEditor.tsx (displayActiveIndex + scrollToSegment).
-  // Do NOT add scroll logic here — it causes two scroll systems to fight.
+  }, [mediaDuration, draggingBoundary, isPlayingRef, isHoveringTimeline, masterTimeRef, mediaRef, audioRef, setMasterTime, timelineRef, trackRef, videoSegments, audioSegments]);
 
   const handleTimelineSeek = useCallback((time: number) => {
     let validTime = time;
@@ -185,14 +203,24 @@ export function usePlaybackSync({
     masterTimeRef.current = validTime;
     setMasterTime(validTime);
 
-    const timelineMap = timelineMapRef.current;
-    const activeSeg = timelineMap.find(s => validTime >= s.timelineStart && validTime < s.timelineEnd);
+    const activeVideo = (videoSegments || []).find(s => !s.deleted && validTime >= s.timelineStart && validTime < s.timelineEnd);
+    const activeAudio = (audioSegments || []).find(s => !s.deleted && validTime >= s.timelineStart && validTime < s.timelineEnd);
     
-    if (activeSeg && mediaRef.current) {
-      mediaRef.current.currentTime = activeSeg.sourceStart + (validTime - activeSeg.timelineStart);
+    if (activeVideo && mediaRef.current) {
+      const vTarget = activeVideo.sourceStart + (validTime - activeVideo.timelineStart);
+      mediaRef.current.currentTime = Math.max(0, Math.min(mediaDuration, vTarget));
+      setCurrentSourceTime(mediaRef.current.currentTime);
+    } else if (activeAudio && mediaRef.current) {
+      const aTarget = activeAudio.sourceStart + (validTime - activeAudio.timelineStart);
+      mediaRef.current.currentTime = Math.max(0, Math.min(mediaDuration, aTarget));
       setCurrentSourceTime(mediaRef.current.currentTime);
     }
-  }, [masterTimeRef, setMasterTime, mediaRef]);
+
+    if (activeAudio && audioRef?.current) {
+      const aTarget = activeAudio.sourceStart + (validTime - activeAudio.timelineStart);
+      audioRef.current.currentTime = Math.max(0, Math.min(mediaDuration, aTarget));
+    }
+  }, [masterTimeRef, setMasterTime, mediaRef, audioRef, videoSegments, audioSegments, mediaDuration]);
 
   return { handleTimelineSeek, currentSourceTime };
 }

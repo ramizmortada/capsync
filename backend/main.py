@@ -363,7 +363,8 @@ def burn_subtitles(
     videoHeight: int = Form(...),
     cuts: str = Form(None),
     videoCanvas: str = Form(None),
-    videoSegments: str = Form(None)
+    videoSegments: str = Form(None),
+    audioSegments: str = Form(None)
 ):
     global export_progress
     export_progress = {"progress": 0, "status": "rendering"}
@@ -375,6 +376,7 @@ def burn_subtitles(
         parsed_cuts = json.loads(cuts) if cuts else []
         parsed_canvas = json.loads(videoCanvas) if videoCanvas else {"type": "auto"}
         parsed_video_segments = json.loads(videoSegments) if videoSegments else []
+        parsed_audio_segments = json.loads(audioSegments) if audioSegments else []
         
         canvas_w = parsed_canvas.get("width", videoWidth) if parsed_canvas.get("type") != "auto" else videoWidth
         canvas_h = parsed_canvas.get("height", videoHeight) if parsed_canvas.get("type") != "auto" else videoHeight
@@ -393,7 +395,6 @@ def burn_subtitles(
         with open(temp_video_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
             
-        # 2. Get video duration and shift subtitle timestamps if cuts are present
         # 2. Clean subtitle segments and generate kept ranges from videoSegments or cuts
         clean_segments = []
         for seg in parsed_segments:
@@ -411,7 +412,7 @@ def burn_subtitles(
         if total_duration <= 0.0:
             total_duration = max([seg["end"] for seg in parsed_segments] + [0.0])
 
-        kept_ranges = []
+        video_ranges = []
         if parsed_video_segments:
             active_video_segs = [s for s in parsed_video_segments if not s.get("deleted")]
             if active_video_segs:
@@ -419,42 +420,45 @@ def burn_subtitles(
                     src_s = max(0.0, float(s.get("sourceStart", 0)))
                     src_e = float(s.get("sourceEnd", total_duration))
                     if src_e > src_s + 0.01:
-                        kept_ranges.append((src_s, src_e))
+                        video_ranges.append((src_s, src_e))
 
-        if not kept_ranges and parsed_cuts:
+        if not video_ranges and parsed_cuts:
             current_pos = 0.0
             for c in sorted(parsed_cuts, key=lambda x: x["start"]):
                 if c["start"] > current_pos + 0.02:
-                    kept_ranges.append((current_pos, c["start"]))
+                    video_ranges.append((current_pos, c["start"]))
                 current_pos = max(current_pos, c["end"])
             if current_pos < total_duration - 0.02:
-                kept_ranges.append((current_pos, total_duration))
+                video_ranges.append((current_pos, total_duration))
 
-        if not kept_ranges:
-            kept_ranges = [(0.0, total_duration)]
+        if not video_ranges:
+            video_ranges = [(0.0, total_duration)]
 
-        # Merge adjacent or overlapping ranges to prevent unnecessary FFmpeg splicing desync
-        merged_ranges = []
-        if kept_ranges:
-            kept_ranges.sort(key=lambda x: x[0])
-            curr_start, curr_end = kept_ranges[0]
-            for r_start, r_end in kept_ranges[1:]:
-                if r_start <= curr_end + 0.05:
-                    curr_end = max(curr_end, r_end)
-                else:
-                    merged_ranges.append((curr_start, curr_end))
-                    curr_start, curr_end = r_start, r_end
-            merged_ranges.append((curr_start, curr_end))
-        kept_ranges = merged_ranges
+        # Audio ranges
+        audio_ranges = []
+        if parsed_audio_segments:
+            active_audio_segs = [s for s in parsed_audio_segments if not s.get("deleted")]
+            if active_audio_segs:
+                for s in sorted(active_audio_segs, key=lambda x: x.get("timelineStart", 0)):
+                    src_s = max(0.0, float(s.get("sourceStart", 0)))
+                    src_e = float(s.get("sourceEnd", total_duration))
+                    if src_e > src_s + 0.01:
+                        audio_ranges.append((src_s, src_e))
+
+        if not audio_ranges:
+            audio_ranges = list(video_ranges)
+
+        kept_ranges = video_ranges
 
         print(f"DEBUG BURN: Total duration = {total_duration}", flush=True)
         print(f"DEBUG BURN: Raw videoSegments count = {len(parsed_video_segments)}", flush=True)
-        print(f"DEBUG BURN: kept_ranges = {kept_ranges}", flush=True)
+        print(f"DEBUG BURN: video_ranges = {video_ranges}", flush=True)
+        print(f"DEBUG BURN: audio_ranges = {audio_ranges}", flush=True)
 
         # Shift subtitle timestamps to match spliced video output timeline
         def map_source_to_timeline(source_time: float) -> float:
             timeline_offset = 0.0
-            for src_start, src_end in kept_ranges:
+            for src_start, src_end in video_ranges:
                 if source_time < src_start:
                     return timeline_offset
                 if src_start <= source_time <= src_end:
@@ -467,7 +471,7 @@ def burn_subtitles(
         for seg in parsed_segments:
             words = seg.get("words", [])
             if words:
-                for src_start, src_end in kept_ranges:
+                for src_start, src_end in video_ranges:
                     range_words = []
                     for w in words:
                         w_start = float(w.get("start", 0))
@@ -502,7 +506,7 @@ def burn_subtitles(
             else:
                 seg_start_src = float(seg.get("start", 0))
                 seg_end_src = float(seg.get("end", 0))
-                for src_start, src_end in kept_ranges:
+                for src_start, src_end in video_ranges:
                     if seg_end_src > src_start + 0.01 and seg_start_src < src_end - 0.01:
                         c_start = max(seg_start_src, src_start)
                         c_end = min(seg_end_src, src_end)
@@ -512,8 +516,6 @@ def burn_subtitles(
                         shifted_segments.append(new_seg)
 
         print(f"DEBUG BURN: Shifted segments count = {len(shifted_segments)}", flush=True)
-        for idx, s in enumerate(shifted_segments[:5]):
-            print(f"DEBUG BURN Seg {idx}: start={s['start']:.2f}, end={s['end']:.2f}, text='{s['text']}'", flush=True)
 
         # 3. Generate ASS content using cleaned/shifted segments
         ass_content = generate_ass(shifted_segments, parsed_style, canvas_w, canvas_h)
@@ -548,7 +550,6 @@ def burn_subtitles(
             if not segments:
                 return {"x": 0, "y": 0, "scale": 1}, {"top": 0, "bottom": 0, "left": 0, "right": 0}, {"enabled": False, "direction": "bottom", "length": 30}
             
-            # 1. Match by sourceStart / sourceEnd
             for seg in segments:
                 if seg.get("deleted"): continue
                 s_start = float(seg.get("sourceStart", seg.get("timelineStart", 0)))
@@ -559,7 +560,6 @@ def burn_subtitles(
                     gradient_mask = seg.get("gradientMask", {"enabled": False, "direction": "bottom", "length": 30})
                     return transform, crop, gradient_mask
 
-            # 2. Match by timelineStart / timelineEnd
             for seg in segments:
                 if seg.get("deleted"): continue
                 t_start = float(seg.get("timelineStart", 0))
@@ -570,7 +570,6 @@ def burn_subtitles(
                     gradient_mask = seg.get("gradientMask", {"enabled": False, "direction": "bottom", "length": 30})
                     return transform, crop, gradient_mask
 
-            # 3. Fallback to first active segment
             for seg in segments:
                 if not seg.get("deleted"):
                     transform = seg.get("transform", {"x": 0, "y": 0, "scale": 1})
@@ -581,13 +580,14 @@ def burn_subtitles(
             return {"x": 0, "y": 0, "scale": 1}, {"top": 0, "bottom": 0, "left": 0, "right": 0}, {"enabled": False, "direction": "bottom", "length": 30}
 
         filter_complex = []
-        concat_inputs = ""
+        v_concat_inputs = ""
         audio_source = "0:a"
         extra_inputs = []
         generated_mask_files = []
         input_counter = 1
         
-        for idx, (start, end) in enumerate(kept_ranges):
+        # Build Video Stream Trims
+        for idx, (start, end) in enumerate(video_ranges):
             mid_t = (start + end) / 2
             transform, crop, gradient_mask = get_clip_settings_for_time(mid_t, parsed_video_segments)
             scale_val = transform.get("scale", 1.0)
@@ -600,7 +600,6 @@ def burn_subtitles(
             c_right = float(crop.get("right", 0))
             
             filter_complex.append(f"[0:v]trim=start={start:.3f}:end={end:.3f},setpts=PTS-STARTPTS[vtrim{idx}]")
-            filter_complex.append(f"[{audio_source}]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[a{idx}]")
 
             if c_top > 0 or c_bottom > 0 or c_left > 0 or c_right > 0:
                 crop_w_pct = max(0.01, (100.0 - c_left - c_right) / 100.0)
@@ -619,8 +618,6 @@ def burn_subtitles(
             g_dir = gradient_mask.get("direction", "bottom")
             g_len_pct = float(gradient_mask.get("length", 30))
             g_len = max(0.01, min(1.0, g_len_pct / 100.0))
-
-            print(f"DEBUG BURN Clip {idx}: gradientMask enabled={g_enabled}, dir={g_dir}, len={g_len_pct}%", flush=True)
 
             if g_enabled and g_len > 0:
                 mask_file = generate_gradient_mask_image(canvas_w, canvas_h, g_dir, g_len_pct, tempfile.gettempdir())
@@ -644,16 +641,24 @@ def burn_subtitles(
             overlay_y = f"(main_h-overlay_h)/2+{canvas_h}*{y_pct}"
             filter_complex.append(f"[bg{idx}]{v_overlay_in}overlay=x='{overlay_x}':y='{overlay_y}'{overlay_fmt}:eval=init[v{idx}]")
             
-            concat_inputs += f"[v{idx}][a{idx}]"
+            v_concat_inputs += f"[v{idx}]"
             
-        n = len(kept_ranges)
-        filter_complex.append(f"{concat_inputs}concat=n={n}:v=1:a=1[splicedv][outa]")
+        # Build Audio Stream Trims (Independent from video for J-cuts & L-cuts)
+        a_concat_inputs = ""
+        for a_idx, (a_start, a_end) in enumerate(audio_ranges):
+            filter_complex.append(f"[{audio_source}]atrim=start={a_start:.3f}:end={a_end:.3f},asetpts=PTS-STARTPTS[a{a_idx}]")
+            a_concat_inputs += f"[a{a_idx}]"
+            
+        num_v = len(video_ranges)
+        num_a = len(audio_ranges)
+        filter_complex.append(f"{v_concat_inputs}concat=n={num_v}:v=1:a=0[splicedv]")
+        filter_complex.append(f"{a_concat_inputs}concat=n={num_a}:v=0:a=1[outa]")
         filter_complex.append(f"[splicedv]ass='{ffmpeg_ass_path}':fontsdir='{ffmpeg_fonts_path}'[subv]")
         filter_complex.append(f"[subv]format=yuv420p[outv]")
         
         filter_str = "; ".join(filter_complex)
         
-        export_duration = sum(end - start for start, end in kept_ranges) if kept_ranges else total_duration
+        export_duration = sum(end - start for start, end in video_ranges) if video_ranges else total_duration
         if export_duration <= 0.0:
             export_duration = total_duration if total_duration > 0.0 else 1.0
 
