@@ -186,7 +186,10 @@ export async function POST(req: Request) {
         console.log(`[API /api/download] Setting FFmpeg Location & JS Runtime...`);
         dl = dl.addArgs(
           '--ffmpeg-location', FFMPEG_DIR,
-          '--js-runtimes', 'node'
+          '--js-runtimes', `node:${process.execPath}`,
+          '--extractor-args', 'youtube:player_client=mweb,android,web',
+          '--no-check-certificates',
+          '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
         );
         
         if (isAudio) {

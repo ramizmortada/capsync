@@ -2,6 +2,8 @@ import os
 import sys
 import shutil
 import tempfile
+import threading
+import time
 
 # Use HuggingFace mirror to bypass regional blocks
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
@@ -38,6 +40,7 @@ import json
 import asyncio
 
 download_progress = {}
+export_progress = {"progress": 0, "status": "idle"}
 current_transcription_status = "Idle"
 current_ffmpeg_process = None
 
@@ -80,14 +83,20 @@ async def get_models_status():
 async def get_download_progress(model_name: str):
     return download_progress.get(model_name, {"progress": 0, "status": "idle"})
 
+@app.get("/api/burn/progress")
+async def get_burn_progress():
+    return export_progress
+
 @app.get("/api/transcribe/status")
 async def get_transcription_status():
     return {"status": current_transcription_status}
 
 @app.post("/api/cancel")
 async def cancel_active_task():
-    global current_ffmpeg_process, current_transcription_status
+    global current_ffmpeg_process, current_transcription_status, export_progress
     current_transcription_status = "Idle"
+    export_progress["status"] = "idle"
+    export_progress["progress"] = 0
     if current_ffmpeg_process:
         try:
             current_ffmpeg_process.kill()
@@ -286,8 +295,66 @@ def get_video_duration(video_path):
         print(f"Error getting video duration: {e}", flush=True)
         return 0.0
 
+def generate_gradient_mask_image(width: int, height: int, direction: str, length_pct: float, temp_dir: str) -> str:
+    from PIL import Image
+    import numpy as np
+    
+    w, h = max(1, width), max(1, height)
+    length = max(0.01, min(1.0, length_pct / 100.0))
+    arr = np.ones((h, w), dtype=np.float32)
+    
+    if direction == "bottom":
+        fade_len = int(h * length)
+        if fade_len > 0:
+            y_indices = np.arange(h - fade_len, h)
+            t = (h - 1 - y_indices) / float(fade_len)
+            t = np.clip(t, 0.0, 1.0)
+            smooth_t = t * t * (3.0 - 2.0 * t)
+            arr[h - fade_len:, :] = smooth_t[:, None]
+    elif direction == "top":
+        fade_len = int(h * length)
+        if fade_len > 0:
+            y_indices = np.arange(0, fade_len)
+            t = y_indices / float(fade_len)
+            t = np.clip(t, 0.0, 1.0)
+            smooth_t = t * t * (3.0 - 2.0 * t)
+            arr[:fade_len, :] = smooth_t[:, None]
+    elif direction == "right":
+        fade_len = int(w * length)
+        if fade_len > 0:
+            x_indices = np.arange(w - fade_len, w)
+            t = (w - 1 - x_indices) / float(fade_len)
+            t = np.clip(t, 0.0, 1.0)
+            smooth_t = t * t * (3.0 - 2.0 * t)
+            arr[:, w - fade_len:] = smooth_t[None, :]
+    elif direction == "left":
+        fade_len = int(w * length)
+        if fade_len > 0:
+            x_indices = np.arange(0, fade_len)
+            t = x_indices / float(fade_len)
+            t = np.clip(t, 0.0, 1.0)
+            smooth_t = t * t * (3.0 - 2.0 * t)
+            arr[:, :fade_len] = smooth_t[None, :]
+
+    alpha_uint8 = (arr * 255.0).astype(np.uint8)
+    img = Image.fromarray(alpha_uint8, mode="L")
+    mask_file = os.path.join(temp_dir, f"mask_{uuid.uuid4().hex[:8]}.png")
+    img.save(mask_file)
+    return mask_file
+
+def check_nvenc_support() -> bool:
+    try:
+        res = subprocess.run(["ffmpeg", "-h", "encoder=h264_nvenc"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        return res.returncode == 0
+    except Exception:
+        return False
+
+HAS_NVENC = check_nvenc_support()
+if HAS_NVENC:
+    print("NVIDIA GPU NVENC Hardware Acceleration detected and enabled for video exports.", flush=True)
+
 @app.post("/api/burn")
-async def burn_subtitles(
+def burn_subtitles(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     segments: str = Form(...),
@@ -298,6 +365,8 @@ async def burn_subtitles(
     videoCanvas: str = Form(None),
     videoSegments: str = Form(None)
 ):
+    global export_progress
+    export_progress = {"progress": 0, "status": "rendering"}
     try:
         print(f"Received burn request for {file.filename} ({videoWidth}x{videoHeight})", flush=True)
         
@@ -514,6 +583,9 @@ async def burn_subtitles(
         filter_complex = []
         concat_inputs = ""
         audio_source = "0:a"
+        extra_inputs = []
+        generated_mask_files = []
+        input_counter = 1
         
         for idx, (start, end) in enumerate(kept_ranges):
             mid_t = (start + end) / 2
@@ -551,61 +623,113 @@ async def burn_subtitles(
             print(f"DEBUG BURN Clip {idx}: gradientMask enabled={g_enabled}, dir={g_dir}, len={g_len_pct}%", flush=True)
 
             if g_enabled and g_len > 0:
-                if g_dir == "bottom":
-                    t_str = f"((H-Y)/(H*{g_len:.4f}))"
-                    a_expr = f"if(gt(Y,H*(1-{g_len:.4f})),255*{t_str}*{t_str}*(3-2*{t_str}),255)"
-                elif g_dir == "top":
-                    t_str = f"(Y/(H*{g_len:.4f}))"
-                    a_expr = f"if(lt(Y,H*{g_len:.4f}),255*{t_str}*{t_str}*(3-2*{t_str}),255)"
-                elif g_dir == "right":
-                    t_str = f"((W-X)/(W*{g_len:.4f}))"
-                    a_expr = f"if(gt(X,W*(1-{g_len:.4f})),255*{t_str}*{t_str}*(3-2*{t_str}),255)"
-                elif g_dir == "left":
-                    t_str = f"(X/(W*{g_len:.4f}))"
-                    a_expr = f"if(lt(X,W*{g_len:.4f}),255*{t_str}*{t_str}*(3-2*{t_str}),255)"
-                else:
-                    a_expr = "255"
-
-                filter_complex.append(f"[vscale{idx}]format=yuva420p,geq=lum='lum(X,Y)':cb='cb(X,Y)':cr='cr(X,Y)':a='{a_expr}'[vmasked{idx}]")
+                mask_file = generate_gradient_mask_image(canvas_w, canvas_h, g_dir, g_len_pct, tempfile.gettempdir())
+                generated_mask_files.append(mask_file)
+                extra_inputs.extend(["-i", mask_file])
+                mask_in_idx = input_counter
+                input_counter += 1
+                clip_dur = max(0.01, end - start)
+                filter_complex.append(f"[{mask_in_idx}:v]loop=loop=-1:size=1:start=0,trim=duration={clip_dur:.3f},setpts=PTS-STARTPTS[mraw{idx}]")
+                filter_complex.append(f"[mraw{idx}][vscale{idx}]scale2ref[m{idx}][vscaled{idx}]")
+                filter_complex.append(f"[vscaled{idx}][m{idx}]alphamerge[vmasked{idx}]")
                 v_overlay_in = f"[vmasked{idx}]"
+                overlay_fmt = ":format=auto"
             else:
                 v_overlay_in = f"[vscale{idx}]"
+                overlay_fmt = ""
 
             filter_complex.append(f"color=c=0x{bg_color}:s={canvas_w}x{canvas_h}:d={(end-start):.3f}[bg{idx}]")
             
             overlay_x = f"(main_w-overlay_w)/2+{canvas_w}*{x_pct}"
             overlay_y = f"(main_h-overlay_h)/2+{canvas_h}*{y_pct}"
-            overlay_fmt = ":format=auto" if g_enabled else ""
             filter_complex.append(f"[bg{idx}]{v_overlay_in}overlay=x='{overlay_x}':y='{overlay_y}'{overlay_fmt}:eval=init[v{idx}]")
             
             concat_inputs += f"[v{idx}][a{idx}]"
             
         n = len(kept_ranges)
         filter_complex.append(f"{concat_inputs}concat=n={n}:v=1:a=1[splicedv][outa]")
-        filter_complex.append(f"[splicedv]ass='{ffmpeg_ass_path}':fontsdir='{ffmpeg_fonts_path}'[outv]")
+        filter_complex.append(f"[splicedv]ass='{ffmpeg_ass_path}':fontsdir='{ffmpeg_fonts_path}'[subv]")
+        filter_complex.append(f"[subv]format=yuv420p[outv]")
         
         filter_str = "; ".join(filter_complex)
         
-        command = ["ffmpeg", "-y", "-i", temp_video_path]
+        export_duration = sum(end - start for start, end in kept_ranges) if kept_ranges else total_duration
+        if export_duration <= 0.0:
+            export_duration = total_duration if total_duration > 0.0 else 1.0
+
+        progress_file_path = os.path.join(tempfile.gettempdir(), f"burn_prog_{unique_id}.txt")
+        if os.path.exists(progress_file_path):
+            try:
+                os.remove(progress_file_path)
+            except Exception:
+                pass
+
+        vcodec_args = ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "22"] if HAS_NVENC else ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-threads", "0"]
+
+        command = ["ffmpeg", "-y", "-progress", progress_file_path, "-i", temp_video_path]
+        command.extend(extra_inputs)
         command.extend([
             "-filter_complex", filter_str,
             "-map", "[outv]", "-map", "[outa]",
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-threads", "0",
+            *vcodec_args,
             "-c:a", "aac",
             output_video_path
         ])
         
         print(f"Running FFmpeg: {' '.join(command)}", flush=True)
         global current_ffmpeg_process
-        current_ffmpeg_process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        stdout, stderr = current_ffmpeg_process.communicate()
-        returncode = current_ffmpeg_process.returncode
-        current_ffmpeg_process = None
+        current_ffmpeg_process = subprocess.Popen(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True
+        )
         
+        stop_monitor = False
+        def monitor_progress():
+            while not stop_monitor and current_ffmpeg_process and current_ffmpeg_process.poll() is None:
+                try:
+                    if os.path.exists(progress_file_path):
+                        with open(progress_file_path, "r", encoding="utf-8", errors="ignore") as f:
+                            lines = f.read().splitlines()
+                            for line in reversed(lines):
+                                if line.startswith("out_time_us="):
+                                    val = line.split("=")[1].strip()
+                                    if val.isdigit():
+                                        sec = float(val) / 1_000_000.0
+                                        pct = min(99, max(0, int((sec / export_duration) * 100)))
+                                        if export_progress["progress"] != pct:
+                                            export_progress["progress"] = pct
+                                            print(f"EXPORT PROGRESS: {pct}% ({sec:.1f}s / {export_duration:.1f}s)", flush=True)
+                                    break
+                except Exception:
+                    pass
+                time.sleep(0.2)
+
+        monitor_thread = threading.Thread(target=monitor_progress)
+        monitor_thread.start()
+
+        stderr_output = current_ffmpeg_process.stderr.read()
+        returncode = current_ffmpeg_process.wait()
+
+        stop_monitor = True
+        monitor_thread.join()
+        current_ffmpeg_process = None
+
+        if os.path.exists(progress_file_path):
+            try:
+                os.remove(progress_file_path)
+            except Exception:
+                pass
+
         if returncode != 0:
-            print(f"FFmpeg failed: {stderr}", flush=True)
-            raise Exception(f"FFmpeg processing failed or was cancelled: {stderr}")
+            export_progress["status"] = "error"
+            export_progress["progress"] = 0
+            print(f"FFmpeg failed: {stderr_output}", flush=True)
+            raise Exception(f"FFmpeg processing failed or was cancelled: {stderr_text if 'stderr_text' in locals() else stderr_output}")
             
+        export_progress["progress"] = 100
+        export_progress["status"] = "done"
         print("FFmpeg processing complete.", flush=True)
         
         # Schedule cleanup after response is sent
@@ -615,7 +739,7 @@ async def burn_subtitles(
                 _shutil.rmtree(d, ignore_errors=True)
             except: pass
             
-        files_to_cleanup = [temp_video_path, temp_ass_path, output_video_path]
+        files_to_cleanup = [temp_video_path, temp_ass_path, output_video_path] + generated_mask_files
             
         background_tasks.add_task(cleanup_files, *files_to_cleanup)
         background_tasks.add_task(cleanup_fonts_dir, temp_fonts_dir)
@@ -627,11 +751,13 @@ async def burn_subtitles(
         )
         
     except Exception as e:
+        export_progress["status"] = "error"
+        export_progress["progress"] = 0
         print(f"BURN ERROR: {e}", flush=True)
         return {"error": str(e)}
 
 @app.post("/api/enhance")
-async def enhance_media_audio(
+def enhance_media_audio(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...)
 ):

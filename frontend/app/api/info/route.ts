@@ -34,7 +34,12 @@ export async function POST(req: Request) {
       ffmpegPath: FFMPEG_BIN,
     });
     const info = await ytdlp.getInfoAsync(url, {
-      rawArgs: ['--js-runtimes', 'node']
+      rawArgs: [
+        '--js-runtimes', `node:${process.execPath}`,
+        '--extractor-args', 'youtube:player_client=mweb,android,web',
+        '--no-check-certificates',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+      ]
     } as any);
     
     // Calculate approximate sizes for each quality

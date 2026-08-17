@@ -252,7 +252,7 @@ export const SettingsTab = ({
               <Loader2 className="w-4 h-4 animate-spin text-primary" />
               {status === "uploading" ? (result ? "Re-uploading Media..." : "Uploading Media...") : 
                status === "downloading_model" ? `Downloading Model (${progress}%)` : 
-               status === "burning" ? "Burning Subtitles into Video..." :
+               status === "burning" ? "Rendering & Exporting Video..." :
                (result ? (transcriptionMessage || "").replace("Transcribing", "Retranscribing") : transcriptionMessage)}
             </span>
             <div className="flex items-center gap-3">
@@ -260,7 +260,7 @@ export const SettingsTab = ({
               <Button variant="ghost" size="sm" onClick={cancelTranscription} className="h-6 px-2 text-xs text-neutral-400 hover:text-white border border-neutral-700">Cancel</Button>
             </div>
           </div>
-          {status === "transcribing" || status === "burning" ? (
+          {status === "transcribing" ? (
             <div className="w-full h-2 bg-neutral-800 rounded-full overflow-hidden relative">
               <div className="absolute inset-0 bg-primary/20" />
               <div className="h-full bg-primary w-1/2 rounded-full animate-[progress_1.5s_ease-in-out_infinite] absolute left-0" />

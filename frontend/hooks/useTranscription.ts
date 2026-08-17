@@ -182,7 +182,7 @@ export function useTranscription({
     if (!file) return;
 
     setStatus("burning");
-    setProgress(15);
+    setProgress(0);
     setErrorMessage("");
 
     exportAbortControllerRef.current = new AbortController();
@@ -197,9 +197,19 @@ export function useTranscription({
     formData.append("videoCanvas", JSON.stringify(videoCanvas || { type: 'auto' }));
     formData.append("videoSegments", JSON.stringify(videoSegments || []));
 
-    const progressTimer = setInterval(() => {
-      setProgress((prev: number) => (prev < 92 ? prev + 4 : prev));
-    }, 600);
+    const progressTimer = setInterval(async () => {
+      try {
+        const res = await fetch("http://127.0.0.1:8000/api/burn/progress");
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof data.progress === "number") {
+            setProgress(data.progress);
+          }
+        }
+      } catch (e) {
+        // Ignore polling fetch errors
+      }
+    }, 400);
 
     try {
       const response = await fetch("http://127.0.0.1:8000/api/burn", {
@@ -209,7 +219,7 @@ export function useTranscription({
       });
 
       if (!response.ok) {
-        throw new Error("Failed to burn subtitles and render video.");
+        throw new Error("Failed to render and export video.");
       }
 
       const blob = await response.blob();
@@ -231,7 +241,7 @@ export function useTranscription({
         return;
       }
       console.error(err);
-      setErrorMessage(err.message || "An unknown error occurred during burning.");
+      setErrorMessage(err.message || "An unknown error occurred during video export.");
       setStatus("error");
       setProgress(0);
     } finally {
