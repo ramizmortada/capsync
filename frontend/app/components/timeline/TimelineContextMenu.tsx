@@ -1,3 +1,5 @@
+import { useRef, useState, useLayoutEffect } from 'react';
+
 export interface ContextMenuData {
   x: number;
   y: number;
@@ -6,6 +8,7 @@ export interface ContextMenuData {
   videoSegmentId?: string;
   audioSegmentId?: string;
   isDeleted?: boolean;
+  isAudioMuted?: boolean;
   type: 'Empty Space' | 'Silence' | 'Word' | 'Subtitle Segment' | 'Video Segment' | 'Audio Segment' | 'Subtitle Track' | 'Video Track' | 'Audio Track';
   gapStart?: number;
   gapEnd?: number;
@@ -22,6 +25,7 @@ interface TimelineContextMenuProps {
   handleRippleDeleteRange?: (start: number, end: number) => void;
   handleVideoRippleDelete?: (ids: string[]) => void;
   handleAudioRippleDelete?: (ids: string[]) => void;
+  handleToggleAudioMute?: (ids: string[]) => void;
   handleVideoDelete?: (ids: string[]) => void;
   handleAudioDelete?: (ids: string[]) => void;
   handleLiftDelete?: (indices: (number|string)[]) => void;
@@ -39,6 +43,7 @@ export const TimelineContextMenu = ({
   handleRippleDeleteRange,
   handleVideoRippleDelete,
   handleAudioRippleDelete,
+  handleToggleAudioMute,
   handleVideoDelete,
   handleAudioDelete,
   handleLiftDelete,
@@ -47,10 +52,37 @@ export const TimelineContextMenu = ({
   applyJCut,
   applyLCut,
 }: TimelineContextMenuProps) => {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState({ x: contextMenu.x, y: contextMenu.y });
+
+  useLayoutEffect(() => {
+    if (!menuRef.current) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    const menuWidth = rect.width || 180;
+    const menuHeight = rect.height || 220;
+    const pad = 12;
+
+    let nextX = contextMenu.x;
+    let nextY = contextMenu.y;
+
+    // Flip or adjust upwards if overflowing bottom of viewport
+    if (nextY + menuHeight > window.innerHeight - pad) {
+      nextY = Math.max(pad, window.innerHeight - menuHeight - pad);
+    }
+
+    // Shift left if overflowing right of viewport
+    if (nextX + menuWidth > window.innerWidth - pad) {
+      nextX = Math.max(pad, window.innerWidth - menuWidth - pad);
+    }
+
+    setCoords({ x: nextX, y: nextY });
+  }, [contextMenu.x, contextMenu.y]);
+
   return (
     <div 
-      className="fixed bg-neutral-900 border border-neutral-800 text-neutral-100 rounded-lg shadow-xl py-1 z-[9999] text-xs min-w-[170px] animate-in fade-in zoom-in-95 duration-100"
-      style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+      ref={menuRef}
+      className="fixed bg-neutral-900 border border-neutral-800 text-neutral-100 rounded-lg shadow-2xl py-1 z-[9999] text-xs min-w-[180px] animate-in fade-in zoom-in-95 duration-100"
+      style={{ top: `${coords.y}px`, left: `${coords.x}px` }}
       onPointerDown={(e) => e.stopPropagation()} // Prevent auto-dismiss when clicking items
     >
       <div className="px-3 py-1.5 text-[10px] font-bold text-neutral-500 uppercase tracking-wider border-b border-neutral-800 mb-1">
@@ -133,6 +165,18 @@ export const TimelineContextMenu = ({
               className="w-full px-3 py-2 text-left hover:bg-neutral-800 transition-colors flex items-center gap-2 text-neutral-300 hover:text-white font-medium"
             >
               ❌ Delete Video (Lift)
+            </button>
+          )}
+
+          {contextMenu.type === 'Audio Segment' && contextMenu.audioSegmentId !== undefined && handleToggleAudioMute && (
+            <button 
+              onClick={() => {
+                handleToggleAudioMute([contextMenu.audioSegmentId!]);
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-2 text-left hover:bg-neutral-800 transition-colors flex items-center gap-2 text-amber-300 hover:text-amber-200 font-medium"
+            >
+              {contextMenu.isAudioMuted ? '🔊 Unmute Audio Clip (M)' : '🔇 Mute Audio Clip (M)'}
             </button>
           )}
 

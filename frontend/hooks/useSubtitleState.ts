@@ -35,6 +35,7 @@ export interface AudioSegment {
   timelineStart: number;
   timelineEnd: number;
   deleted: boolean;
+  muted?: boolean;
   linkedVideoId?: string;
 }
 
@@ -1266,6 +1267,27 @@ export function useSubtitleState({
     });
   };
 
+  const handleToggleAudioMute = (ids: string[]) => {
+    setSegmentHistory((prevHistory) => ({
+      past: [...prevHistory.past, cloneState(editableSegments, rippleDeletes, videoSegments, audioSegments)].slice(-50),
+      future: [],
+    }));
+
+    setAudioSegments((prevAudio) => {
+      const base: AudioSegment[] = prevAudio && prevAudio.length > 0 ? prevAudio : videoSegments.map(v => ({
+        id: v.id + '_a',
+        sourceStart: v.sourceStart,
+        sourceEnd: v.sourceEnd,
+        timelineStart: v.timelineStart,
+        timelineEnd: v.timelineEnd,
+        deleted: v.deleted,
+        muted: false,
+        linkedVideoId: v.id,
+      }));
+      return base.map(s => ids.includes(s.id) ? { ...s, muted: !s.muted } : s);
+    });
+  };
+
   return {
     editableSegments,
     setEditableSegments,
@@ -1313,6 +1335,7 @@ export function useSubtitleState({
     handleAudioDelete,
     handleVideoRippleDelete,
     handleAudioRippleDelete,
+    handleToggleAudioMute,
     handleClearTrack,
   };
 }

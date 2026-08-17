@@ -132,7 +132,9 @@ export function usePlaybackSync({
 
         // 1. Audio track playback (Dedicated Primary Audio Engine)
         if (audioRef?.current) {
+          const isMuted = Boolean(activeAudio?.muted);
           if (activeAudio && audioSrcTime !== null) {
+            audioRef.current.muted = isMuted;
             if (Math.abs(audioRef.current.currentTime - audioSrcTime) > 0.12) {
               audioRef.current.currentTime = Math.max(0, Math.min(mediaDuration, audioSrcTime));
             }

@@ -34,6 +34,7 @@ interface InteractiveTimelineProps {
   handleVideoRippleDelete?: (ids: string[]) => void;
   handleAudioDelete?: (ids: string[]) => void;
   handleAudioRippleDelete?: (ids: string[]) => void;
+  handleToggleAudioMute?: (ids: string[]) => void;
   handleClearTrack: (trackType: 'subtitle' | 'video' | 'audio') => void;
   setDraggingBoundary: (val: DragTarget | null) => void;
   draggingBoundary: DragTarget | null;
@@ -86,6 +87,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
   handleVideoRippleDelete,
   handleAudioDelete,
   handleAudioRippleDelete,
+  handleToggleAudioMute,
   handleClearTrack,
   setDraggingBoundary,
   draggingBoundary,
@@ -620,7 +622,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
     };
   }, [draggingAudioBoundary, timelineDuration, mediaDuration, trackRef, isAudioLinked, setAudioSegments, setVideoSegments]);
 
-  const effectiveAudioSegments = useMemo(() => {
+  const effectiveAudioSegments: AudioSegment[] = useMemo(() => {
     if (audioSegments && audioSegments.length > 0) return audioSegments;
     return videoSegments.map(v => ({
       id: v.id + '_a',
@@ -629,6 +631,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
       timelineStart: v.timelineStart,
       timelineEnd: v.timelineEnd,
       deleted: v.deleted,
+      muted: false,
       linkedVideoId: v.id,
     }));
   }, [audioSegments, videoSegments]);
@@ -1091,12 +1094,16 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
             const hasJCut = linkedVideo && segment.timelineStart < linkedVideo.timelineStart - 0.05;
             const hasLCut = linkedVideo && segment.timelineEnd > linkedVideo.timelineEnd + 0.05;
 
+            const isMuted = Boolean(segment.muted);
+
             return (
               <div 
                 key={segment.id}
                 className={`absolute top-[110px] h-10 rounded text-[10px] p-1 font-medium transition-colors border overflow-hidden ${
                   isSelected
-                    ? 'bg-emerald-500/30 border-emerald-400 z-20 text-emerald-100'
+                    ? (isMuted ? 'bg-amber-950/60 border-amber-400 z-20 text-amber-100' : 'bg-emerald-500/30 border-emerald-400 z-20 text-emerald-100')
+                    : isMuted
+                    ? 'bg-neutral-900/80 border-amber-500/40 text-amber-300/70 z-10 hover:border-amber-400 cursor-grab active:cursor-grabbing opacity-75'
                     : hasJCut
                     ? 'bg-teal-900/50 border-emerald-500/60 text-emerald-200 z-10 hover:border-emerald-400 hover:z-20 cursor-grab active:cursor-grabbing shadow-[0_0_8px_rgba(16,185,129,0.2)]'
                     : 'bg-emerald-950/40 border-emerald-600/40 text-emerald-300 z-10 hover:border-emerald-400 hover:z-20 cursor-grab active:cursor-grabbing'
@@ -1113,6 +1120,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                     y: e.clientY,
                     type: 'Audio Segment',
                     audioSegmentId: segment.id,
+                    isAudioMuted: isMuted,
                     timelineStart: segment.timelineStart,
                     timelineEnd: segment.timelineEnd,
                   });
@@ -1170,7 +1178,14 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                 }}
               >
                 <div className="flex items-center justify-between pointer-events-none relative z-20">
-                  <span className="truncate">Audio Clip</span>
+                  <span className="truncate flex items-center gap-1">
+                    Audio Clip
+                    {isMuted && (
+                      <span className="text-[9px] px-1 py-0.2 bg-amber-500/30 text-amber-300 rounded border border-amber-400/40 font-bold">
+                        🔇 Muted
+                      </span>
+                    )}
+                  </span>
                   {hasJCut && (
                     <span className="text-[9px] px-1 py-0.2 bg-emerald-500/30 text-emerald-200 rounded border border-emerald-400/40">
                       J-Cut {((linkedVideo?.timelineStart || 0) - segment.timelineStart).toFixed(1)}s
@@ -1184,7 +1199,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
                 </div>
                 
                 {/* Audio Waveform */}
-                <div className="absolute inset-0 pointer-events-none opacity-50 overflow-hidden">
+                <div className={`absolute inset-0 pointer-events-none overflow-hidden transition-opacity ${isMuted ? 'opacity-20' : 'opacity-50'}`}>
                   <AudioWaveform 
                     peaks={peaks} 
                     mediaDuration={mediaDuration} 
@@ -1470,6 +1485,7 @@ export const InteractiveTimeline = memo(function InteractiveTimeline({
           handleRippleDeleteRange={handleRippleDeleteRange}
           handleVideoRippleDelete={handleVideoRippleDelete}
           handleAudioRippleDelete={handleAudioRippleDelete}
+          handleToggleAudioMute={handleToggleAudioMute}
           handleVideoDelete={handleVideoDelete}
           handleAudioDelete={handleAudioDelete}
           applyJCut={applyJCut}

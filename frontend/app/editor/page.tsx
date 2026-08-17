@@ -208,6 +208,7 @@ function EditorContent() {
     handleAudioDelete,
     handleVideoRippleDelete,
     handleAudioRippleDelete,
+    handleToggleAudioMute,
     undo,
     redo,
     handleClearTrack,
@@ -628,6 +629,12 @@ function EditorContent() {
         e.preventDefault();
         e.stopPropagation();
         if (applyLCut) applyLCut(masterTime, 1.0);
+      } else if (e.code === 'KeyM' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectedAudioIndexes.length > 0 && handleToggleAudioMute) {
+          handleToggleAudioMute(selectedAudioIndexes);
+        }
       } else if (e.code === 'KeyZ' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         if (e.shiftKey) {
@@ -643,7 +650,7 @@ function EditorContent() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [editableSegments, togglePlay, setEditableSegments, setRippleDeletes, setSegmentHistory, rippleDeletes, setCursorMode, selectedVideoIndexes, selectedAudioIndexes, handleVideoDelete, handleAudioDelete, handleVideoRippleDelete, setSelectedVideoIndexes, setSelectedAudioIndexes, videoSegments, setVideoSegments, audioSegments, setAudioSegments, selectedIndexes, handleRippleDelete, handleLiftDelete, applyJCut, applyLCut, masterTime, undo, redo]);
+  }, [editableSegments, togglePlay, setEditableSegments, setRippleDeletes, setSegmentHistory, rippleDeletes, setCursorMode, selectedVideoIndexes, selectedAudioIndexes, handleVideoDelete, handleAudioDelete, handleVideoRippleDelete, handleToggleAudioMute, setSelectedVideoIndexes, setSelectedAudioIndexes, videoSegments, setVideoSegments, audioSegments, setAudioSegments, selectedIndexes, handleRippleDelete, handleLiftDelete, applyJCut, applyLCut, masterTime, undo, redo]);
 
   // Clear current project and persistent storage
   const clearProject = async () => {
@@ -1010,6 +1017,7 @@ function EditorContent() {
           handleVideoRippleDelete={handleVideoRippleDelete}
           handleAudioDelete={handleAudioDelete}
           handleAudioRippleDelete={handleAudioRippleDelete}
+          handleToggleAudioMute={handleToggleAudioMute}
           handleClearTrack={handleClearTrack}
           setDraggingBoundary={setDraggingBoundary}
           draggingBoundary={draggingBoundary}
